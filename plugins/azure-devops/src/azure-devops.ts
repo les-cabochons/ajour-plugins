@@ -206,7 +206,7 @@ function normalizeConfiguredFieldName(value: string | undefined): string | undef
 
 function normalizeLookupValue(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
-  return trimmed ? trimmed.toLocaleLowerCase() : undefined;
+  return trimmed ? trimmed.toLowerCase() : undefined;
 }
 
 function parsePriorityValue(value: unknown): number | undefined {
@@ -562,6 +562,35 @@ async function updateAzureWorkItemFields(
   );
 }
 
+async function fetchWorkItemTypeFieldReferences(
+  config: AzureDevOpsConnectionInput,
+  projectName: string,
+  workItemType: string,
+) {
+  const response = await requestAzureDevOps<AzureFieldListResponse>(
+    config,
+    `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields?api-version=7.1`,
+  );
+
+  if (!Array.isArray(response.value)) {
+    throw new Error("Azure DevOps returned invalid work item type field metadata.");
+  }
+
+  const fields = response.value;
+  return new Set(fields.flatMap((field) => {
+    if (!field || typeof field.referenceName !== "string") {
+      return [];
+    }
+
+    const normalizedReferenceName = normalizeLookupValue(field.referenceName);
+    return normalizedReferenceName ? [normalizedReferenceName] : [];
+  }));
+}
+
+function workItemTypeFieldCacheKey(projectName: string, workItemType: string) {
+  return `${normalizeLookupValue(projectName)}\u0000${normalizeLookupValue(workItemType)}`;
+}
+
 function buildSourceUrl(config: AzureDevOpsConnectionInput, workItem: AzureWorkItem) {
   const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
   const projectName = getProjectName(workItem) ?? config.project;
@@ -805,9 +834,11 @@ function buildAzureEstimateFieldUpdate(
   localWorkItem: ConnectorSyncWorkItem,
   remoteItem: ConnectorImportCandidateInput,
   fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  allowMissingRemoteValue = false,
 ): ConnectorSyncFieldUpdate | null {
   const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
   if (
+    !allowMissingRemoteValue &&
     remoteItem[fieldKey] === undefined &&
     fieldSyncState?.remoteValue === undefined &&
     fieldSyncState?.baselineValue === undefined
@@ -836,6 +867,24 @@ function buildAzureEstimateFieldUpdate(
   };
 }
 
+function needsWorkItemTypeFieldSupportCheck(
+  localWorkItem: ConnectorSyncWorkItem,
+  remoteItem: ConnectorImportCandidateInput,
+  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+) {
+  if (remoteItem[fieldKey] !== undefined) {
+    return false;
+  }
+
+  const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
+  return (
+    typeof localWorkItem[fieldKey] === "number" ||
+    fieldSyncState?.remoteValue !== undefined ||
+    fieldSyncState?.baselineValue !== undefined ||
+    fieldSyncState?.resolution !== undefined
+  );
+}
+
 async function buildAzureWorkItemUpdates(
   config: AzureDevOpsConnectionInput,
   syncContext: AzureDevOpsSyncContext,
@@ -847,6 +896,53 @@ async function buildAzureWorkItemUpdates(
     remainingEstimateHours: syncContext.fields.remainingEstimateField?.resolvedReferenceName,
     completedEstimateHours: syncContext.fields.completedEstimateField?.resolvedReferenceName,
   } as const;
+
+  const fieldSupportRequests = new Map<
+    string,
+    { projectName: string; workItemType: string }
+  >();
+  for (const workItem of workItems) {
+    const remoteItem = syncContext.itemsBySourceId.get(workItem.sourceId);
+    if (!remoteItem) {
+      continue;
+    }
+
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+      if (
+        !mappedFieldNames[fieldKey] ||
+        !needsWorkItemTypeFieldSupportCheck(workItem, remoteItem, fieldKey)
+      ) {
+        continue;
+      }
+
+      const projectName = remoteItem.projectName ?? config.project;
+      const workItemType = remoteItem.workItemType;
+      if (projectName && workItemType) {
+        fieldSupportRequests.set(workItemTypeFieldCacheKey(projectName, workItemType), {
+          projectName,
+          workItemType,
+        });
+      }
+    }
+  }
+
+  const workItemTypeFieldResults = new Map<
+    string,
+    { fields?: Set<string>; error?: string }
+  >();
+  for (const [cacheKey, { projectName, workItemType }] of fieldSupportRequests) {
+    try {
+      workItemTypeFieldResults.set(cacheKey, {
+        fields: await fetchWorkItemTypeFieldReferences(config, projectName, workItemType),
+      });
+    } catch (error) {
+      workItemTypeFieldResults.set(cacheKey, {
+        error: error instanceof Error
+          ? error.message
+          : "Unable to inspect Azure DevOps work item type fields.",
+      });
+    }
+  }
 
   for (const workItem of workItems) {
     const remoteItem = syncContext.itemsBySourceId.get(workItem.sourceId);
@@ -862,7 +958,47 @@ async function buildAzureWorkItemUpdates(
         continue;
       }
 
-      const fieldUpdate = buildAzureEstimateFieldUpdate(workItem, remoteItem, fieldKey);
+      const needsFieldSupportCheck = needsWorkItemTypeFieldSupportCheck(
+        workItem,
+        remoteItem,
+        fieldKey,
+      );
+      let allowMissingRemoteValue = false;
+      let fieldSupportError: string | undefined;
+      if (needsFieldSupportCheck) {
+        const projectName = remoteItem.projectName ?? config.project;
+        const workItemType = remoteItem.workItemType;
+        if (projectName && workItemType) {
+          const cacheKey = workItemTypeFieldCacheKey(projectName, workItemType);
+          const fieldSupportResult = workItemTypeFieldResults.get(cacheKey);
+          fieldSupportError = fieldSupportResult?.error;
+          const normalizedMappedFieldName = normalizeLookupValue(mappedFieldName);
+          if (normalizedMappedFieldName) {
+            allowMissingRemoteValue =
+              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ?? false;
+          }
+        }
+      }
+      if (fieldSupportError) {
+        fieldUpdates[fieldKey] = {
+          status: "error",
+          localValue: workItem[fieldKey],
+          remoteValue: remoteItem[fieldKey],
+          baselineValue: workItem.estimateSync?.[fieldKey]?.baselineValue,
+          message: fieldSupportError,
+        };
+        continue;
+      }
+      if (needsFieldSupportCheck && !allowMissingRemoteValue) {
+        continue;
+      }
+
+      const fieldUpdate = buildAzureEstimateFieldUpdate(
+        workItem,
+        remoteItem,
+        fieldKey,
+        allowMissingRemoteValue,
+      );
       if (!fieldUpdate) {
         continue;
       }
@@ -876,21 +1012,29 @@ async function buildAzureWorkItemUpdates(
     for (const fieldKey of Object.keys(fieldUpdates) as Array<keyof typeof fieldUpdates>) {
       const mappedFieldName = mappedFieldNames[fieldKey];
       const fieldUpdate = fieldUpdates[fieldKey];
-      if (!mappedFieldName || fieldUpdate?.status !== "pushed" || typeof workItem[fieldKey] !== "number") {
+      const localValue = workItem[fieldKey];
+      if (
+        !mappedFieldName ||
+        fieldUpdate?.status !== "pushed" ||
+        typeof localValue !== "number" ||
+        !Number.isFinite(localValue)
+      ) {
         continue;
       }
 
       try {
         await updateAzureWorkItemFields(config, remoteItem.externalId, {
-          [mappedFieldName]: workItem[fieldKey]!,
+          [mappedFieldName]: localValue,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to update Azure DevOps work item.";
-        fieldUpdates[fieldKey] = {
+        const failedFieldUpdate: ConnectorSyncFieldUpdate = {
           ...fieldUpdate,
           status: "error",
           message,
         };
+        delete failedFieldUpdate.nextBaselineValue;
+        fieldUpdates[fieldKey] = failedFieldUpdate;
       }
     }
 

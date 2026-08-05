@@ -1,0 +1,56 @@
+name: Build connector
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connector-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: corepack pnpm test
+
+      - name: Run TypeScript checks
+        run: corepack pnpm typecheck
+
+      - name: Package connector
+        run: corepack pnpm package
+
+      - name: Read connector version
+        id: connector
+        shell: bash
+        run: echo "version=$(node -p \"require('./plugin.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installable connector
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-devops-${{ steps.connector.outputs.version }}-${{ github.sha }}
+          path: package/*.harday-connector
+          if-no-files-found: error
+          retention-days: 30

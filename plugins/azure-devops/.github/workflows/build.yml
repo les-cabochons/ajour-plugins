@@ -50,7 +50,7 @@ jobs:
         run: corepack pnpm package
 
       - name: Upload installable connector
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: azure-devops-${{ steps.connector.outputs.version }}
           path: package/*.harday-connector

@@ -39,20 +39,20 @@ jobs:
       - name: Run TypeScript checks
         run: corepack pnpm typecheck
 
-      - name: Package connector
-        run: corepack pnpm package
-
-      - name: Read connector version
+      - name: Set connector build version
         id: connector
         shell: bash
         run: |
-          version="$(node -p "require('./plugin.json').version")"
+          version="$(node scripts/set-build-version.mjs "main.${GITHUB_RUN_NUMBER}.${GITHUB_SHA::7}")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package connector
+        run: corepack pnpm package
 
       - name: Upload installable connector
         uses: actions/upload-artifact@v4
         with:
-          name: azure-devops-${{ steps.connector.outputs.version }}-${{ github.sha }}
+          name: azure-devops-${{ steps.connector.outputs.version }}
           path: package/*.harday-connector
           if-no-files-found: error
           retention-days: 30

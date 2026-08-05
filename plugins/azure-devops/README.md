@@ -36,8 +36,11 @@ The archive is written to
 `plugin.json`; keep that value aligned with `package.json` when preparing a new
 release.
 
-Every push to `main` runs tests and type checks, builds the connector, packages
-the installable archive, and retains it as a GitHub Actions artifact.
+Every push to `main` runs tests and type checks, stamps a unique prerelease
+version such as `1.0.0-main.3.9aac30e` into the build, packages the installable
+archive, and retains it as a GitHub Actions artifact for 30 days. The base
+version remains the matching version declared in `plugin.json` and
+`package.json` on the branch.
 
 ## Install in HarDay
 

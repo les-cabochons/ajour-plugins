@@ -45,7 +45,9 @@ jobs:
       - name: Read connector version
         id: connector
         shell: bash
-        run: echo "version=$(node -p \"require('./plugin.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(node -p "require('./plugin.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload installable connector
         uses: actions/upload-artifact@v4

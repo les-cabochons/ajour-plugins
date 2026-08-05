@@ -1,6 +1,6 @@
-# AJC Azure DevOps
+# Ajour Connector - Azure DevOps
 
-AJC Azure DevOps is the standalone Azure DevOps connector for HarDay. It syncs
+Ajour Connector - Azure DevOps syncs
 Azure DevOps work items into the local backlog and supports estimate updates
 through HarDay's connector plugin protocol.
 

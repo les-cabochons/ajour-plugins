@@ -1,10 +1,10 @@
 # Ajour Project Data - Workday
 
-This standalone HarDay project-data-shape plugin maps canonical projects and
+This standalone Ajour project-data-shape plugin maps canonical projects and
 tasks to the current Workday-compatible tabular shape. It does not authenticate
 with, connect to, read from, or write to Workday.
 
-HarDay owns file formats such as Excel, CSV, and JSON. This plugin owns only the
+Ajour owns file formats such as Excel, CSV, and JSON. This plugin owns only the
 format-neutral dataset definition and the mappings to and from canonical project
 data.
 
@@ -16,9 +16,9 @@ Requirements: Node.js 22, Corepack with pnpm 10.7.0, and optionally `just`.
 just verify
 ```
 
-`just build` writes the runnable entrypoint to `dist/plugin.mjs`. HarDay loads
+`just build` writes the runnable entrypoint to `dist/plugin.mjs`. Ajour loads
 the compiled directory containing `plugin.json` and `dist/`; this repository has
-no dependency on HarDay source code.
+no dependency on Ajour source code.
 
 ## License
 

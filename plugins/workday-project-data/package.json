@@ -1,0 +1,14 @@
+{
+  "name": "@les-cabochons/ajp-workday",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "typecheck": "node --check src/plugin.mjs && node --check scripts/build.mjs",
+    "verify": "corepack pnpm typecheck && corepack pnpm build && corepack pnpm test"
+  }
+}

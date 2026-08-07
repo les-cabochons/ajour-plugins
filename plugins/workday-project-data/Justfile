@@ -1,0 +1,29 @@
+# Workday project data plugin command surface
+
+set quiet
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
+PNPM := "corepack pnpm"
+
+[private]
+default: help
+
+[doc("Displays available commands")]
+help:
+    just --list --unsorted
+
+[doc("Runs plugin tests")]
+test:
+    {{PNPM}} test
+
+[doc("Checks JavaScript syntax")]
+typecheck:
+    {{PNPM}} typecheck
+
+[doc("Builds the runnable plugin entrypoint")]
+build:
+    {{PNPM}} build
+
+[doc("Runs the complete local verification")]
+verify:
+    {{PNPM}} verify

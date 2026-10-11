@@ -2,7 +2,7 @@
 
 Ajour Connector - Azure DevOps syncs
 Azure DevOps work items into the local backlog and supports estimate updates
-through HarDay's connector plugin protocol.
+through Ajour's connector plugin protocol.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ just package
 ```
 
 The archive is written to
-`package/azure_devops-<version>.harday-connector`. Its version comes from
+`package/azure_devops-<version>.ajour-connector`. Its version comes from
 `plugin.json`; keep that value aligned with `package.json` when preparing a new
 release.
 
@@ -49,14 +49,14 @@ archive, retains it as a GitHub Actions artifact for 30 days, and publishes it
 as a GitHub prerelease. The base version remains the matching version declared
 in `plugin.json` and `package.json` on the branch.
 
-## Install in HarDay
+## Install in Ajour
 
 In a production desktop build, open **Settings → Plugins**, choose **Install
-plugin**, and select the generated `.harday-connector` archive.
+plugin**, and select the generated `.ajour-connector` archive.
 
 The connector requires an Azure DevOps personal access token with the work-item
 permissions appropriate for the enabled read or update operations. Credentials
-stay in HarDay's local connector configuration.
+stay in Ajour's local connector configuration.
 
 ## License
 

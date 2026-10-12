@@ -26,8 +26,8 @@ import {
  * to, and the write of a new state, priority or both. See Ajour's ADR 0001.
  */
 
-function requireWorkItemId(sourceId: string) {
-  const id = parseAzureWorkItemId(sourceId);
+function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {
+  const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
   if (id === null) {
     throw new Error(`"${sourceId}" is not an Azure DevOps work item.`);
   }
@@ -46,7 +46,7 @@ export async function listAzureSettleStates(
   config: AzureDevOpsConnectionInput,
   sourceId: string,
 ): Promise<ConnectorSettleStatesResult> {
-  const workItem = await fetchWorkItemState(config, requireWorkItemId(sourceId));
+  const workItem = await fetchWorkItemState(config, requireWorkItemId(config, sourceId));
   const projectName = getProjectName(workItem);
   const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
   if (!projectName || !workItemType) {
@@ -74,16 +74,13 @@ export async function writeAzureSettle(
   config: AzureDevOpsConnectionInput,
   request: ConnectorSettleWriteRequest,
 ): Promise<ConnectorSettleWriteResult> {
-  const id = requireWorkItemId(request.sourceId);
+  const id = requireWorkItemId(config, request.sourceId);
   const fields: Record<string, number | string> = {};
   if (request.state !== undefined) {
     fields["System.State"] = request.state;
   }
 
-  const priorityField =
-    request.priority !== undefined
-      ? await resolveAzureFieldMetadata(config, config.priorityFieldName)
-      : undefined;
+  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
   if (request.priority !== undefined) {
     if (!priorityField) {
       throw new Error(

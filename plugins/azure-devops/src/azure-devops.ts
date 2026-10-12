@@ -1098,9 +1098,29 @@ export async function fetchAzureDevOpsImportCandidates(
 }
 
 /** The work item id at the end of a source URL, such as `.../_workitems/edit/42`. */
-export function parseAzureWorkItemId(sourceId: string): number | null {
-  const match = /(\d+)\/?$/.exec(sourceId.trim());
-  return match ? Number(match[1]) : null;
+export function parseAzureWorkItemId(
+  sourceId: string,
+  organizationUrl?: string,
+): number | null {
+  try {
+    const source = new URL(sourceId);
+    if (source.protocol !== "https:" && source.protocol !== "http:") return null;
+    if (source.username || source.password) return null;
+    if (organizationUrl) {
+      const organization = new URL(normalizeOrganizationUrl(organizationUrl));
+      if (
+        source.origin !== organization.origin ||
+        !source.pathname.toLowerCase().startsWith(
+          organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
+        )
+      ) return null;
+    }
+    const match = /\/_workitems\/edit\/([1-9]\d*)\/?$/.exec(source.pathname);
+    const id = match ? Number(match[1]) : NaN;
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1114,7 +1134,7 @@ async function findDoneWorkItems(
 ): Promise<ConnectorImportCandidateInput[]> {
   const localIds = new Map<number, string>();
   for (const workItem of workItems) {
-    const id = parseAzureWorkItemId(workItem.sourceId);
+    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
     if (id !== null && !syncContext.itemsBySourceId.has(workItem.sourceId)) {
       localIds.set(id, workItem.sourceId);
     }

@@ -58,6 +58,18 @@ The connector requires an Azure DevOps personal access token with the work-item
 permissions appropriate for the enabled read or update operations. Credentials
 stay in Ajour's local connector configuration.
 
+## Settle support
+
+This package uses Ajour plugin API version 2. Its connector capability lists
+the item's work item type states and can write state and priority in one
+update. Set the connection's priority field to enable priority writes.
+Writing requires work-item read and write permissions.
+
+Work item URLs must belong to the configured organization. Completed and
+Removed categories count as done. Resolved remains open. Sync reports items
+Ajour already tracks that reached a done category, even when the query no
+longer returns them.
+
 ## License
 
 [MIT](LICENSE)

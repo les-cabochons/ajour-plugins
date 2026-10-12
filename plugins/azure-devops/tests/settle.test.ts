@@ -53,12 +53,14 @@ function fakeAzureDevOps({
   states = AGILE_TASK_STATES,
   fields = [],
   rejectPatch,
+  workflowFields,
 }: {
   items: Record<number, Record<string, unknown>>;
   queryIds?: number[];
   states?: unknown[] | "fail";
   fields?: unknown[];
   rejectPatch?: string;
+  workflowFields?: Record<string, unknown>;
 }) {
   const patches: Array<{ id: number; body: unknown }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -92,6 +94,7 @@ function fakeAzureDevOps({
         for (const operation of body) {
           items[id] = { ...items[id], [operation.path.replace("/fields/", "")]: operation.value };
         }
+        items[id] = { ...items[id], ...workflowFields };
       }
       return json({ id, fields: items[id] });
     }
@@ -245,6 +248,59 @@ describe("Azure DevOps settle", () => {
       [{ op: "add", path: "/fields/Microsoft.VSTS.Common.Priority", value: 1 }],
       [{ op: "add", path: "/fields/System.State", value: "Resolved" }],
     ]);
+  });
+
+  it("returns the mapped priority after a state-only write applies a workflow rule", async () => {
+    const azure = fakeAzureDevOps({
+      items: { 7: task("Fix login", "Active", { "Custom.MSPriority": "50" }) },
+      fields: [{ name: "MS Priority", referenceName: "Custom.MSPriority", type: "string" }],
+      workflowFields: { "Custom.MSPriority": "75" },
+    });
+
+    const result = await writeAzureSettle(
+      buildConnection({ priorityFieldName: "MS Priority" }),
+      { sourceId: sourceId(7), state: "Resolved" },
+    );
+
+    expect(azure.patches[0]?.body).toEqual([
+      { op: "add", path: "/fields/System.State", value: "Resolved" },
+    ]);
+    expect(result.priority).toBe(75);
+  });
+
+  it.each([
+    "ticket-123",
+    "https://dev.azure.com/contoso/Mercury/tickets/123",
+    "https://dev.azure.com/another-org/Mercury/_workitems/edit/123",
+    "https://dev.azure.com/contoso-other/Mercury/_workitems/edit/123",
+    "https://example.com/contoso/Mercury/_workitems/edit/123",
+    "https://dev.azure.com/contoso/Mercury/_workitems/edit/0",
+    "https://dev.azure.com/contoso/Mercury/_workitems/edit/9007199254740992",
+  ])("refuses to read or write an unrelated work item: %s", async (invalidSourceId) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listAzureSettleStates(buildConnection(), invalidSourceId)).rejects.toThrow(
+      "is not an Azure DevOps work item",
+    );
+    await expect(
+      writeAzureSettle(buildConnection(), { sourceId: invalidSourceId, state: "Closed" }),
+    ).rejects.toThrow("is not an Azure DevOps work item");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch a tracked item from another organization during done sync", async () => {
+    fakeAzureDevOps({ items: { 7: task("Done", "Closed") }, queryIds: [] });
+
+    const result = await syncAzureDevOpsConnection(buildConnection(), [
+      {
+        localWorkItemId: "other-organization",
+        sourceId: "https://dev.azure.com/another-org/Mercury/_workitems/edit/7",
+      },
+    ]);
+
+    expect(result.items).toEqual([]);
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("workitemsbatch"))).toBe(false);
   });
 
   it("refuses a priority without a priority field and passes on Azure DevOps' refusal", async () => {

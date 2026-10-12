@@ -25,6 +25,34 @@ export class GitHubClient {
     private readonly token: string,
   ) {}
 
+  async latestPush(repository: string, ref: string, headSha: string): Promise<{ at: number; actor: CodeHostUser } | undefined> {
+    const base = new URL(this.apiUrl);
+    const prefix = base.pathname === "/graphql" ? "" : "/api/v3";
+    const url = new URL(`${prefix}/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`, base);
+    url.searchParams.set("ref", `refs/heads/${ref}`);
+    url.searchParams.set("per_page", "100");
+    url.searchParams.set("direction", "desc");
+    try {
+      const response = await fetch(url, { headers: {
+        Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
+        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ajour-github-plugin",
+      } });
+      if (!response.ok) return undefined;
+      const activities: unknown = await response.json();
+      if (!Array.isArray(activities)) return undefined;
+      for (const activity of activities) {
+        if (!activity || typeof activity !== "object" || activity.after !== headSha ||
+          activity.ref !== `refs/heads/${ref}` || !["push", "force_push"].includes(activity.activity_type)) continue;
+        const at = typeof activity.timestamp === "string" ? Date.parse(activity.timestamp) : NaN;
+        if (!Number.isFinite(at) || at < 0 || !activity.actor || typeof activity.actor.login !== "string") return undefined;
+        return { at, actor: { login: activity.actor.login, isBot: activity.actor.type === "Bot" || activity.actor.login.endsWith("[bot]") } };
+      }
+    } catch {
+      // Missing Contents permission and older Enterprise versions leave the actor unknown.
+    }
+    return undefined;
+  }
+
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     const response = await fetch(this.apiUrl, {
       method: "POST",
@@ -80,6 +108,8 @@ interface GitHubPullRequest {
   updatedAt: string;
   closedAt: string | null;
   headRefOid: string;
+  headRefName: string;
+  headRepository: { nameWithOwner: string } | null;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   repository: { nameWithOwner: string };
   author: GitHubActor | null;
@@ -100,11 +130,18 @@ interface GitHubPullRequest {
         | null;
     }[];
   };
+  reviewRequestTimeline?: {
+    nodes: { id: string; createdAt: string; actor: GitHubActor | null;
+      requestedReviewer: { __typename: "User" | "Bot" | "Mannequin"; login: string } |
+        { __typename: "Team"; slug: string; organization: { login: string } } | null;
+    }[];
+  };
   reviews: {
     nodes: {
       id: string;
       state: string;
       submittedAt: string | null;
+      body?: string;
       author: GitHubActor | null;
     }[];
   };
@@ -117,7 +154,8 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid mergeable
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName mergeable
+  headRepository { nameWithOwner }
   repository { nameWithOwner }
   author { ${ACTOR_FIELDS} }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -139,7 +177,21 @@ const PULL_REQUEST_FIELDS = `
       }
     }
   }
-  reviews(last: 100) { nodes { id state submittedAt author { ${ACTOR_FIELDS} } } }
+  reviewRequestTimeline: timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+    nodes {
+      ... on ReviewRequestedEvent {
+        id createdAt actor { ${ACTOR_FIELDS} }
+        requestedReviewer {
+          __typename
+          ... on User { login }
+          ... on Bot { login }
+          ... on Mannequin { login }
+          ... on Team { slug organization { login } }
+        }
+      }
+    }
+  }
+  reviews(last: 100) { nodes { id state submittedAt body author { ${ACTOR_FIELDS} } } }
   comments(last: 100) { nodes { id createdAt body author { ${ACTOR_FIELDS} } } }
   reviewThreads(last: 50) {
     nodes { id comments(last: 30) { nodes { id createdAt body author { ${ACTOR_FIELDS} } } } }
@@ -268,7 +320,7 @@ export function toPullRequestFacts(
     if (!verdict || !review.submittedAt) {
       return [];
     }
-    return [{ id: review.id, author: toUser(review.author), verdict, submittedAt: time(review.submittedAt) }];
+    return [{ id: review.id, author: toUser(review.author), verdict, submittedAt: time(review.submittedAt), mentionsViewer: mentions(review.body ?? "", context.viewer.login) }];
   });
 
   const toComment = (comment: GitHubComment, threadId?: string): CodeHostCommentFact => ({
@@ -306,6 +358,15 @@ export function toPullRequestFacts(
     headSha: pullRequest.headRefOid,
     lastPushedAt,
     reviewRequests,
+    reviewRequestEvents: (pullRequest.reviewRequestTimeline?.nodes ?? []).flatMap((event) => {
+      const reviewer = event.requestedReviewer;
+      if (!reviewer) return [];
+      const includesViewer = reviewer.__typename === "Team"
+        ? context.includeTeamRequests && (context.viewerTeams?.has(`${reviewer.organization.login}/${reviewer.slug}`.toLowerCase()) ??
+            reviewRequests.some((request) => request.kind === "team" && request.includesViewer && request.name.toLowerCase() === `${reviewer.organization.login}/${reviewer.slug}`.toLowerCase()))
+        : reviewer.login.toLowerCase() === viewerLogin;
+      return [{ id: event.id, createdAt: time(event.createdAt), author: toUser(event.actor), includesViewer }];
+    }),
     reviews,
     comments,
     checks: checkState(pullRequest.commits.nodes[0]?.commit.statusCheckRollup?.state),
@@ -445,14 +506,27 @@ export async function syncPullRequests(
     includeTeamRequests: config.includeTeamRequests,
     teamRequestedIds: new Set(config.includeTeamRequests ? requested.map((pullRequest) => pullRequest.id) : []),
   };
-  const pullRequests = Array.from(found.values())
+  const selected = Array.from(found.values())
     .filter(
       (pullRequest) =>
         pullRequest.state !== "OPEN" ||
         (repositoryInScope(config, pullRequest.repository.nameWithOwner) &&
           !(config.hideDrafts && pullRequest.isDraft)),
-    )
-    .map((pullRequest) => toPullRequestFacts(pullRequest, context));
+    );
+  const pullRequests: CodeHostPullRequestFacts[] = [];
+  // Only reviewer items with outstanding changes need push attribution. Bound concurrency.
+  for (let start = 0; start < selected.length; start += 4) {
+    pullRequests.push(...await Promise.all(selected.slice(start, start + 4).map(async (pullRequest) => {
+      const facts = toPullRequestFacts(pullRequest, context);
+      const latestReview = facts.reviews.filter((review) => review.author.login.toLowerCase() === viewer.login.toLowerCase() && review.verdict !== "dismissed")
+        .sort((a, b) => b.submittedAt - a.submittedAt)[0];
+      if (facts.state === "open" && !facts.viewerIsAuthor && latestReview?.verdict === "changes_requested" && pullRequest.headRepository) {
+        const push = await client.latestPush(pullRequest.headRepository.nameWithOwner, pullRequest.headRefName, facts.headSha);
+        if (push) return { ...facts, lastPushedAt: push.at, lastPushActor: push.actor };
+      }
+      return facts;
+    })));
+  }
 
   return { viewer, pullRequests };
 }

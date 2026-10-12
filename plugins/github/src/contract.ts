@@ -62,11 +62,19 @@ export interface CodeHostReviewRequest {
   includesViewer: boolean;
 }
 
+export interface CodeHostReviewRequestEvent {
+  id: string;
+  author: CodeHostUser;
+  createdAt: number;
+  includesViewer: boolean;
+}
+
 export interface CodeHostReviewFact {
   id: string;
   author: CodeHostUser;
   verdict: CodeHostReviewVerdict;
   submittedAt: number;
+  mentionsViewer?: boolean;
 }
 
 export interface CodeHostCommentFact {
@@ -95,7 +103,9 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   viewerIsAuthor: boolean;
   headSha: string;
   lastPushedAt: number;
+  lastPushActor?: CodeHostUser;
   reviewRequests: CodeHostReviewRequest[];
+  reviewRequestEvents?: CodeHostReviewRequestEvent[];
   reviews: CodeHostReviewFact[];
   comments: CodeHostCommentFact[];
   checks: "none" | "pending" | "success" | "failure";

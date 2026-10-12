@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mentions } from "../src/github.ts";
+import { GitHubClient, mentions } from "../src/github.ts";
 import { syncPullRequests, validateConnection } from "../src/plugin.ts";
 
 const viewer = { __typename: "User", login: "octocat", name: "The Octocat", avatarUrl: "https://example.com/a.png" };
@@ -18,6 +18,8 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     updatedAt: "2026-10-02T10:00:00Z",
     closedAt: null,
     headRefOid: "abc123",
+    headRefName: "change/rate-limits",
+    headRepository: { nameWithOwner: "alice/api" },
     mergeable: "MERGEABLE",
     repository: { nameWithOwner: "acme/api" },
     author: alice,
@@ -41,6 +43,7 @@ interface GraphQLCall {
 function stubGitHub(handler: (call: GraphQLCall) => unknown) {
   const calls: GraphQLCall[] = [];
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+    if (!init.body) return new Response("[]", { status: 200 });
     const call = JSON.parse(String(init.body)) as GraphQLCall;
     calls.push(call);
     const data = handler(call);
@@ -99,10 +102,64 @@ describe("GitHub plugin", () => {
     );
   });
 
+  it("returns direct and team re-request events with their actors and times", async () => {
+    const requested = pullRequest({
+      reviewRequests: { nodes: [{ requestedReviewer: { __typename: "User", login: "octocat" } }] },
+      reviewRequestTimeline: { nodes: [
+        { id: "request1", actor: alice, createdAt: "2026-10-02T10:00:00Z", requestedReviewer: { __typename: "User", login: "OctoCat" } },
+        { id: "request2", actor: viewer, createdAt: "2026-10-02T11:00:00Z", requestedReviewer: { __typename: "Team", slug: "backend", organization: { login: "acme" } } },
+        { id: "request3", actor: bot, createdAt: "2026-10-02T12:00:00Z", requestedReviewer: { __typename: "User", login: "alice" } },
+      ] },
+    });
+    const { calls } = stubGitHub((call) => {
+      if (call.query.includes("organizations")) return { viewer: { organizations: { nodes: [{ login: "acme", teams: { nodes: [{ slug: "backend" }] } }] } } };
+      if (call.query.includes("search(")) return searchResult([requested]);
+      return { viewer };
+    });
+    const result = await syncPullRequests(connection, { tracked: [] });
+    expect(result.pullRequests[0]?.reviewRequestEvents).toEqual([
+      { id: "request1", author: expect.objectContaining({ login: "alice", isBot: false }), createdAt: Date.parse("2026-10-02T10:00:00Z"), includesViewer: true },
+      { id: "request2", author: expect.objectContaining({ login: "octocat", isBot: false }), createdAt: Date.parse("2026-10-02T11:00:00Z"), includesViewer: true },
+      { id: "request3", author: expect.objectContaining({ login: "codecov", isBot: true }), createdAt: Date.parse("2026-10-02T12:00:00Z"), includesViewer: false },
+    ]);
+    expect(calls.some((call) => call.query.includes("REVIEW_REQUESTED_EVENT") && call.query.includes("ReviewRequestedEvent"))).toBe(true);
+  });
+
   it("explains a rejected token", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 401 })));
 
     await expect(validateConnection({ token: "expired" })).rejects.toThrow("GitHub rejected the token");
+  });
+
+  it("reports mentions in review bodies without storing their text", async () => {
+    const pr = pullRequest({ reviews: { nodes: [{ id: "r", state: "COMMENTED", submittedAt: "2026-10-02T10:00:00Z", body: "@octocat please look", author: alice }] } });
+    stubGitHub((call) => call.query.includes("search(") ? searchResult([pr]) : call.query.includes("organizations") ? { viewer: { organizations: { nodes: [] } } } : { viewer });
+    const result = await syncPullRequests(connection, { tracked: [] });
+    expect(result.pullRequests[0]?.reviews).toEqual([{ id: "r", verdict: "commented", submittedAt: Date.parse("2026-10-02T10:00:00Z"), author: expect.objectContaining({ login: "alice" }), mentionsViewer: true }]);
+  });
+
+  it.each(["push", "force_push"])("attributes a %s to the pusher and actual push time on a fork branch", async (activity_type) => {
+    const pr = pullRequest({ reviews: { nodes: [{ id: "r", state: "CHANGES_REQUESTED", submittedAt: "2026-10-01T13:00:00Z", author: viewer }] } });
+    const mocked = stubGitHub((call) => call.query.includes("search(") ? searchResult([pr]) : call.query.includes("organizations") ? { viewer: { organizations: { nodes: [] } } } : { viewer });
+    const graphql = mocked.fetch.getMockImplementation()!;
+    mocked.fetch.mockImplementation(async (url, init) => init.body ? graphql(url, init) : new Response(JSON.stringify([
+      { after: "unrelated", ref: "refs/heads/change/rate-limits", activity_type, timestamp: "2026-10-02T11:00:00Z", actor: { login: "someone", type: "User" } },
+      { after: "abc123", ref: "refs/heads/change/rate-limits", activity_type, timestamp: "2026-10-02T10:00:00Z", actor: { login: "octocat", type: "User" } },
+    ]), { status: 200 }));
+    const result = await syncPullRequests(connection, { tracked: [] });
+    expect(result.pullRequests[0]).toMatchObject({ lastPushedAt: Date.parse("2026-10-02T10:00:00Z"), lastPushActor: { login: "octocat", isBot: false } });
+    const request = mocked.fetch.mock.calls.find(([, init]) => !init.body)!;
+    const url = new URL(String(request[0]));
+    expect(url.pathname).toBe("/repos/alice/api/activity");
+    expect(url.searchParams.get("ref")).toBe("refs/heads/change/rate-limits");
+  });
+
+  it("uses the Enterprise REST URL and tolerates unavailable push attribution", async () => {
+    const fetch = vi.fn(async () => new Response("", { status: 403 }));
+    vi.stubGlobal("fetch", fetch);
+    const client = new GitHubClient("https://github.acme.test/api/graphql", "secret");
+    await expect(client.latestPush("acme/api", "feature", "abc")).resolves.toBeUndefined();
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("https://github.acme.test/api/v3/repos/acme/api/activity?");
   });
 
   it("returns facts for authored, requested and reviewed pull requests once each", async () => {
@@ -173,6 +230,7 @@ describe("GitHub plugin", () => {
       viewerIsAuthor: false,
       headSha: "abc123",
       lastPushedAt: Date.parse("2026-10-01T12:00:00Z"),
+      reviewRequestEvents: [],
       reviewRequests: [
         { kind: "user", name: "OctoCat", includesViewer: true },
         { kind: "team", name: "acme/backend", includesViewer: true },
@@ -183,6 +241,7 @@ describe("GitHub plugin", () => {
           id: "R_1",
           author: expect.objectContaining({ login: "octocat" }),
           verdict: "changes_requested",
+          mentionsViewer: false,
           submittedAt: Date.parse("2026-10-01T13:00:00Z"),
         },
       ],

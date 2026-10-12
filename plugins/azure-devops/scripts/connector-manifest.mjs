@@ -133,6 +133,10 @@ export function assertConnectorPluginManifest(manifest) {
   for (const name of capabilityNames) {
     assertRecord(manifest.capabilities[name], "Connector manifest capabilities." + name);
   }
+  assertOptionalBoolean(
+    manifest.capabilities.connector?.settle,
+    "Connector manifest capabilities.connector.settle",
+  );
 
   assertString(manifest.displayName, "Connector manifest displayName", {
     min: 1,

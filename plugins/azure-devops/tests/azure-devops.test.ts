@@ -5,6 +5,7 @@ import {
   type AzureDevOpsConnectionInput,
   validateAzureDevOpsConnection,
 } from "../src/azure-devops.ts";
+import { withWorkItemTypeStates } from "./work-item-type-states.ts";
 
 function buildConnection(
   overrides: Partial<AzureDevOpsConnectionInput> = {},
@@ -85,7 +86,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -125,7 +126,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(
@@ -209,7 +210,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -287,7 +288,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -392,7 +393,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -492,7 +493,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({}),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -607,7 +608,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({ message: "Write rejected" }, 400),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -675,7 +676,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({ value: {} }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({ completedEstimateFieldName: "Completed Work" }),
@@ -758,7 +759,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -803,7 +804,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(

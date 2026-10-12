@@ -51,6 +51,10 @@ export interface ConnectorImportCandidateInput {
   projectName?: string;
   workItemType: string;
   state?: string;
+  /** The state's category for people, such as "In Progress". */
+  stateCategory?: string;
+  /** True for Completed and Removed. Ajour archives done items. */
+  stateDone?: boolean;
   assignedTo?: string;
   priority?: number;
   originalEstimateHours?: number;
@@ -101,6 +105,36 @@ export interface ConnectorSyncWorkItemUpdate {
     remainingEstimateHours?: ConnectorSyncFieldUpdate;
     completedEstimateHours?: ConnectorSyncFieldUpdate;
   };
+}
+
+/** A state a backlog item can move to when it is settled. */
+export interface ConnectorSettleState {
+  name: string;
+  category: string;
+  done: boolean;
+}
+
+export interface ConnectorSettleStatesRequest {
+  sourceId: string;
+}
+
+export interface ConnectorSettleStatesResult {
+  states: ConnectorSettleState[];
+}
+
+/** Only the fields the settle changed. */
+export interface ConnectorSettleWriteRequest {
+  sourceId: string;
+  state?: string;
+  priority?: number;
+}
+
+/** The item's values in Azure DevOps after the write. */
+export interface ConnectorSettleWriteResult {
+  state?: string;
+  stateCategory?: string;
+  stateDone?: boolean;
+  priority?: number;
 }
 
 export interface ConnectorPluginSyncResult {

@@ -59,4 +59,13 @@ describe("connector manifest packaging contract", () => {
 
     expect(assertConnectorPluginManifest(manifest)).toBe(manifest);
   });
+
+  it("declares the settle capability and rejects a non-boolean one", () => {
+    expect(validManifest.capabilities.connector.settle).toBe(true);
+
+    const manifest = cloneManifest();
+    manifest.capabilities.connector.settle = "yes";
+
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(/settle/);
+  });
 });

@@ -7,6 +7,10 @@ import type {
   ConnectorSyncWorkItemUpdate,
 } from "./contract.js";
 import { resolveEstimateSyncAction } from "./estimate-sync.js";
+import {
+  createStateCategoryResolver,
+  type AzureStateInfo,
+} from "./state-categories.js";
 
 export interface AzureDevOpsConnectionInput {
   id?: string;
@@ -23,17 +27,6 @@ export interface AzureDevOpsConnectionInput {
   autoSync?: boolean;
   autoSyncIntervalMinutes?: number;
 }
-
-const CLOSED_STATE_NAMES = new Set([
-  "closed",
-  "done",
-  "completed",
-  "removed",
-  "resolved",
-  "cut",
-  "cancelled",
-  "canceled",
-]);
 
 const TASK_WORK_ITEM_TYPE = "Task";
 const BACKLOG_PARENT_WORK_ITEM_TYPES = [
@@ -57,7 +50,7 @@ interface AzureWorkItemRelation {
   url?: string;
 }
 
-interface AzureWorkItem {
+export interface AzureWorkItem {
   id: number;
   fields?: Record<string, unknown>;
   relations?: AzureWorkItemRelation[];
@@ -85,6 +78,10 @@ interface AzureDevOpsImportFetchResult {
 interface AzureDevOpsSyncContext {
   items: ConnectorImportCandidateInput[];
   itemsBySourceId: Map<string, ConnectorImportCandidateInput>;
+  /** Every fetched work item, open or not, with its state category. */
+  allItems: Map<number, AzureWorkItem>;
+  stateInfo: Map<number, AzureStateInfo>;
+  resolver: ReturnType<typeof createStateCategoryResolver>;
   fields: {
     priorityField?: AzureResolvedFieldMetadata;
     originalEstimateField?: AzureResolvedFieldMetadata;
@@ -127,7 +124,7 @@ function createAuthHeader(personalAccessToken: string) {
   return `Basic ${Buffer.from(`:${personalAccessToken}`, "utf8").toString("base64")}`;
 }
 
-function normalizeDisplayValue(value: unknown): string | undefined {
+export function normalizeDisplayValue(value: unknown): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
@@ -209,7 +206,7 @@ function normalizeLookupValue(value: string | undefined): string | undefined {
   return trimmed ? trimmed.toLowerCase() : undefined;
 }
 
-function parsePriorityValue(value: unknown): number | undefined {
+export function parsePriorityValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.min(999, Math.round(value)));
   }
@@ -258,7 +255,7 @@ function clampNote(value: string) {
   return `${trimmed.slice(0, MAX_CANDIDATE_NOTE_LENGTH - 3).trimEnd()}...`;
 }
 
-function getProjectName(workItem: AzureWorkItem) {
+export function getProjectName(workItem: AzureWorkItem) {
   return normalizeDisplayValue(workItem.fields?.["System.TeamProject"]);
 }
 
@@ -274,14 +271,6 @@ function parseRelatedWorkItemId(relation: AzureWorkItemRelation | undefined): nu
   }
 
   return Number(match[1]);
-}
-
-function isOpenState(state: string | undefined) {
-  if (!state) {
-    return true;
-  }
-
-  return !CLOSED_STATE_NAMES.has(state.trim().toLowerCase());
 }
 
 function isTask(workItemType: string | undefined) {
@@ -310,7 +299,7 @@ WHERE (
 ORDER BY [System.ChangedDate] DESC`;
 }
 
-async function requestAzureDevOps<T>(
+export async function requestAzureDevOps<T>(
   config: AzureDevOpsConnectionInput,
   pathname: string,
   init?: RequestInit,
@@ -398,7 +387,7 @@ function requireSingleFieldMatch(
   return undefined;
 }
 
-async function resolveAzureFieldMetadata(
+export async function resolveAzureFieldMetadata(
   config: AzureDevOpsConnectionInput,
   configuredFieldName: string | undefined,
 ): Promise<AzureResolvedFieldMetadata | undefined> {
@@ -535,21 +524,22 @@ async function fetchWorkItems(
   return results.flat();
 }
 
-async function updateAzureWorkItemFields(
+/** Returns the updated work item, or undefined when there was nothing to write. */
+export async function updateAzureWorkItemFields(
   config: AzureDevOpsConnectionInput,
   workItemId: string,
-  fields: Record<string, number>,
-) {
+  fields: Record<string, number | string>,
+): Promise<AzureWorkItem | undefined> {
   const operations = Object.entries(fields).map(([fieldName, value]) => ({
     op: "add",
     path: `/fields/${fieldName}`,
     value,
   }));
   if (operations.length === 0) {
-    return;
+    return undefined;
   }
 
-  await requestAzureDevOps(
+  return await requestAzureDevOps<AzureWorkItem>(
     config,
     `/_apis/wit/workitems/${encodeURIComponent(workItemId)}?api-version=7.1`,
     {
@@ -622,6 +612,7 @@ function mapWorkItemToCandidate(
   workItem: AzureWorkItem,
   allItems: Map<number, AzureWorkItem>,
   baseCandidateIds: Set<number>,
+  stateInfo: Map<number, AzureStateInfo>,
   fieldReferences?: {
     priorityFieldReferenceName?: string;
     originalEstimateFieldReferenceName?: string;
@@ -647,9 +638,11 @@ function mapWorkItemToCandidate(
     ? parseEstimateValue(workItem.fields?.[fieldReferences.completedEstimateFieldReferenceName])
     : undefined;
 
-  if (!title || !workItemType || !isOpenState(state)) {
+  const isOpen = (item: AzureWorkItem) => !stateInfo.get(item.id)?.done;
+  if (!title || !workItemType || !isOpen(workItem)) {
     return null;
   }
+  const stateCategory = stateInfo.get(workItem.id)?.category;
 
   const isBaseCandidate = baseCandidateIds.has(workItem.id);
   const selectable = isBaseCandidate;
@@ -659,8 +652,7 @@ function mapWorkItemToCandidate(
     const parentId = getParentId(workItem);
     const parent = parentId ? allItems.get(parentId) : undefined;
     const parentTitle = normalizeDisplayValue(parent?.fields?.["System.Title"]);
-    const parentState = normalizeDisplayValue(parent?.fields?.["System.State"]);
-    const hasImportableParent = Boolean(parent && parentTitle && isOpenState(parentState));
+    const hasImportableParent = Boolean(parent && parentTitle && isOpen(parent));
 
     return {
       source: "azure_devops",
@@ -675,6 +667,8 @@ function mapWorkItemToCandidate(
       projectName,
       workItemType,
       state,
+      stateCategory,
+      stateDone: false,
       assignedTo,
       priority,
       originalEstimateHours,
@@ -700,8 +694,7 @@ function mapWorkItemToCandidate(
 
     const child = allItems.get(childId);
     const childType = normalizeDisplayValue(child?.fields?.["System.WorkItemType"]);
-    const childState = normalizeDisplayValue(child?.fields?.["System.State"]);
-    return Boolean(child && isTask(childType) && isOpenState(childState));
+    return Boolean(child && isTask(childType) && isOpen(child));
   }).length;
 
   if (!selectable && includedChildCount === 0) {
@@ -721,6 +714,8 @@ function mapWorkItemToCandidate(
     projectName,
     workItemType,
     state,
+    stateCategory,
+    stateDone: false,
     assignedTo,
     priority,
     originalEstimateHours,
@@ -733,9 +728,28 @@ function mapWorkItemToCandidate(
   };
 }
 
+/** The state category of each work item, loading each type's states once. */
+async function describeWorkItemStates(
+  resolver: ReturnType<typeof createStateCategoryResolver>,
+  workItems: Iterable<AzureWorkItem>,
+) {
+  const entries = await Promise.all(
+    Array.from(workItems, async (workItem) => {
+      const info = await resolver.describeState(
+        getProjectName(workItem),
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]),
+        normalizeDisplayValue(workItem.fields?.["System.State"]),
+      );
+      return [workItem.id, info] as const;
+    }),
+  );
+  return new Map(entries);
+}
+
 async function fetchAzureDevOpsSyncContext(
   config: AzureDevOpsConnectionInput,
 ): Promise<AzureDevOpsSyncContext> {
+  const resolver = createStateCategoryResolver(config, requestAzureDevOps);
   const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
   const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
   const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
@@ -745,6 +759,9 @@ async function fetchAzureDevOpsSyncContext(
     return {
       items: [],
       itemsBySourceId: new Map(),
+      allItems: new Map(),
+      stateInfo: new Map(),
+      resolver,
       fields: {
         priorityField,
         originalEstimateField,
@@ -781,6 +798,7 @@ async function fetchAzureDevOpsSyncContext(
     [...baseItems, ...parentContextItems].map((item) => [item.id, item] as const),
   );
 
+  const stateInfo = await describeWorkItemStates(resolver, allItems.values());
   const candidatesBySourceId = new Map<string, ConnectorImportCandidateInput>();
   for (const workItem of allItems.values()) {
     const candidate = mapWorkItemToCandidate(
@@ -788,6 +806,7 @@ async function fetchAzureDevOpsSyncContext(
       workItem,
       allItems,
       baseCandidateIds,
+      stateInfo,
       {
         priorityFieldReferenceName: priorityField?.resolvedReferenceName,
         originalEstimateFieldReferenceName: originalEstimateField?.resolvedReferenceName,
@@ -821,6 +840,9 @@ async function fetchAzureDevOpsSyncContext(
   return {
     items,
     itemsBySourceId: new Map(items.map((item) => [item.sourceId, item] as const)),
+    allItems,
+    stateInfo,
+    resolver,
     fields: {
       priorityField,
       originalEstimateField,
@@ -1075,13 +1097,87 @@ export async function fetchAzureDevOpsImportCandidates(
   return { items: syncContext.items };
 }
 
+/** The work item id at the end of a source URL, such as `.../_workitems/edit/42`. */
+export function parseAzureWorkItemId(sourceId: string): number | null {
+  const match = /(\d+)\/?$/.exec(sourceId.trim());
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Ajour's items that reached a done category, so Ajour archives them. Items the
+ * sync query no longer returns are fetched by id.
+ */
+async function findDoneWorkItems(
+  config: AzureDevOpsConnectionInput,
+  syncContext: AzureDevOpsSyncContext,
+  workItems: ConnectorSyncWorkItem[],
+): Promise<ConnectorImportCandidateInput[]> {
+  const localIds = new Map<number, string>();
+  for (const workItem of workItems) {
+    const id = parseAzureWorkItemId(workItem.sourceId);
+    if (id !== null && !syncContext.itemsBySourceId.has(workItem.sourceId)) {
+      localIds.set(id, workItem.sourceId);
+    }
+  }
+  if (localIds.size === 0) {
+    return [];
+  }
+
+  const missingIds = Array.from(localIds.keys()).filter(
+    (id) => !syncContext.allItems.has(id),
+  );
+  const fetched = await fetchWorkItems(config, missingIds);
+  const stateInfo = new Map([
+    ...syncContext.stateInfo,
+    ...(await describeWorkItemStates(syncContext.resolver, fetched)),
+  ]);
+  const candidates = new Map(syncContext.allItems);
+  for (const workItem of fetched) {
+    candidates.set(workItem.id, workItem);
+  }
+
+  const doneItems: ConnectorImportCandidateInput[] = [];
+  for (const [id, sourceId] of localIds) {
+    const workItem = candidates.get(id);
+    const info = stateInfo.get(id);
+    if (!workItem || !info?.done) {
+      continue;
+    }
+
+    doneItems.push({
+      source: "azure_devops",
+      connectionId: config.id ?? "unknown_connection",
+      connectionLabel: config.label,
+      tenantLabel: config.tenantLabel,
+      sourceId,
+      externalId: String(id),
+      sourceUrl: sourceId,
+      title: normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
+      projectName: getProjectName(workItem),
+      workItemType:
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ?? "Work item",
+      state: normalizeDisplayValue(workItem.fields?.["System.State"]),
+      stateCategory: info.category,
+      stateDone: true,
+      depth: 0,
+      selectable: false,
+      selected: false,
+      childCount: 0,
+    });
+  }
+  return doneItems;
+}
+
 export async function syncAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[] = [],
 ): Promise<ConnectorPluginSyncResult> {
   const syncContext = await fetchAzureDevOpsSyncContext(config);
+  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  // Last, so the sync's earlier requests keep their order.
+  const doneItems = await findDoneWorkItems(config, syncContext, workItems);
   return {
-    items: syncContext.items,
-    workItemUpdates: await buildAzureWorkItemUpdates(config, syncContext, workItems),
+    items: [...syncContext.items, ...doneItems],
+    workItemUpdates,
   };
 }

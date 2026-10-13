@@ -11,7 +11,8 @@ import type {
 } from "./contract.js";
 
 const SEARCH_PAGE_SIZE = 25;
-const MAX_SEARCH_PAGES = 4;
+const MAX_SEARCH_RESULTS = 1000;
+const MAX_SEARCH_PAGES = MAX_SEARCH_RESULTS / SEARCH_PAGE_SIZE;
 const TRACKED_BATCH_SIZE = 20;
 
 interface GraphQLResponse<T> {
@@ -200,16 +201,30 @@ const PULL_REQUEST_FIELDS = `
 
 const VIEWER_QUERY = `query { viewer { ${ACTOR_FIELDS} } }`;
 
-const TEAMS_QUERY = `query($login: String!) {
+const TEAMS_QUERY = `query($login: String!, $after: String) {
   viewer {
-    organizations(first: 100) {
-      nodes { login teams(first: 100, userLogins: [$login]) { nodes { slug } } }
+    organizations(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { login teams(first: 100, userLogins: [$login]) {
+        pageInfo { hasNextPage endCursor }
+        nodes { slug }
+      } }
+    }
+  }
+}`;
+
+const ORGANIZATION_TEAMS_QUERY = `query($organization: String!, $login: String!, $after: String) {
+  organization(login: $organization) {
+    teams(first: 100, userLogins: [$login], after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { slug }
     }
   }
 }`;
 
 const SEARCH_QUERY = `query($q: String!, $after: String) {
   search(type: ISSUE, query: $q, first: ${SEARCH_PAGE_SIZE}, after: $after) {
+    issueCount
     pageInfo { hasNextPage endCursor }
     nodes { ... on PullRequest { ${PULL_REQUEST_FIELDS} } }
   }
@@ -264,11 +279,9 @@ function checkState(state: string | undefined): CodeHostPullRequestFacts["checks
 
 interface MappingContext {
   viewer: CodeHostUser;
-  /** "org/team" slugs the viewer belongs to, or null when GitHub would not list them. */
-  viewerTeams: Set<string> | null;
+  /** Complete "org/team" membership snapshot, or empty when team requests are off. */
+  viewerTeams: Set<string>;
   includeTeamRequests: boolean;
-  /** Pull requests GitHub returned for a review request search that counts teams. */
-  teamRequestedIds: Set<string>;
 }
 
 export function toPullRequestFacts(
@@ -278,12 +291,6 @@ export function toPullRequestFacts(
   const viewerLogin = context.viewer.login.toLowerCase();
   const author = toUser(pullRequest.author);
 
-  const directlyRequested = pullRequest.reviewRequests.nodes.some(
-    (node) =>
-      node.requestedReviewer &&
-      node.requestedReviewer.__typename !== "Team" &&
-      node.requestedReviewer.login.toLowerCase() === viewerLogin,
-  );
   const reviewRequests: CodeHostReviewRequest[] = pullRequest.reviewRequests.nodes.flatMap(
     ({ requestedReviewer: reviewer }): CodeHostReviewRequest[] => {
       if (!reviewer) {
@@ -299,11 +306,7 @@ export function toPullRequestFacts(
         ];
       }
       const name = `${reviewer.organization.login}/${reviewer.slug}`;
-      const viewerIsMember = context.viewerTeams
-        ? context.viewerTeams.has(name.toLowerCase())
-        : // Without team access, GitHub's search still says a team of the
-          // user was asked when the user was not asked directly.
-          context.teamRequestedIds.has(pullRequest.id) && !directlyRequested;
+      const viewerIsMember = context.viewerTeams.has(name.toLowerCase());
       return [
         {
           kind: "team",
@@ -384,19 +387,52 @@ export async function fetchViewer(client: GitHubClient) {
   return toUser(data.viewer);
 }
 
-async function fetchViewerTeams(client: GitHubClient, login: string) {
+interface PageInfo {
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+interface TeamsPage {
+  nodes: { slug: string }[];
+  pageInfo: PageInfo;
+}
+
+function nextCursor(page: PageInfo, previous: string | null) {
+  if (!page.hasNextPage) return null;
+  if (!page.endCursor || page.endCursor === previous)
+    throw new Error("GitHub returned an incomplete pagination cursor.");
+  return page.endCursor;
+}
+
+async function fetchViewerTeams(client: GitHubClient, login: string): Promise<Set<string>> {
+  const memberships = new Set<string>();
   try {
-    const data = await client.query<{
-      viewer: { organizations: { nodes: { login: string; teams: { nodes: { slug: string }[] } }[] } };
-    }>(TEAMS_QUERY, { login });
-    return new Set(
-      data.viewer.organizations.nodes.flatMap((organization) =>
-        organization.teams.nodes.map((team) => `${organization.login}/${team.slug}`.toLowerCase()),
-      ),
-    );
+    let after: string | null = null;
+    do {
+      const data: {
+        viewer: { organizations: { nodes: { login: string; teams: TeamsPage }[]; pageInfo: PageInfo } };
+      } = await client.query(TEAMS_QUERY, { login, after });
+      for (const organization of data.viewer.organizations.nodes) {
+        let teams = organization.teams;
+        let teamAfter: string | null = null;
+        while (true) {
+          for (const team of teams.nodes) memberships.add(`${organization.login}/${team.slug}`.toLowerCase());
+          teamAfter = nextCursor(teams.pageInfo, teamAfter);
+          if (!teamAfter) break;
+          const next = await client.query<{ organization: { teams: TeamsPage } | null }>(
+            ORGANIZATION_TEAMS_QUERY,
+            { organization: organization.login, login, after: teamAfter },
+          );
+          if (!next.organization) throw new Error("GitHub could not read an organization.");
+          teams = next.organization.teams;
+        }
+      }
+      after = nextCursor(data.viewer.organizations.pageInfo, after);
+    } while (after);
+    return memberships;
   } catch {
-    // A token without read:org cannot list teams.
-    return null;
+    throw new Error(
+      "GitHub could not verify team membership. Grant organization members read access (read:org for classic tokens), or turn off Include team review requests.",
+    );
   }
 }
 
@@ -406,19 +442,22 @@ async function search(client: GitHubClient, query: string) {
   for (let page = 0; page < MAX_SEARCH_PAGES; page += 1) {
     const data: {
       search: {
+        issueCount: number;
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
         nodes: (GitHubPullRequest | Record<string, never>)[];
       };
     } = await client.query(SEARCH_QUERY, { q: query, after });
-    pullRequests.push(
-      ...data.search.nodes.filter((node): node is GitHubPullRequest => "id" in node),
-    );
-    if (!data.search.pageInfo.hasNextPage || !data.search.pageInfo.endCursor) {
-      break;
-    }
-    after = data.search.pageInfo.endCursor;
+    if (data.search.issueCount > MAX_SEARCH_RESULTS)
+      throw new Error(
+        "GitHub search exceeds its 1,000-result limit. The sync was not applied; reduce the number of matching open pull requests.",
+      );
+    pullRequests.push(...data.search.nodes.filter((node): node is GitHubPullRequest => "id" in node));
+    after = nextCursor(data.search.pageInfo, after);
+    if (!after) return pullRequests;
   }
-  return pullRequests;
+  throw new Error(
+    "GitHub search still has more results at its 1,000-result limit. The sync was not applied.",
+  );
 }
 
 async function fetchTracked(client: GitHubClient, refs: CodeHostPullRequestRef[]) {
@@ -481,7 +520,9 @@ export async function syncPullRequests(
 ): Promise<CodeHostSyncResult> {
   const client = new GitHubClient(config.apiUrl, config.token);
   const viewer = await fetchViewer(client);
-  const viewerTeams = config.includeTeamRequests ? await fetchViewerTeams(client, viewer.login) : null;
+  const viewerTeams = config.includeTeamRequests
+    ? await fetchViewerTeams(client, viewer.login)
+    : new Set<string>();
 
   const base = "is:pr is:open archived:false";
   const requestedQuery = config.includeTeamRequests ? "review-requested:@me" : "user-review-requested:@me";
@@ -504,7 +545,6 @@ export async function syncPullRequests(
     viewer,
     viewerTeams,
     includeTeamRequests: config.includeTeamRequests,
-    teamRequestedIds: new Set(config.includeTeamRequests ? requested.map((pullRequest) => pullRequest.id) : []),
   };
   const selected = Array.from(found.values())
     .filter(
@@ -528,5 +568,9 @@ export async function syncPullRequests(
     })));
   }
 
-  return { viewer, pullRequests };
+  if (pullRequests.length > MAX_SEARCH_RESULTS)
+    throw new Error(
+      "The combined pull request list exceeds Ajour's 1,000-item limit. Narrow the connection's repository scope.",
+    );
+  return { viewer, instanceUrl: config.hostUrl, pullRequests };
 }

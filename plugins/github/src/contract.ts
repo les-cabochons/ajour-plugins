@@ -118,5 +118,6 @@ export interface CodeHostSyncRequest {
 
 export interface CodeHostSyncResult {
   viewer: CodeHostUser;
+  instanceUrl?: string;
   pullRequests: CodeHostPullRequestFacts[];
 }

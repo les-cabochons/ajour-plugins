@@ -79,6 +79,14 @@ Enterprise Server, set **GitHub URL** to your server, such as
 `https://github.acme.com`. The token stays in Ajour's local connection
 configuration.
 
+Sync includes review-request events and mention flags so Ajour can decide when
+an item needs attention without storing comment or review bodies. For a reviewer
+whose latest review requests changes, the plugin reads the latest 100 activities
+on the head branch, including a fork branch, to attribute its current head SHA to
+the pusher and the actual push time. If that activity is unavailable, the actor
+stays unknown. Ajour keeps the item settled until a later sync identifies a push
+by someone else. Commit authors are not treated as pushers.
+
 ## License
 
 [MIT](LICENSE)

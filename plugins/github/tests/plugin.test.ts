@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mentions } from "../src/github.ts";
 import { syncPullRequests, validateConnection } from "../src/plugin.ts";
 
-const viewer = { __typename: "User", login: "octocat", name: "The Octocat", avatarUrl: "https://example.com/a.png" };
+const viewer = {
+  __typename: "User",
+  login: "octocat",
+  name: "The Octocat",
+  avatarUrl: "https://example.com/a.png",
+};
 const alice = { __typename: "User", login: "alice", avatarUrl: "https://example.com/b.png" };
 const bot = { __typename: "Bot", login: "codecov", avatarUrl: "https://example.com/c.png" };
 
@@ -44,17 +49,20 @@ function stubGitHub(handler: (call: GraphQLCall) => unknown) {
     const call = JSON.parse(String(init.body)) as GraphQLCall;
     calls.push(call);
     const data = handler(call);
-    return new Response(JSON.stringify(data instanceof Error ? { errors: [{ message: data.message }] } : { data }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify(data instanceof Error ? { errors: [{ message: data.message }] } : { data }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   });
   vi.stubGlobal("fetch", fetch);
   return { calls, fetch };
 }
 
 function searchResult(nodes: unknown[]) {
-  return { search: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } };
+  return { search: { issueCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes } };
 }
 
 const connection = {
@@ -78,7 +86,12 @@ describe("GitHub plugin", () => {
     const { fetch } = stubGitHub(() => ({ viewer }));
 
     await expect(
-      validateConnection({ label: "Work", hostUrl: "https://github.com/", token: " secret ", include: "Acme" }),
+      validateConnection({
+        label: "Work",
+        hostUrl: "https://github.com/",
+        token: " secret ",
+        include: "Acme",
+      }),
     ).resolves.toEqual({
       normalizedConfig: {
         label: "Work",
@@ -100,9 +113,126 @@ describe("GitHub plugin", () => {
   });
 
   it("explains a rejected token", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 401 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 401 })),
+    );
 
     await expect(validateConnection({ token: "expired" })).rejects.toThrow("GitHub rejected the token");
+  });
+
+  it("discovers unseen pull requests beyond the fourth search page", async () => {
+    const { calls } = stubGitHub((call) => {
+      if (!call.query.includes("search(")) return { viewer };
+      if (!String(call.variables.q).includes("author:@me")) return searchResult([]);
+      const page = Number(call.variables.after ?? 0);
+      return {
+        search: {
+          issueCount: 125,
+          pageInfo: { hasNextPage: page < 4, endCursor: String(page + 1) },
+          nodes: Array.from({ length: 25 }, (_, index) =>
+            pullRequest({ id: `PR_${page * 25 + index + 1}`, number: page * 25 + index + 1, author: viewer }),
+          ),
+        },
+      };
+    });
+    const result = await syncPullRequests(
+      { ...connection, config: { token: "t", includeTeamRequests: false } },
+      { tracked: [] },
+    );
+    expect(result.pullRequests).toHaveLength(125);
+    expect(result.pullRequests.some((pr) => pr.number === 125)).toBe(true);
+    expect(
+      calls.filter(
+        (call) =>
+          String(call.variables.q).includes("author:@me") &&
+          !String(call.variables.q).includes("-author:@me"),
+      ),
+    ).toHaveLength(5);
+  });
+
+  it("fails instead of returning a partial search above GitHub's 1000 result limit", async () => {
+    stubGitHub((call) =>
+      call.query.includes("search(")
+        ? { search: { issueCount: 1001, pageInfo: { hasNextPage: true, endCursor: "next" }, nodes: [] } }
+        : { viewer },
+    );
+    await expect(
+      syncPullRequests(
+        { ...connection, config: { token: "t", includeTeamRequests: false } },
+        { tracked: [] },
+      ),
+    ).rejects.toThrow(/1,000|1000/);
+  });
+
+  it("paginates organizations and membership-filtered teams independently", async () => {
+    const terminal = { hasNextPage: false, endCursor: null };
+    const requested = pullRequest({
+      reviewRequests: {
+        nodes: [
+          { requestedReviewer: { __typename: "Team", slug: "late", organization: { login: "second" } } },
+        ],
+      },
+    });
+    const { calls } = stubGitHub((call) => {
+      if (call.query.includes("organizations"))
+        return {
+          viewer: {
+            organizations:
+              call.variables.after === "org-next"
+                ? {
+                    pageInfo: terminal,
+                    nodes: [
+                      {
+                        login: "second",
+                        teams: {
+                          pageInfo: { hasNextPage: true, endCursor: "team-next" },
+                          nodes: [{ slug: "first" }],
+                        },
+                      },
+                    ],
+                  }
+                : {
+                    pageInfo: { hasNextPage: true, endCursor: "org-next" },
+                    nodes: [{ login: "first", teams: { pageInfo: terminal, nodes: [] } }],
+                  },
+          },
+        };
+      if (call.query.includes("organization(login:"))
+        return { organization: { teams: { pageInfo: terminal, nodes: [{ slug: "late" }] } } };
+      if (call.query.includes("search(")) return searchResult([requested]);
+      return { viewer };
+    });
+    const result = await syncPullRequests(connection, { tracked: [] });
+    expect(result.pullRequests[0]?.reviewRequests).toEqual([
+      { kind: "team", name: "second/late", includesViewer: true },
+    ]);
+    expect(
+      calls.some((call) => call.query.includes("organizations") && call.variables.after === "org-next"),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) => call.query.includes("organization(login:") && call.variables.after === "team-next",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects unavailable membership instead of guessing all teams were requested for the viewer", async () => {
+    const requested = pullRequest({
+      reviewRequests: {
+        nodes: ["one", "two"].map((slug) => ({
+          requestedReviewer: { __typename: "Team", slug, organization: { login: "acme" } },
+        })),
+      },
+    });
+    stubGitHub((call) =>
+      call.query.includes("organizations")
+        ? new Error("Resource not accessible by integration")
+        : call.query.includes("search(")
+          ? searchResult([requested])
+          : { viewer },
+    );
+    await expect(syncPullRequests(connection, { tracked: [] })).rejects.toThrow(/team membership/i);
   });
 
   it("returns facts for authored, requested and reviewed pull requests once each", async () => {
@@ -129,7 +259,12 @@ describe("GitHub plugin", () => {
             id: "T_1",
             comments: {
               nodes: [
-                { id: "C_1", createdAt: "2026-10-01T14:00:00Z", body: "@octocat fixed, thanks", author: alice },
+                {
+                  id: "C_1",
+                  createdAt: "2026-10-01T14:00:00Z",
+                  body: "@octocat fixed, thanks",
+                  author: alice,
+                },
               ],
             },
           },
@@ -139,7 +274,19 @@ describe("GitHub plugin", () => {
     const authored = pullRequest({ id: "PR_2", number: 2, author: viewer, timelineItems: { nodes: [] } });
     const { calls } = stubGitHub((call) => {
       if (call.query.includes("organizations")) {
-        return { viewer: { organizations: { nodes: [{ login: "acme", teams: { nodes: [{ slug: "backend" }] } }] } } };
+        return {
+          viewer: {
+            organizations: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  login: "acme",
+                  teams: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ slug: "backend" }] },
+                },
+              ],
+            },
+          },
+        };
       }
       if (call.query.includes("search(")) {
         const q = String(call.variables.q);
@@ -224,12 +371,15 @@ describe("GitHub plugin", () => {
       return { viewer };
     });
 
-    const result = await syncPullRequests(connection, {
-      tracked: [
-        { repository: "acme/api", number: 9 },
-        { repository: "acme/gone", number: 3 },
-      ],
-    });
+    const result = await syncPullRequests(
+      { ...connection, config: { ...connection.config, includeTeamRequests: false } },
+      {
+        tracked: [
+          { repository: "acme/api", number: 9 },
+          { repository: "acme/gone", number: 3 },
+        ],
+      },
+    );
 
     expect(result.pullRequests).toEqual([
       expect.objectContaining({ number: 9, state: "merged", closedAt: Date.parse("2026-10-03T10:00:00Z") }),
@@ -256,14 +406,19 @@ describe("GitHub plugin", () => {
     });
     stubGitHub((call) => {
       if (call.query.includes("search(")) {
-        return String(call.variables.q).includes("author:@me") ? searchResult([excluded, draft]) : searchResult([]);
+        return String(call.variables.q).includes("author:@me")
+          ? searchResult([excluded, draft])
+          : searchResult([]);
       }
       if (call.query.includes("repository(")) return { p0: { pullRequest: closedExcluded } };
       return { viewer };
     });
 
     const result = await syncPullRequests(
-      { ...connection, config: { token: "t", exclude: "acme/legacy", hideDrafts: true, includeTeamRequests: false } },
+      {
+        ...connection,
+        config: { token: "t", exclude: "acme/legacy", hideDrafts: true, includeTeamRequests: false },
+      },
       { tracked: [{ repository: "acme/legacy", number: 5 }] },
     );
 
@@ -273,12 +428,16 @@ describe("GitHub plugin", () => {
   it("treats team requests as not for the user when team requests are off", async () => {
     const requested = pullRequest({
       reviewRequests: {
-        nodes: [{ requestedReviewer: { __typename: "Team", slug: "backend", organization: { login: "acme" } } }],
+        nodes: [
+          { requestedReviewer: { __typename: "Team", slug: "backend", organization: { login: "acme" } } },
+        ],
       },
     });
     const { calls } = stubGitHub((call) => {
       if (call.query.includes("search(")) {
-        return String(call.variables.q).includes("reviewed-by") ? searchResult([requested]) : searchResult([]);
+        return String(call.variables.q).includes("reviewed-by")
+          ? searchResult([requested])
+          : searchResult([]);
       }
       return { viewer };
     });

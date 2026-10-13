@@ -71,8 +71,10 @@ plugin**, and select the generated `.ajour-connector` archive.
 The connection needs a personal access token. A fine-grained token needs read
 and write access to pull requests and read access to contents on the
 repositories you want, plus organization members read access for team review
-requests. A classic token needs `repo` and `read:org`. Without team access the
-plugin still works and infers team requests from GitHub's search. For GitHub
+requests. A classic token needs `repo` and `read:org`. If team membership cannot
+be read, sync reports the missing access. Turn off **Include team review
+requests** to keep authored, direct-requested and previously reviewed PRs
+without organization access. The plugin does not guess membership. For GitHub
 Enterprise Server, set **GitHub URL** to your server, such as
 `https://github.acme.com`. The token stays in Ajour's local connection
 configuration.

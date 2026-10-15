@@ -1,6 +1,6 @@
 # Ajour Workday (agent)
 
-An unofficial Ajour plugin that enters your Ajour week in the Workday timesheet. It has no code and does not use a Workday API. Ajour starts a coding agent, Claude Code or Codex, with the prompt in [`prompts/enter-week.md`](prompts/enter-week.md). The agent reads the week from Ajour and types it in Workday's web page in a Chrome window.
+An unofficial Ajour plugin that commits your Ajour week changes to the Workday timesheet. It has no code and does not use a Workday API. Ajour starts a coding agent, Claude Code or Codex, with the prompt in [`prompts/commit-week.md`](prompts/commit-week.md). The agent reads the week from Ajour and types it in Workday's web page in a Chrome window.
 
 It drives Workday's page, so it breaks when Workday changes that page. A plugin that uses Workday's API would replace it.
 
@@ -8,10 +8,9 @@ It never types a password or a code. With the optional "Sign-in username" settin
 
 ## What the agent does
 
-1. Reads the week's unsubmitted lines and Ajour's pace check. When the week is over or under pace, it asks before entering.
+1. Reads the week's changes from Ajour: entries added, updated or deleted since the last commit.
 2. Opens the timesheet URL from the plugin settings and goes to the week.
-3. Enters each line with its hours and a comment ending with the line's ID, such as `Fix login · ajour:1a2b3c4d`. The ID lets a second run find lines already entered. It marks each line as submitted in Ajour once Workday saved it.
-4. Compares the week's totals per day in Ajour and Workday, and asks what to do when they differ.
+3. Adds, updates or deletes one Workday entry per Ajour entry. Each entry's comment ends with an ID, such as `Fix login · ajour:1a2b3c4d`, so a second run finds what is already done. It marks each change as committed in Ajour once Workday saved it.
 
 ## Install
 
@@ -19,9 +18,9 @@ It never types a password or a code. With the optional "Sign-in username" settin
 2. In Ajour, Settings > Plugins, install the file.
 3. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
 4. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
-5. On the Submit page, click "Enter in Workday".
+5. On the Commit page, click "Commit to Workday".
 
-Requires an Ajour build with agent tasks, plugin API 3. Version 0.3.0 needs an Ajour with plugin project properties.
+Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.0 needs an Ajour with the Commit page.
 
 ## Development
 

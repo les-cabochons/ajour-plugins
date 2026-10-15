@@ -2,7 +2,7 @@
 
 Ajour Code Host - GitHub brings your GitHub pull requests into Ajour: the ones
 you wrote and the ones you were asked to review. It implements the code host
-capability of Ajour's plugin API version 2.
+capability of Ajour's plugin API version 3.
 
 ## What it does today
 

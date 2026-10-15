@@ -116,8 +116,8 @@ export function assertConnectorPluginManifest(manifest) {
     pattern: pluginVersionPattern,
   });
 
-  if (manifest.apiVersion !== 2) {
-    throw new Error("Connector manifest API version must be 2.");
+  if (manifest.apiVersion !== 3) {
+    throw new Error("Connector manifest API version must be 3.");
   }
 
   assertRecord(manifest.capabilities, "Connector manifest capabilities");

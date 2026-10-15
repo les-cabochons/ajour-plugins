@@ -37,7 +37,7 @@ describe("connector manifest packaging contract", () => {
 
   it("rejects unsupported API versions", () => {
     const manifest = cloneManifest();
-    manifest.apiVersion = 1;
+    manifest.apiVersion = 2;
 
     expect(() => assertConnectorPluginManifest(manifest)).toThrow(
       /API version/,

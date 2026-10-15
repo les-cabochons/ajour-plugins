@@ -2,6 +2,9 @@ export type AzureDevOpsQueryScope =
   | "assigned_to_me"
   | "project_open_tasks";
 
+/** Ajour's priority levels. A source value that maps to no level has no priority. */
+export type ConnectorPriorityLevel = "urgent" | "high" | "medium" | "low";
+
 export type ConnectorFieldValue = string | number | boolean;
 export type ConnectorFieldValues = Record<string, ConnectorFieldValue>;
 
@@ -56,7 +59,7 @@ export interface ConnectorImportCandidateInput {
   /** True for Completed and Removed. Ajour archives done items. */
   stateDone?: boolean;
   assignedTo?: string;
-  priority?: number;
+  priority?: ConnectorPriorityLevel;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   completedEstimateHours?: number;
@@ -126,7 +129,7 @@ export interface ConnectorSettleStatesResult {
 export interface ConnectorSettleWriteRequest {
   sourceId: string;
   state?: string;
-  priority?: number;
+  priority?: ConnectorPriorityLevel;
 }
 
 /** The item's values in Azure DevOps after the write. */
@@ -134,7 +137,7 @@ export interface ConnectorSettleWriteResult {
   state?: string;
   stateCategory?: string;
   stateDone?: boolean;
-  priority?: number;
+  priority?: ConnectorPriorityLevel;
 }
 
 export interface ConnectorPluginSyncResult {

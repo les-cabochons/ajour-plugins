@@ -42,6 +42,47 @@ describe("azure_devops plugin validateConnection", () => {
     });
   });
 
+  it("keeps each priority level's values, with defaults for a connection saved before they existed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ value: [] }))
+        .mockResolvedValueOnce(jsonResponse({ workItems: [] })),
+    );
+
+    const result = await validateConnection({
+      organizationUrl: "https://dev.azure.com/contoso",
+      personalAccessToken: "secret",
+      queryScope: "assigned_to_me",
+      priorityUrgent: " 0-1 ",
+      priorityLow: "",
+    });
+
+    expect(result.normalizedConfig).toMatchObject({
+      priorityUrgent: "0-1",
+      priorityHigh: "2",
+      priorityMedium: "3",
+      priorityLow: "",
+    });
+  });
+
+  it("rejects invalid priority level values before making a request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      validateConnection({
+        organizationUrl: "https://dev.azure.com/contoso",
+        personalAccessToken: "secret",
+        queryScope: "assigned_to_me",
+        priorityUrgent: "1-3",
+        priorityHigh: "3",
+      }),
+    ).rejects.toThrow('High priority "3" overlaps Urgent priority.');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("rejects non-primitive field values before making a request", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

@@ -4,6 +4,10 @@ import {
   type AzureDevOpsConnectionInput,
 } from "../src/azure-devops.ts";
 import { listAzureSettleStates, writeAzureSettle } from "../src/settle.ts";
+import {
+  DEFAULT_PRIORITY_LEVEL_VALUES,
+  parsePriorityLevelRanges,
+} from "../src/priority-levels.ts";
 import { AGILE_TASK_STATES } from "./work-item-type-states.ts";
 
 const ORG = "https://dev.azure.com/contoso";
@@ -22,9 +26,18 @@ function buildConnection(
     organizationUrl: ORG,
     personalAccessToken: "secret",
     queryScope: "assigned_to_me",
+    priorityLevels: parsePriorityLevelRanges(DEFAULT_PRIORITY_LEVEL_VALUES),
     ...overrides,
   };
 }
+
+/** A custom "MS Priority" field that runs from 1 to 100. */
+const MS_PRIORITY_LEVELS = parsePriorityLevelRanges({
+  urgent: "1-25",
+  high: "26-50",
+  medium: "51-75",
+  low: "76-100",
+});
 
 function task(title: string, state: string, extra: Record<string, unknown> = {}) {
   return {
@@ -204,15 +217,15 @@ describe("Azure DevOps settle", () => {
     });
   });
 
-  it("writes the state and the mapped priority in one update", async () => {
+  it("writes the state and the lowest value of the priority level's range in one update", async () => {
     const azure = fakeAzureDevOps({
       items: { 7: task("Fix login", "Active", { "Custom.MSPriority": "50" }) },
       fields: [{ name: "MS Priority", referenceName: "Custom.MSPriority", type: "string" }],
     });
 
     const result = await writeAzureSettle(
-      buildConnection({ priorityFieldName: "MS Priority" }),
-      { sourceId: sourceId(7), state: "Closed", priority: 25 },
+      buildConnection({ priorityFieldName: "MS Priority", priorityLevels: MS_PRIORITY_LEVELS }),
+      { sourceId: sourceId(7), state: "Closed", priority: "medium" },
     );
 
     expect(azure.patches).toEqual([
@@ -220,7 +233,7 @@ describe("Azure DevOps settle", () => {
         id: 7,
         body: [
           { op: "add", path: "/fields/System.State", value: "Closed" },
-          { op: "add", path: "/fields/Custom.MSPriority", value: "25" },
+          { op: "add", path: "/fields/Custom.MSPriority", value: "51" },
         ],
       },
     ]);
@@ -228,7 +241,7 @@ describe("Azure DevOps settle", () => {
       state: "Closed",
       stateCategory: "Completed",
       stateDone: true,
-      priority: 25,
+      priority: "medium",
     });
   });
 
@@ -241,31 +254,50 @@ describe("Azure DevOps settle", () => {
     });
     const connection = buildConnection({ priorityFieldName: "Priority" });
 
-    await writeAzureSettle(connection, { sourceId: sourceId(7), priority: 1 });
+    await writeAzureSettle(connection, { sourceId: sourceId(7), priority: "high" });
     await writeAzureSettle(connection, { sourceId: sourceId(7), state: "Resolved" });
 
     expect(azure.patches.map((patch) => patch.body)).toEqual([
-      [{ op: "add", path: "/fields/Microsoft.VSTS.Common.Priority", value: 1 }],
+      [{ op: "add", path: "/fields/Microsoft.VSTS.Common.Priority", value: 2 }],
       [{ op: "add", path: "/fields/System.State", value: "Resolved" }],
     ]);
   });
 
-  it("returns the mapped priority after a state-only write applies a workflow rule", async () => {
+  it("returns the priority level after a state-only write applies a workflow rule", async () => {
     const azure = fakeAzureDevOps({
       items: { 7: task("Fix login", "Active", { "Custom.MSPriority": "50" }) },
       fields: [{ name: "MS Priority", referenceName: "Custom.MSPriority", type: "string" }],
-      workflowFields: { "Custom.MSPriority": "75" },
+      workflowFields: { "Custom.MSPriority": "80" },
     });
 
     const result = await writeAzureSettle(
-      buildConnection({ priorityFieldName: "MS Priority" }),
+      buildConnection({ priorityFieldName: "MS Priority", priorityLevels: MS_PRIORITY_LEVELS }),
       { sourceId: sourceId(7), state: "Resolved" },
     );
 
     expect(azure.patches[0]?.body).toEqual([
       { op: "add", path: "/fields/System.State", value: "Resolved" },
     ]);
-    expect(result.priority).toBe(75);
+    expect(result.priority).toBe("low");
+  });
+
+  it("refuses a priority level without values and returns no level for a value outside every range", async () => {
+    const azure = fakeAzureDevOps({
+      items: { 7: task("Fix login", "Active", { "Custom.MSPriority": "500" }) },
+      fields: [{ name: "MS Priority", referenceName: "Custom.MSPriority", type: "string" }],
+    });
+    const connection = buildConnection({
+      priorityFieldName: "MS Priority",
+      priorityLevels: parsePriorityLevelRanges({ high: "1-10" }),
+    });
+
+    await expect(
+      writeAzureSettle(connection, { sourceId: sourceId(7), priority: "urgent" }),
+    ).rejects.toThrow("Set the Urgent priority values on the Azure DevOps connection");
+    expect(azure.patches).toEqual([]);
+
+    const result = await writeAzureSettle(connection, { sourceId: sourceId(7), state: "Resolved" });
+    expect(result.priority).toBeUndefined();
   });
 
   it.each([
@@ -310,7 +342,7 @@ describe("Azure DevOps settle", () => {
     });
 
     await expect(
-      writeAzureSettle(buildConnection(), { sourceId: sourceId(7), priority: 1 }),
+      writeAzureSettle(buildConnection(), { sourceId: sourceId(7), priority: "urgent" }),
     ).rejects.toThrow("Set a priority field on the Azure DevOps connection");
     await expect(
       writeAzureSettle(buildConnection(), { sourceId: sourceId(7), state: "Done" }),

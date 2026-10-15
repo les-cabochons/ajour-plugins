@@ -1,0 +1,32 @@
+{
+  "id": "workday-agent",
+  "version": "0.1.0",
+  "apiVersion": 3,
+  "displayName": "Workday (agent)",
+  "description": "Enters your Ajour week in the Workday timesheet through a coding agent and a Chrome window. Unofficial: it drives Workday's web page and breaks when the page changes. It never signs in for you.",
+  "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#f5a623\"/><path d=\"M6 10l2 6 2-4 2 4 2-4 2 4 2-6\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+  "capabilities": {
+    "agentTask": {
+      "tasks": [
+        {
+          "id": "enter-week",
+          "label": "Enter in Workday",
+          "placement": "submit-week",
+          "prompt": "prompts/enter-week.md",
+          "estimateMinutes": 10,
+          "weekLink": "{{settings.timesheetUrl}}",
+          "settings": [
+            {
+              "id": "timesheetUrl",
+              "label": "Workday timesheet URL",
+              "type": "url",
+              "required": true,
+              "placeholder": "https://wd5.myworkday.com/your-company/...",
+              "helpText": "Open Enter Time in Workday and copy the address."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

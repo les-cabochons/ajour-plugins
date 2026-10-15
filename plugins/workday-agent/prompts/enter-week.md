@@ -7,7 +7,7 @@ Keep a list of what you entered, what was already there, and what you skipped. T
 ## 1. Read the week
 
 1. Send update_session: "Reading the week of {{weekOf}}."
-2. Call get_submit_lines with weekOf {{weekOf}}, groupBy "day-task" and onlyUnsubmitted true. Each section is a day, with its date. Each line in it has a project, a task, hours, comments, a lineId and unsubmittedEntryIds.
+2. Call get_submit_lines with weekOf {{weekOf}}, groupBy "day-task" and onlyUnsubmitted true. Each section is a day, with its date. Each line in it has a project, a task, hours, comments, a lineId and unsubmittedEntryIds. A line may also have projectFullName and projectProperties. Use projectProperties["workday-agent"].code and .name for Workday; they already hold the defaults. Never use projectName to find a project: it is a short name only Ajour knows.
 3. No line to enter: end the session as done with "Nothing to enter." and stop.
 
 ## 2. Check the pace
@@ -41,7 +41,7 @@ Work day by day, Monday first. Send update_session when you start each day, for 
 
 For each line:
 
-1. Find the line's time type in Workday. Match the project by projectCode first, then by projectName, and the task by taskName. Ajour mirrors Workday's names, so an exact or near-exact match is expected.
+1. Find the line's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. Match the task by taskName.
 2. Look at that day and that time type for an entry whose comment ends with the line's lineId.
    - Found, with the same hours: it is already entered. Call mark_entries_submitted with the line's unsubmittedEntryIds and go on.
    - Found, with other hours: correct the hours to the line's hours, confirm, then mark the entries.
@@ -56,6 +56,7 @@ For each line:
    - Workday offers a short list of close matches: ask which one, with each match as a choice plus "Skip".
    - Otherwise skip the line.
    For a skipped line, call mark_entries_not_submitted on any entry IDs you marked for it, and note the reason.
+   When you skip a line because its project is not found, say in the summary that the user can set the Workday name or code in the project's Workday section in Ajour.
 6. Workday shows an error on save: read the message. If it names a field you can fix, fix it once. Otherwise cancel the dialog, call mark_entries_not_submitted on any entry IDs you marked for the line, note the error, and go on with the next line.
 
 Never delete an entry in Workday that has no lineId of the current week. Those are the user's own.

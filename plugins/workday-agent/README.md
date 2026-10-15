@@ -18,9 +18,10 @@ It never types a password or a code. With the optional "Sign-in username" settin
 1. Download the `.ajour-connector` file from the latest release.
 2. In Ajour, Settings > Plugins, install the file.
 3. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
-4. On the Submit page, click "Enter in Workday".
+4. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
+5. On the Submit page, click "Enter in Workday".
 
-Requires an Ajour build with agent tasks, plugin API 3.
+Requires an Ajour build with agent tasks, plugin API 3. Version 0.3.0 needs an Ajour with plugin project properties.
 
 ## Development
 

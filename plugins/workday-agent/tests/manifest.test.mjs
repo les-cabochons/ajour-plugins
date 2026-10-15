@@ -21,9 +21,9 @@ function unknownSlots(text) {
     );
 }
 
-test("the manifest is an agent-task-only plugin for API 3", () => {
+test("the manifest is an agent-task plugin with project properties for API 3", () => {
   assert.equal(manifest.apiVersion, 3);
-  assert.deepEqual(Object.keys(manifest.capabilities), ["agentTask"]);
+  assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties"]);
   assert.equal(manifest.entrypoint, undefined);
   assert.equal(task.placement, "submit-week");
 });

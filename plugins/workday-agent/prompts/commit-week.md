@@ -7,7 +7,7 @@ Keep a list of what you added, updated, deleted and skipped. The final summary u
 ## 1. Read the changes
 
 1. Send update_session: "Reading the changes for the week of {{weekOf}}."
-2. Call get_week_changes with weekOf {{weekOf}}. Each change is added, updated or deleted, with an entryId and an externalId. Updated and deleted changes also have the committed values: the day, project, task, hours and note Workday should have now.
+2. Call get_week_changes with weekOf {{weekOf}}. Each change is added, updated or deleted, with an entryId and an externalId. Updated and deleted changes also have the committed values. Those are what Workday holds now, from the last commit, and you use them to find the existing entry. The current values are what Workday should have after the change.
 3. No change: end the session as done with "Nothing to commit." and stop.
 4. A change may have projectFullName and projectProperties. Use projectProperties["workday-agent"].code and .name for Workday; they already hold the defaults. Never use projectName to find a project: it is a short name only Ajour knows.
 5. Ajour gives hours as decimal numbers with a dot, such as 0.75. Workday writes and reads hours with a decimal comma: 45 minutes is 0,75 and 7.5 hours is 7,5. Convert when you type hours in Workday, and when you compare Workday's hours with Ajour's.
@@ -36,15 +36,15 @@ Find a change's time type in Workday. Match the project by projectProperties["wo
 
 The comment of every entry you write is the note, then " · ", then the externalId. With no note, the comment is the externalId alone.
 
-- **Added**: look first for an entry on that day and time type whose comment ends with the externalId. Found with the same hours: it is already there. Otherwise add it as a new entry.
-- **Updated**: find the Workday entry whose comment ends with the externalId, on the committed day. When the day or the time type changed, delete it and add the entry on the new day with the new time type. Otherwise edit its hours and comment.
+- **Added**: look first for an entry on that day and time type whose comment ends with the externalId. Found with the same hours and comment: it is already there. Found with other hours or another comment: edit it to the current values, as for an updated change. Not found: add it as a new entry.
+- **Updated**: find the Workday entry whose comment ends with the externalId, on the committed day. When the day or the time type changed, delete it and add the entry on the new day with the new time type. Otherwise edit its hours and comment. When you delete and re-add, call mark_entries_committed only after both steps succeeded. If the re-add fails after the delete, ask with the choices "Retry" and "Stop", and do not mark the change.
 - **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. Not found: it is already gone.
 
 To add an entry, open the entry dialog from the day itself. Workday's page may be in English or French. Click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower. Fill the time type, the hours with a decimal comma such as 0,75 (never type a dot) and the comment. Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours.
 
 After Workday saved a change, call mark_entries_committed with its entryId. Never mark a change you did not apply.
 
-An updated or deleted change whose entry you cannot find by its externalId: look on that day and time type for an entry with the committed hours. Exactly one: treat it as that entry. Otherwise ask, with the choices "Skip" and "Stop".
+An updated or deleted change whose entry you cannot find by its externalId: look on that day and time type for an entry with the committed hours. Exactly one: treat it as that entry. Otherwise ask, with the choices "Skip" and "Stop". "Stop" ends the session as cancelled.
 
 The time type is not found:
 

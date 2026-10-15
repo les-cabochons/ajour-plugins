@@ -25,7 +25,13 @@ Otherwise ask, with the choices "Enter" and "Stop". Write the question with the 
 
 1. Send update_session: "Opening Workday."
 2. Open {{settings.timesheetUrl}}.
-3. A sign-in page, a code prompt or an SSO page: ask the user to sign in in the Chrome window, with the choices "Done" and "Stop". Never type in those pages. "Done": take a new snapshot and go on. "Stop": end the session as cancelled.
+3. A sign-in page: try to get through it without the user first. Send update_session: "Signing in to Workday."
+   - Workday's own page offers a single sign-on button, such as "Sign in with SSO" or the company's name: click it.
+   - An account picker lists "{{settings.username}}": click that account.
+   - A field asks for an email or a username, and "{{settings.username}}" is not empty: type it and press Next or Continue.
+   - Wait a few seconds after each step and take a new snapshot. The identity provider often signs in alone when Chrome still has its session.
+   - The page asks for a password, a code, a number to match or an approval, or the username is empty and a field needs it: stop there. Never type in that page. Ask the user to sign in in the Chrome window, with the choices "Done" and "Stop". "Done": take a new snapshot and go on. "Stop": end the session as cancelled.
+   - Do not try the same step more than twice. A loop back to the same page means you ask the user.
 4. Go to the week that holds {{weekOf}}. Use Workday's own week picker or its previous and next week arrows. Check the dates in the page header match the week before you enter anything.
 5. The week cannot be found, or the page is not a timesheet: end the session as failed and say what the page shows.
 
@@ -40,7 +46,8 @@ For each line:
    - Found, with the same hours: it is already entered. Call mark_entries_submitted with the line's unsubmittedEntryIds and go on.
    - Found, with other hours: correct the hours to the line's hours, confirm, then mark the entries.
 3. An entry on that day and time type that looks the same but has no lineId, or another lineId: ask, with the choices "Same entry, mark it", "Different, add mine" and "Skip". Name the day, the time type, and both hours and comments in the question.
-4. Otherwise add a new entry:
+4. Otherwise add a new entry. Workday's page may be in English or French.
+   - Open the entry dialog from the day itself: click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower.
    - time type: the one you found;
    - hours: the line's hours, as a decimal number;
    - comment: the line's comments, then " · ", then the lineId. With no comments, the comment is the lineId alone.

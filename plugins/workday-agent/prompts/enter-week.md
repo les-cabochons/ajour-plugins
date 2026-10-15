@@ -25,7 +25,13 @@ Otherwise ask, with the choices "Enter" and "Stop". Write the question with the 
 
 1. Send update_session: "Opening Workday."
 2. Open {{settings.timesheetUrl}}.
-3. A sign-in page, a code prompt or an SSO page: ask the user to sign in in the Chrome window, with the choices "Done" and "Stop". Never type in those pages. "Done": take a new snapshot and go on. "Stop": end the session as cancelled.
+3. A sign-in page: try to get through it without the user first. Send update_session: "Signing in to Workday."
+   - Workday's own page offers a single sign-on button, such as "Sign in with SSO" or the company's name: click it.
+   - An account picker lists "{{settings.username}}": click that account.
+   - A field asks for an email or a username, and "{{settings.username}}" is not empty: type it and press Next or Continue.
+   - Wait a few seconds after each step and take a new snapshot. The identity provider often signs in alone when Chrome still has its session.
+   - The page asks for a password, a code, a number to match or an approval, or the username is empty and a field needs it: stop there. Never type in that page. Ask the user to sign in in the Chrome window, with the choices "Done" and "Stop". "Done": take a new snapshot and go on. "Stop": end the session as cancelled.
+   - Do not try the same step more than twice. A loop back to the same page means you ask the user.
 4. Go to the week that holds {{weekOf}}. Use Workday's own week picker or its previous and next week arrows. Check the dates in the page header match the week before you enter anything.
 5. The week cannot be found, or the page is not a timesheet: end the session as failed and say what the page shows.
 

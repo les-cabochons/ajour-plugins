@@ -4,7 +4,7 @@ An unofficial Ajour plugin that enters your Ajour week in the Workday timesheet.
 
 It drives Workday's page, so it breaks when Workday changes that page. A plugin that uses Workday's API would replace it.
 
-It never signs in for you. When Workday asks for a sign-in, the agent asks you to sign in in the Chrome window.
+It never types a password or a code. With the optional "Sign-in username" setting, it clicks the SSO button and types your username, so sign-in finishes alone while Chrome still has your company session. When the page asks for a password, a code or an approval, the agent asks you to sign in in the Chrome window.
 
 ## What the agent does
 

@@ -41,7 +41,7 @@ Work day by day, Monday first. Send update_session when you start each day, for 
 
 For each line:
 
-1. Find the line's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. Match the task by taskName.
+1. Find the line's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a line has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskName.
 2. Look at that day and that time type for an entry whose comment ends with the line's lineId.
    - Found, with the same hours: it is already entered. Call mark_entries_submitted with the line's unsubmittedEntryIds and go on.
    - Found, with other hours: correct the hours to the line's hours, confirm, then mark the entries.

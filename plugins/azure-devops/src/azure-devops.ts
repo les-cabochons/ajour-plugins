@@ -8,6 +8,7 @@ import type {
 } from "./contract.js";
 import { resolveEstimateSyncAction } from "./estimate-sync.js";
 import { htmlToMarkdown } from "./html-markdown.js";
+import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.js";
 import {
   createStateCategoryResolver,
   type AzureStateInfo,
@@ -22,6 +23,8 @@ export interface AzureDevOpsConnectionInput {
   personalAccessToken: string;
   queryScope: AzureDevOpsQueryScope;
   priorityFieldName?: string;
+  /** Which values of the priority field map to each Ajour level. */
+  priorityLevels: PriorityLevelRanges;
   originalEstimateFieldName?: string;
   remainingEstimateFieldName?: string;
   completedEstimateFieldName?: string;
@@ -169,9 +172,10 @@ function normalizeLookupValue(value: string | undefined): string | undefined {
   return trimmed ? trimmed.toLowerCase() : undefined;
 }
 
+/** The priority field's value as a whole number. Picklist fields hold it as text. */
 export function parsePriorityValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.min(999, Math.round(value)));
+    return Math.round(value);
   }
 
   if (typeof value === "string") {
@@ -182,7 +186,7 @@ export function parsePriorityValue(value: unknown): number | undefined {
 
     const parsed = Number(trimmed);
     if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.min(999, Math.round(parsed)));
+      return Math.round(parsed);
     }
   }
 
@@ -597,7 +601,10 @@ function mapWorkItemToCandidate(
   const assignedTo = normalizeDisplayValue(workItem.fields?.["System.AssignedTo"]);
   const projectName = getProjectName(workItem);
   const priority = fieldReferences?.priorityFieldReferenceName
-    ? parsePriorityValue(workItem.fields?.[fieldReferences.priorityFieldReferenceName])
+    ? priorityLevelForValue(
+        config.priorityLevels,
+        parsePriorityValue(workItem.fields?.[fieldReferences.priorityFieldReferenceName]),
+      )
     : undefined;
   const originalEstimateHours = fieldReferences?.originalEstimateFieldReferenceName
     ? parseEstimateValue(workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName])

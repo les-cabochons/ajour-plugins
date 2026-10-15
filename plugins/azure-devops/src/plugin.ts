@@ -1,5 +1,6 @@
 import type {
   ConnectorFieldValues,
+  ConnectorPriorityLevel,
   ConnectorPluginConnection,
   ConnectorSettleStatesRequest,
   ConnectorSettleWriteRequest,
@@ -12,8 +13,34 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
+import {
+  DEFAULT_PRIORITY_LEVEL_VALUES,
+  PRIORITY_LEVEL_FIELD_IDS,
+  PRIORITY_LEVELS,
+  parsePriorityLevelRanges,
+} from "./priority-levels.js";
 
 const TASK_ICON_DISPLAY_MODES = new Set(["always", "fallback", "never"]);
+
+/**
+ * Each level's trimmed text. A connection saved before these fields existed
+ * gets the defaults; an empty text means the level has no values.
+ */
+function readPriorityLevelTexts(values: ConnectorFieldValues) {
+  return Object.fromEntries(
+    PRIORITY_LEVELS.map((level) => {
+      const fieldId = PRIORITY_LEVEL_FIELD_IDS[level];
+      const value = values[fieldId];
+      if (value === undefined) {
+        return [level, DEFAULT_PRIORITY_LEVEL_VALUES[level]];
+      }
+      if (typeof value !== "string") {
+        throw new Error(`Azure DevOps field "${fieldId}" must be text.`);
+      }
+      return [level, value.trim()];
+    }),
+  ) as Record<ConnectorPriorityLevel, string>;
+}
 
 function buildAzureConfig(values: ConnectorFieldValues, connection?: { id: string; label: string; tenantLabel: string }): AzureDevOpsConnectionInput {
   const parsed = parseConnectorFieldValues(values);
@@ -30,6 +57,8 @@ function buildAzureConfig(values: ConnectorFieldValues, connection?: { id: strin
     throw new Error('Azure DevOps field "queryScope" is invalid.');
   }
 
+  const priorityLevels = parsePriorityLevelRanges(readPriorityLevelTexts(parsed));
+
   return {
     id: connection?.id,
     label: connection?.label ?? "Azure DevOps",
@@ -41,6 +70,7 @@ function buildAzureConfig(values: ConnectorFieldValues, connection?: { id: strin
       typeof parsed.priorityFieldName === "string" && parsed.priorityFieldName.trim()
         ? parsed.priorityFieldName.trim()
         : undefined,
+    priorityLevels,
     originalEstimateFieldName:
       typeof parsed.originalEstimateFieldName === "string" && parsed.originalEstimateFieldName.trim()
         ? parsed.originalEstimateFieldName.trim()
@@ -76,6 +106,11 @@ export async function validateConnection(config: ConnectorFieldValues) {
 
   if (azureConfig.priorityFieldName) {
     normalizedConfig.priorityFieldName = azureConfig.priorityFieldName;
+  }
+  // Kept even when empty, so a cleared level stays cleared.
+  const priorityLevelTexts = readPriorityLevelTexts(parsed);
+  for (const level of PRIORITY_LEVELS) {
+    normalizedConfig[PRIORITY_LEVEL_FIELD_IDS[level]] = priorityLevelTexts[level];
   }
   if (azureConfig.originalEstimateFieldName) {
     normalizedConfig.originalEstimateFieldName = azureConfig.originalEstimateFieldName;

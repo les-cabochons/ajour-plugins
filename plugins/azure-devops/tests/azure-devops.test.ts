@@ -5,6 +5,10 @@ import {
   type AzureDevOpsConnectionInput,
   validateAzureDevOpsConnection,
 } from "../src/azure-devops.ts";
+import {
+  DEFAULT_PRIORITY_LEVEL_VALUES,
+  parsePriorityLevelRanges,
+} from "../src/priority-levels.ts";
 import { withWorkItemTypeStates } from "./work-item-type-states.ts";
 
 function buildConnection(
@@ -18,6 +22,7 @@ function buildConnection(
     queryScope: "assigned_to_me",
     autoSync: false,
     autoSyncIntervalMinutes: 15,
+    priorityLevels: parsePriorityLevelRanges(DEFAULT_PRIORITY_LEVEL_VALUES),
     ...overrides,
   };
 }
@@ -37,7 +42,7 @@ describe("Azure DevOps connector priority field resolution", () => {
     vi.restoreAllMocks();
   });
 
-  it("resolves a configured display name to the Azure reference name before syncing", async () => {
+  it("resolves a configured display name to the Azure reference name and maps its value to a level", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -92,13 +97,19 @@ describe("Azure DevOps connector priority field resolution", () => {
       fetchAzureDevOpsImportCandidates(
         buildConnection({
           priorityFieldName: "MS Priority",
+          priorityLevels: parsePriorityLevelRanges({
+            urgent: "1-25",
+            high: "26-50",
+            medium: "51-75",
+            low: "76-100",
+          }),
         }),
       ),
     ).resolves.toMatchObject({
       items: [
         expect.objectContaining({
           title: "Investigate incident",
-          priority: 55,
+          priority: "medium",
           workItemType: "Task",
         }),
       ],

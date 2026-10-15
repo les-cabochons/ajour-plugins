@@ -15,6 +15,11 @@ import type {
   ConnectorSettleWriteResult,
 } from "./contract.js";
 import {
+  priorityLevelForValue,
+  priorityLevelLabel,
+  priorityValueForLevel,
+} from "./priority-levels.js";
+import {
   createStateCategoryResolver,
   formatStateCategory,
   isDoneStateCategory,
@@ -68,7 +73,8 @@ export async function listAzureSettleStates(
 
 /**
  * Writes the settle's changed fields in one update. Priority goes to the
- * connection's priority field, which must be set to write a priority.
+ * connection's priority field, which must be set to write a priority. The
+ * field gets the lowest value of the level's range.
  */
 export async function writeAzureSettle(
   config: AzureDevOpsConnectionInput,
@@ -87,12 +93,18 @@ export async function writeAzureSettle(
         "Set a priority field on the Azure DevOps connection to write priority.",
       );
     }
+    const value = priorityValueForLevel(config.priorityLevels, request.priority);
+    if (value === undefined) {
+      throw new Error(
+        `Set the ${priorityLevelLabel(request.priority)} priority values on the Azure DevOps connection to write that priority.`,
+      );
+    }
     // Picklist and text fields take the number as text.
     fields[priorityField.resolvedReferenceName] = priorityField.type
       ?.toLowerCase()
       .includes("string")
-      ? String(request.priority)
-      : request.priority;
+      ? String(value)
+      : value;
   }
 
   const updated = await updateAzureWorkItemFields(config, String(id), fields);
@@ -111,7 +123,10 @@ export async function writeAzureSettle(
     stateCategory: info.category,
     stateDone: info.done,
     priority: priorityField
-      ? parsePriorityValue(updated.fields?.[priorityField.resolvedReferenceName])
+      ? priorityLevelForValue(
+          config.priorityLevels,
+          parsePriorityValue(updated.fields?.[priorityField.resolvedReferenceName]),
+        )
       : undefined,
   };
 }

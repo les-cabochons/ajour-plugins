@@ -8,7 +8,8 @@ Keep a list of what you entered, what was already there, and what you skipped. T
 
 1. Send update_session: "Reading the week of {{weekOf}}."
 2. Call get_submit_lines with weekOf {{weekOf}}, groupBy "day-task" and onlyUnsubmitted true. Each section is a day, with its date. Each line in it has a project, a task, hours, comments, a lineId and unsubmittedEntryIds. A line may also have projectFullName and projectProperties. Use projectProperties["workday-agent"].code and .name for Workday; they already hold the defaults. Never use projectName to find a project: it is a short name only Ajour knows.
-3. No line to enter: end the session as done with "Nothing to enter." and stop.
+3. Ajour gives hours as decimal numbers with a dot, such as 0.75. Workday writes and reads hours with a decimal comma: 45 minutes is 0,75 and 7.5 hours is 7,5. Convert when you type hours in Workday, and when you compare Workday's hours with Ajour's.
+4. No line to enter: end the session as done with "Nothing to enter." and stop.
 
 ## 2. Check the pace
 
@@ -49,7 +50,7 @@ For each line:
 4. Otherwise add a new entry. Workday's page may be in English or French.
    - Open the entry dialog from the day itself: click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower.
    - time type: the one you found;
-   - hours: the line's hours, as a decimal number;
+   - hours: the line's hours with a decimal comma, such as 0,75 for 0.75. Never type a dot;
    - comment: the line's comments, then " · ", then the lineId. With no comments, the comment is the lineId alone.
    Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours. Then call mark_entries_submitted with the line's unsubmittedEntryIds.
 5. The time type is not found:

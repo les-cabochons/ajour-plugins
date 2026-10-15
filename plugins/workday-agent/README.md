@@ -9,7 +9,7 @@ It never types a password or a code. With the optional "Sign-in username" settin
 ## What the agent does
 
 1. Reads the week's unsubmitted lines and Ajour's pace check. When the week is over or under pace, it asks before entering.
-2. Opens the timesheet URL from Settings > Agents and goes to the week.
+2. Opens the timesheet URL from the plugin settings and goes to the week.
 3. Enters each line with its hours and a comment ending with the line's ID, such as `Fix login · ajour:1a2b3c4d`. The ID lets a second run find lines already entered. It marks each line as submitted in Ajour once Workday saved it.
 4. Compares the week's totals per day in Ajour and Workday, and asks what to do when they differ.
 
@@ -17,7 +17,7 @@ It never types a password or a code. With the optional "Sign-in username" settin
 
 1. Download the `.ajour-connector` file from the latest release.
 2. In Ajour, Settings > Plugins, install the file.
-3. In Settings > Agents, pick an agent and fill "Workday timesheet URL".
+3. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
 4. On the Submit page, click "Enter in Workday".
 
 Requires an Ajour build with agent tasks, plugin API 3.

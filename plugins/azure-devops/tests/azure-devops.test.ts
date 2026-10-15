@@ -817,3 +817,57 @@ describe("Azure DevOps connector priority field resolution", () => {
     );
   });
 });
+
+describe("Azure DevOps description notes", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function fetchNote(description: string, format?: string) {
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/_apis/wit/wiql")) {
+        return jsonResponse({ workItems: [{ id: 123 }] });
+      }
+      if (url.includes("/_apis/wit/workitemsbatch")) {
+        const body = JSON.parse(String(init?.body));
+        if (body.$expand) {
+          return jsonResponse({ value: [{ id: 123, relations: [] }] });
+        }
+        return jsonResponse({
+          value: [
+            {
+              id: 123,
+              fields: {
+                "System.Title": "Investigate incident",
+                "System.State": "Active",
+                "System.TeamProject": "Maintenance and Support",
+                "System.WorkItemType": "Task",
+                "System.Description": description,
+              },
+              ...(format ? { multilineFieldsFormat: { "System.Description": format } } : {}),
+            },
+          ],
+        });
+      }
+      return jsonResponse({ value: [] });
+    });
+
+    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    const result = await fetchAzureDevOpsImportCandidates(buildConnection());
+    return result.items[0]?.note;
+  }
+
+  it("converts an HTML description to markdown", async () => {
+    await expect(fetchNote("<div><b>Steps</b></div><ul><li>Open</li><li>Save</li></ul>")).resolves.toBe(
+      "**Steps**\n\n- Open\n- Save",
+    );
+  });
+
+  it("keeps a Markdown description as written", async () => {
+    await expect(fetchNote("**Steps**\r\n\r\n- Open <b>raw</b>", "Markdown")).resolves.toBe(
+      "**Steps**\n\n- Open <b>raw</b>",
+    );
+  });
+});

@@ -7,6 +7,7 @@ import type {
   ConnectorSyncWorkItemUpdate,
 } from "./contract.js";
 import { resolveEstimateSyncAction } from "./estimate-sync.js";
+import { htmlToMarkdown } from "./html-markdown.js";
 import {
   createStateCategoryResolver,
   type AzureStateInfo,
@@ -54,6 +55,8 @@ export interface AzureWorkItem {
   id: number;
   fields?: Record<string, unknown>;
   relations?: AzureWorkItemRelation[];
+  /** The format of each multiline field, such as "Markdown" or "Html". */
+  multilineFieldsFormat?: Record<string, unknown>;
 }
 
 interface AzureWorkItemBatchResponse {
@@ -141,59 +144,19 @@ export function normalizeDisplayValue(value: unknown): string | undefined {
   return undefined;
 }
 
-function decodeHtmlEntities(value: string) {
-  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (entity, token: string) => {
-    const normalizedToken = token.toLowerCase();
-    if (normalizedToken.startsWith("#x")) {
-      const codePoint = Number.parseInt(normalizedToken.slice(2), 16);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity;
-    }
-
-    if (normalizedToken.startsWith("#")) {
-      const codePoint = Number.parseInt(normalizedToken.slice(1), 10);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity;
-    }
-
-    switch (normalizedToken) {
-      case "amp":
-        return "&";
-      case "lt":
-        return "<";
-      case "gt":
-        return ">";
-      case "quot":
-        return "\"";
-      case "apos":
-        return "'";
-      case "nbsp":
-        return " ";
-      default:
-        return entity;
-    }
-  });
-}
-
-function normalizeDescriptionValue(value: unknown): string | undefined {
+function normalizeDescriptionValue(value: unknown, format: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
 
-  const plainText = decodeHtmlEntities(
-    value
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<li\b[^>]*>/gi, "- ")
-      .replace(/<\/(?:p|div|section|article|blockquote|tr|ul|ol|li|table|h[1-6])>/gi, "\n")
-      .replace(/<[^>]+>/g, " "),
-  )
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  // Since 2025 a work item can store its description as Markdown instead of
+  // HTML; the format is the last editor's choice, per field.
+  if (typeof format === "string" && format.toLowerCase() === "markdown") {
+    const markdown = value.replace(/\r\n?/g, "\n").trim();
+    return markdown.length > 0 ? markdown : undefined;
+  }
 
-  return plainText.length > 0 ? plainText : undefined;
+  return htmlToMarkdown(value);
 }
 
 function normalizeConfiguredFieldName(value: string | undefined): string | undefined {
@@ -462,6 +425,11 @@ function mergeWorkItemBatchResponses(
         id,
         fields: fieldItem?.fields ?? relationItem?.fields,
         relations: relationItem?.relations ?? fieldItem?.relations,
+        // Either response may carry the formats, so keep both.
+        multilineFieldsFormat: {
+          ...relationItem?.multilineFieldsFormat,
+          ...fieldItem?.multilineFieldsFormat,
+        },
       },
     ];
   });
@@ -589,7 +557,10 @@ function buildSourceUrl(config: AzureDevOpsConnectionInput, workItem: AzureWorkI
 }
 
 function buildCandidateNote(workItem: AzureWorkItem) {
-  const description = normalizeDescriptionValue(workItem.fields?.["System.Description"]);
+  const description = normalizeDescriptionValue(
+    workItem.fields?.["System.Description"],
+    workItem.multilineFieldsFormat?.["System.Description"],
+  );
   return description ? clampNote(description) : undefined;
 }
 

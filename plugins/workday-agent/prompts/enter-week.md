@@ -46,7 +46,8 @@ For each line:
    - Found, with the same hours: it is already entered. Call mark_entries_submitted with the line's unsubmittedEntryIds and go on.
    - Found, with other hours: correct the hours to the line's hours, confirm, then mark the entries.
 3. An entry on that day and time type that looks the same but has no lineId, or another lineId: ask, with the choices "Same entry, mark it", "Different, add mine" and "Skip". Name the day, the time type, and both hours and comments in the question.
-4. Otherwise add a new entry:
+4. Otherwise add a new entry. Workday's page may be in English or French.
+   - Open the entry dialog from the day itself: click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower.
    - time type: the one you found;
    - hours: the line's hours, as a decimal number;
    - comment: the line's comments, then " · ", then the lineId. With no comments, the comment is the lineId alone.

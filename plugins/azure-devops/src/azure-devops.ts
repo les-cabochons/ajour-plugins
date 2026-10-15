@@ -172,10 +172,13 @@ function normalizeLookupValue(value: string | undefined): string | undefined {
   return trimmed ? trimmed.toLowerCase() : undefined;
 }
 
-/** The priority field's value as a whole number. Picklist fields hold it as text. */
+/**
+ * The priority field's value when it is a whole number. Picklist fields hold
+ * it as text. A fractional value falls outside every range, so it has no level.
+ */
 export function parsePriorityValue(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.round(value);
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
   }
 
   if (typeof value === "string") {
@@ -185,8 +188,8 @@ export function parsePriorityValue(value: unknown): number | undefined {
     }
 
     const parsed = Number(trimmed);
-    if (Number.isFinite(parsed)) {
-      return Math.round(parsed);
+    if (Number.isInteger(parsed)) {
+      return parsed;
     }
   }
 

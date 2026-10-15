@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parsePriorityValue } from "../src/azure-devops.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
@@ -42,7 +43,18 @@ describe("priority level ranges", () => {
     [{ urgent: "5-2" }, 'Urgent priority "5-2" starts above where it ends'],
     [{ urgent: "1-3", high: "3-5" }, 'High priority "3-5" overlaps Urgent priority'],
     [{ urgent: "10", low: "1-20" }, 'Low priority "1-20" overlaps Urgent priority'],
+    [{ low: "1-99999999999999999999" }, 'Low priority "1-99999999999999999999" is too large'],
   ])("rejects %j", (texts, message) => {
     expect(() => parsePriorityLevelRanges(texts)).toThrow(message);
+  });
+});
+
+describe("priority field values", () => {
+  it("keeps whole numbers, from numbers or picklist text, and drops fractions", () => {
+    expect(parsePriorityValue(2)).toBe(2);
+    expect(parsePriorityValue(" 3 ")).toBe(3);
+    expect(parsePriorityValue(1.5)).toBeUndefined();
+    expect(parsePriorityValue("1.5")).toBeUndefined();
+    expect(parsePriorityValue("")).toBeUndefined();
   });
 });

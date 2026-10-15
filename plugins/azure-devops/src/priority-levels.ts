@@ -64,6 +64,9 @@ export function parsePriorityLevelRanges(
 
     const min = Number(match[1]);
     const max = match[2] === undefined ? min : Number(match[2]);
+    if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max)) {
+      throw new Error(`${LEVEL_LABELS[level]} priority "${text}" is too large.`);
+    }
     if (min > max) {
       throw new Error(`${LEVEL_LABELS[level]} priority "${text}" starts above where it ends.`);
     }

@@ -60,6 +60,25 @@ describe("connector manifest packaging contract", () => {
     expect(assertConnectorPluginManifest(manifest)).toBe(manifest);
   });
 
+  it("declares both capabilities and tags each part's fields", () => {
+    expect(Object.keys(validManifest.capabilities)).toEqual(["connector", "codeHost"]);
+    const capabilityOf = (id: string) =>
+      validManifest.connectionFields.find((field: { id: string }) => field.id === id)?.capability;
+    expect(capabilityOf("personalAccessToken")).toBeUndefined();
+    expect(capabilityOf("queryScope")).toBe("connector");
+    expect(capabilityOf("autoSync")).toBe("connector");
+    expect(capabilityOf("autoSyncIntervalMinutes")).toBeUndefined();
+    expect(capabilityOf("pullRequestsInclude")).toBe("codeHost");
+    expect(capabilityOf("pullRequestAutoSync")).toBe("codeHost");
+  });
+
+  it("rejects a field tagged with a capability the plugin does not declare", () => {
+    const manifest = cloneManifest();
+    delete manifest.capabilities.codeHost;
+
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(/capability must name/);
+  });
+
   it("declares the settle capability and rejects a non-boolean one", () => {
     expect(validManifest.capabilities.connector.settle).toBe(true);
 

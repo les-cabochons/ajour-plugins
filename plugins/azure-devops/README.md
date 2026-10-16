@@ -70,6 +70,44 @@ Removed categories count as done. Resolved remains open. Sync reports items
 Ajour already tracks that reached a done category, even when the query no
 longer returns them.
 
+## Pull requests
+
+The plugin also declares Ajour's code host capability. `syncPullRequests`
+returns provider-neutral facts for active pull requests across the
+organization that you created, or where you are a reviewer, directly or through
+one of your teams when **Include team review requests** is on. Pull requests
+Ajour tracks that left those searches are fetched by id, so Ajour sees them
+complete or get abandoned. A repository is reported as `project/repository`.
+
+Microsoft documents the pull request list per project only, though its own
+tools list them for the whole organization. The plugin tries the
+organization-wide list first. When it answers 404, which Azure DevOps also
+returns for something the token cannot see, the plugin searches each project
+among the repositories the token can read. Pull requests sync on the interval while **Sync
+pull requests automatically** is on, separately from **Auto sync to backlog**.
+
+| Ajour fact              | Azure DevOps source                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review requests         | Reviewers who have not voted or declined. A team reviewer includes you when you are a member of the team.                                                      |
+| Review request events   | `ReviewersUpdate` system threads: who added which reviewers, and when.                                                                                           |
+| Reviews                 | `VoteUpdate` system threads. Approved and approved with suggestions are approvals; waiting for author and rejected request changes; a reset vote is dismissed. |
+| Comments                | Text comments in every thread. Mentions are `@<your identity id>`.                                                                                               |
+| Last push and its actor | The latest pull request iteration and who pushed it.                                                                                                             |
+| Checks                  | Build and Status policy evaluations.                                                                                                                             |
+| Mergeability            | The pull request's merge status.                                                                                                                                 |
+
+Comment and review text is never returned to Ajour. Pull requests need the
+**Code (Read)** scope, and **Project and Team (Read)** to find your teams.
+Teams count, other security groups do not: the plugin never guesses
+membership. If a pull request's policy evaluations cannot be read, its checks
+read as none.
+
+Ajour lets the user turn work items and pull requests on and off separately.
+`validateConnection` receives the capabilities that are on as its second
+argument and checks only their access, so a pull-request-only token needs no
+work item scope. The fields of each capability declare it, so Ajour hides them
+while it is off.
+
 ## Priority levels
 
 Ajour has four priority levels: Urgent, High, Medium and Low. The connection

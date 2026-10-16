@@ -28,6 +28,14 @@ export function parseConnectorFieldValues(value: unknown): ConnectorFieldValues 
   return Object.fromEntries(entries) as ConnectorFieldValues;
 }
 
+/**
+ * The second argument of `validateConnection`: the capabilities that are on.
+ * Ajour before per-capability switches sends none.
+ */
+export interface ConnectorValidationContext {
+  capabilities: ("connector" | "codeHost")[];
+}
+
 export interface ConnectorPluginConnection {
   id: string;
   pluginId: string;
@@ -143,4 +151,87 @@ export interface ConnectorSettleWriteResult {
 export interface ConnectorPluginSyncResult {
   items: ConnectorImportCandidateInput[];
   workItemUpdates?: ConnectorSyncWorkItemUpdate[];
+}
+
+// Code host capability. These types mirror packages/shared/code-host.ts in
+// les-cabochons/ajour. Times are Unix milliseconds and a repository is
+// "project/repository", such as "Fabrikam/api".
+
+export interface CodeHostUser {
+  login: string;
+  displayName?: string;
+  isBot: boolean;
+  avatarUrl?: string;
+}
+
+export type CodeHostReviewVerdict =
+  | "approved"
+  | "changes_requested"
+  | "commented"
+  | "dismissed";
+
+export interface CodeHostReviewRequest {
+  kind: "user" | "team";
+  name: string;
+  includesViewer: boolean;
+}
+
+export interface CodeHostReviewRequestEvent {
+  id: string;
+  author: CodeHostUser;
+  createdAt: number;
+  includesViewer: boolean;
+}
+
+export interface CodeHostReviewFact {
+  id: string;
+  author: CodeHostUser;
+  verdict: CodeHostReviewVerdict;
+  submittedAt: number;
+  mentionsViewer?: boolean;
+}
+
+export interface CodeHostCommentFact {
+  id: string;
+  author: CodeHostUser;
+  createdAt: number;
+  threadId?: string;
+  mentionsViewer: boolean;
+}
+
+export interface CodeHostPullRequestRef {
+  repository: string;
+  number: number;
+}
+
+export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
+  id: string;
+  url: string;
+  title: string;
+  author: CodeHostUser;
+  state: "open" | "merged" | "closed";
+  draft: boolean;
+  createdAt: number;
+  updatedAt: number;
+  closedAt?: number;
+  viewerIsAuthor: boolean;
+  headSha: string;
+  lastPushedAt: number;
+  lastPushActor?: CodeHostUser;
+  reviewRequests: CodeHostReviewRequest[];
+  reviewRequestEvents?: CodeHostReviewRequestEvent[];
+  reviews: CodeHostReviewFact[];
+  comments: CodeHostCommentFact[];
+  checks: "none" | "pending" | "success" | "failure";
+  mergeability: "mergeable" | "conflicting" | "unknown";
+}
+
+export interface CodeHostSyncRequest {
+  tracked: CodeHostPullRequestRef[];
+}
+
+export interface CodeHostSyncResult {
+  viewer: CodeHostUser;
+  instanceUrl?: string;
+  pullRequests: CodeHostPullRequestFacts[];
 }

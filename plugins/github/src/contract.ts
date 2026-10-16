@@ -1,5 +1,5 @@
-// Ajour plugin API version 2, code host capability. These types mirror
-// packages/shared/src/code-host.ts in les-cabochons/ajour. Times are Unix
+// Ajour plugin API version 3. These types mirror packages/shared/code-host.ts
+// and packages/shared/connectors.ts in les-cabochons/ajour. Times are Unix
 // milliseconds and a repository is its full name, such as "acme/api".
 
 export type ConnectorFieldValue = string | number | boolean;
@@ -121,3 +121,114 @@ export interface CodeHostSyncResult {
   instanceUrl?: string;
   pullRequests: CodeHostPullRequestFacts[];
 }
+
+// Connector capability. These types mirror packages/shared/connectors.ts in
+// les-cabochons/ajour.
+
+/** Ajour's priority levels. A source value that maps to no level has no priority. */
+export type ConnectorPriorityLevel = "urgent" | "high" | "medium" | "low";
+
+export interface ConnectorImportCandidateInput {
+  source: string;
+  connectionId: string;
+  connectionLabel: string;
+  tenantLabel: string;
+  sourceId: string;
+  externalId: string;
+  sourceUrl?: string;
+  title: string;
+  note?: string;
+  projectName?: string;
+  workItemType: string;
+  state?: string;
+  /** The state's category for people, such as "In Progress". */
+  stateCategory?: string;
+  /** True for Completed and Removed. Ajour archives done items. */
+  stateDone?: boolean;
+  assignedTo?: string;
+  priority?: ConnectorPriorityLevel;
+  originalEstimateHours?: number;
+  remainingEstimateHours?: number;
+  completedEstimateHours?: number;
+  parentSourceId?: string;
+  parentTitle?: string;
+  depth: 0 | 1;
+  selectable: boolean;
+  selected?: boolean;
+  childCount: number;
+  pushedAt?: number;
+}
+
+export interface ConnectorSyncEstimateFieldState {
+  baselineValue?: number;
+  remoteValue?: number;
+  resolution?: "keep_local";
+}
+
+export interface ConnectorSyncWorkItem {
+  localWorkItemId: string;
+  sourceId: string;
+  originalEstimateHours?: number;
+  remainingEstimateHours?: number;
+  completedEstimateHours?: number;
+  estimateSync?: {
+    originalEstimateHours?: ConnectorSyncEstimateFieldState;
+    remainingEstimateHours?: ConnectorSyncEstimateFieldState;
+    completedEstimateHours?: ConnectorSyncEstimateFieldState;
+  };
+}
+
+export interface ConnectorSyncFieldUpdate {
+  status: "noop" | "pushed" | "pulled" | "conflict" | "error";
+  localValue?: number;
+  remoteValue?: number;
+  baselineValue?: number;
+  nextBaselineValue?: number;
+  message?: string;
+}
+
+export interface ConnectorSyncWorkItemUpdate {
+  localWorkItemId: string;
+  sourceId: string;
+  fields: {
+    originalEstimateHours?: ConnectorSyncFieldUpdate;
+    remainingEstimateHours?: ConnectorSyncFieldUpdate;
+    completedEstimateHours?: ConnectorSyncFieldUpdate;
+  };
+}
+
+/** A state a backlog item can move to when it is settled. */
+export interface ConnectorSettleState {
+  name: string;
+  category: string;
+  done: boolean;
+}
+
+export interface ConnectorSettleStatesRequest {
+  sourceId: string;
+}
+
+export interface ConnectorSettleStatesResult {
+  states: ConnectorSettleState[];
+}
+
+/** Only the fields the settle changed. */
+export interface ConnectorSettleWriteRequest {
+  sourceId: string;
+  state?: string;
+  priority?: ConnectorPriorityLevel;
+}
+
+/** The item's values in Azure DevOps after the write. */
+export interface ConnectorSettleWriteResult {
+  state?: string;
+  stateCategory?: string;
+  stateDone?: boolean;
+  priority?: ConnectorPriorityLevel;
+}
+
+export interface ConnectorPluginSyncResult {
+  items: ConnectorImportCandidateInput[];
+  workItemUpdates?: ConnectorSyncWorkItemUpdate[];
+}
+

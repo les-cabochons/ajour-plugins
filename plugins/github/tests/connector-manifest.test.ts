@@ -56,7 +56,24 @@ describe("connector manifest packaging contract", () => {
     },
   );
 
-  it("declares the code host capability only", () => {
-    expect(cloneManifest().capabilities).toEqual({ codeHost: {} });
+  it("declares issues as a connector with settle, and pull requests as a code host", () => {
+    expect(cloneManifest().capabilities).toEqual({ connector: { settle: true }, codeHost: {} });
+  });
+
+  it("tags the fields only one capability uses", () => {
+    const capabilityOf = (id: string) =>
+      validManifest.connectionFields.find((field: { id: string }) => field.id === id)?.capability;
+    expect(capabilityOf("token")).toBeUndefined();
+    expect(capabilityOf("include")).toBeUndefined();
+    expect(capabilityOf("hideDrafts")).toBe("codeHost");
+    expect(capabilityOf("autoSync")).toBe("connector");
+    expect(capabilityOf("pullRequestAutoSync")).toBe("codeHost");
+  });
+
+  it("rejects a field tagged with a capability the plugin does not declare", () => {
+    const manifest = cloneManifest();
+    delete manifest.capabilities.connector;
+
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(/capability must name/);
   });
 });

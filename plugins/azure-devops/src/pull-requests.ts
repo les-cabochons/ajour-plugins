@@ -1,3 +1,4 @@
+import { createAuthHeader } from "./azure-devops.js";
 import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.js";
 import type {
   CodeHostCommentFact,
@@ -37,7 +38,7 @@ export class AzureReposClient {
     private readonly organizationUrl: string,
     token: string,
   ) {
-    this.authorization = `Basic ${Buffer.from(`:${token}`, "utf8").toString("base64")}`;
+    this.authorization = createAuthHeader(token);
   }
 
   async get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {

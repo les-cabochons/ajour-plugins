@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildPullRequestConfig,
   formatScopes,
-  normalizeOrganizationUrl,
+  organizationRootUrl,
   repositoryInScope,
 } from "../src/pull-request-config.ts";
 
-describe("normalizeOrganizationUrl", () => {
+describe("organizationRootUrl", () => {
   it.each([
     ["https://dev.azure.com/contoso", "https://dev.azure.com/contoso"],
     ["https://dev.azure.com/contoso/", "https://dev.azure.com/contoso"],
@@ -14,13 +14,13 @@ describe("normalizeOrganizationUrl", () => {
     ["https://contoso.visualstudio.com/Fabrikam", "https://contoso.visualstudio.com"],
     ["https://ado.contoso.com/tfs/DefaultCollection/", "https://ado.contoso.com/tfs/DefaultCollection"],
   ])("normalizes %s", (input, expected) => {
-    expect(normalizeOrganizationUrl(input)).toBe(expected);
+    expect(organizationRootUrl(input)).toBe(expected);
   });
 
   it.each([["https://dev.azure.com"], ["not a url"], ["ftp://dev.azure.com/contoso"], [""]])(
     "rejects %j",
     (input) => {
-      expect(() => normalizeOrganizationUrl(input)).toThrow(/Organization URL/);
+      expect(() => organizationRootUrl(input)).toThrow(/organizationUrl/);
     },
   );
 });
@@ -47,7 +47,7 @@ describe("buildPullRequestConfig", () => {
 
   it("requires a token", () => {
     expect(() => buildPullRequestConfig({ organizationUrl: "https://dev.azure.com/contoso" })).toThrow(
-      /Personal Access Token/,
+      /personalAccessToken/,
     );
   });
 

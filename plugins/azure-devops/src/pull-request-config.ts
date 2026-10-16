@@ -19,12 +19,12 @@ export interface PullRequestConfig {
 // Azure DevOps forbids commas and slashes in project and repository names.
 const NAME_PATTERN = /^[^,/\\]+$/;
 
-function parseScopes(value: unknown, fieldLabel: string): PullRequestScope[] {
+function parseScopes(value: unknown, fieldId: string): PullRequestScope[] {
   if (value === undefined || value === "") {
     return [];
   }
   if (typeof value !== "string") {
-    throw new Error(`Azure DevOps field "${fieldLabel}" must be text.`);
+    throw new Error(`Azure DevOps field "${fieldId}" must be text.`);
   }
 
   return value
@@ -38,29 +38,30 @@ function parseScopes(value: unknown, fieldLabel: string): PullRequestScope[] {
         !NAME_PATTERN.test(project) ||
         (repository !== undefined && !NAME_PATTERN.test(repository))
       ) {
-        throw new Error(`"${entry}" in "${fieldLabel}" is not a project or project/repository.`);
+        throw new Error(`"${entry}" in Azure DevOps field "${fieldId}" is not a project or project/repository.`);
       }
       return repository === undefined ? { project } : { project, repository };
     });
 }
 
 /**
+ * The organization or collection root that pull request calls start from.
  * Accepts https://dev.azure.com/org (a project or repository URL under it
  * too), https://org.visualstudio.com, or an Azure DevOps Server collection
  * URL such as https://ado.contoso.com/tfs/DefaultCollection.
  */
-export function normalizeOrganizationUrl(value: unknown) {
+export function organizationRootUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error('Azure DevOps field "Organization URL" is required.');
+    throw new Error('Azure DevOps field "organizationUrl" is required.');
   }
   let url: URL;
   try {
     url = new URL(value.trim());
   } catch {
-    throw new Error('Azure DevOps field "Organization URL" must be a URL.');
+    throw new Error('Azure DevOps field "organizationUrl" must be a URL.');
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error('Azure DevOps field "Organization URL" must use HTTP or HTTPS.');
+    throw new Error('Azure DevOps field "organizationUrl" must use HTTP or HTTPS.');
   }
 
   const host = url.hostname.toLowerCase();
@@ -68,7 +69,7 @@ export function normalizeOrganizationUrl(value: unknown) {
   if (host === "dev.azure.com") {
     if (!segments[0]) {
       throw new Error(
-        'Azure DevOps field "Organization URL" must name the organization, such as https://dev.azure.com/your-org.',
+        'Azure DevOps field "organizationUrl" must name the organization, such as https://dev.azure.com/your-org.',
       );
     }
     return `${url.origin}/${segments[0]}`;
@@ -87,14 +88,14 @@ function parseBoolean(value: unknown, fallback: boolean) {
 export function buildPullRequestConfig(values: ConnectorFieldValues): PullRequestConfig {
   const parsed = parseConnectorFieldValues(values);
   if (typeof parsed.personalAccessToken !== "string" || !parsed.personalAccessToken.trim()) {
-    throw new Error('Azure DevOps field "Personal Access Token" is required.');
+    throw new Error('Azure DevOps field "personalAccessToken" is required.');
   }
 
   return {
-    organizationUrl: normalizeOrganizationUrl(parsed.organizationUrl),
+    organizationUrl: organizationRootUrl(parsed.organizationUrl),
     token: parsed.personalAccessToken.trim(),
-    include: parseScopes(parsed.pullRequestsInclude, "Only these projects or repositories"),
-    exclude: parseScopes(parsed.pullRequestsExclude, "Never these projects or repositories"),
+    include: parseScopes(parsed.pullRequestsInclude, "pullRequestsInclude"),
+    exclude: parseScopes(parsed.pullRequestsExclude, "pullRequestsExclude"),
     hideDrafts: parseBoolean(parsed.hideDraftPullRequests, false),
     includeTeamRequests: parseBoolean(parsed.includeTeamReviewRequests, true),
   };

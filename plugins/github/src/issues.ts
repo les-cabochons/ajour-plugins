@@ -8,7 +8,7 @@ import type {
   ConnectorSettleWriteResult,
   ConnectorSyncWorkItem,
 } from "./contract.js";
-import { GitHubClient } from "./github.js";
+import { GitHubClient, nextCursor, splitRepository, type PageInfo } from "./github.js";
 
 const SEARCH_PAGE_SIZE = 50;
 const MAX_SEARCH_RESULTS = 1000;
@@ -136,7 +136,7 @@ async function searchAssignedIssues(client: GitHubClient) {
     const data: {
       search: {
         issueCount: number;
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        pageInfo: PageInfo;
         nodes: (GitHubIssue | Record<string, never>)[];
       };
     } = await client.query(SEARCH_QUERY, { q: "is:issue is:open assignee:@me archived:false", after });
@@ -146,10 +146,8 @@ async function searchAssignedIssues(client: GitHubClient) {
       );
     }
     issues.push(...data.search.nodes.filter((node): node is GitHubIssue => "id" in node));
-    const { hasNextPage, endCursor } = data.search.pageInfo;
-    if (!hasNextPage) return issues;
-    if (!endCursor || endCursor === after) throw new Error("GitHub returned an incomplete pagination cursor.");
-    after = endCursor;
+    after = nextCursor(data.search.pageInfo, after);
+    if (!after) return issues;
   }
   throw new Error("GitHub search still has more results at its 1,000-result limit. The sync was not applied.");
 }
@@ -161,7 +159,7 @@ async function fetchIssues(client: GitHubClient, refs: IssueRef[]) {
     const variables: Record<string, unknown> = {};
     const declarations: string[] = [];
     const selections = batch.map((ref, index) => {
-      const [owner = "", name = ""] = ref.repository.split("/");
+      const [owner, name] = splitRepository(ref.repository);
       variables[`o${index}`] = owner;
       variables[`r${index}`] = name;
       variables[`n${index}`] = ref.number;
@@ -222,7 +220,7 @@ function requireIssueRef(config: GitHubConfig, sourceId: string) {
 }
 
 async function fetchIssue(client: GitHubClient, ref: IssueRef) {
-  const [owner = "", name = ""] = ref.repository.split("/");
+  const [owner, name] = splitRepository(ref.repository);
   const data = await client.query<{ repository: { issue: GitHubIssue | null } | null }>(ISSUE_QUERY, {
     owner,
     name,

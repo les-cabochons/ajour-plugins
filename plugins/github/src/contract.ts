@@ -143,7 +143,7 @@ export interface ConnectorImportCandidateInput {
   state?: string;
   /** The state's category for people, such as "In Progress". */
   stateCategory?: string;
-  /** True for Completed and Removed. Ajour archives done items. */
+  /** True for a closed issue. Ajour archives done items. */
   stateDone?: boolean;
   assignedTo?: string;
   priority?: ConnectorPriorityLevel;
@@ -219,7 +219,7 @@ export interface ConnectorSettleWriteRequest {
   priority?: ConnectorPriorityLevel;
 }
 
-/** The item's values in Azure DevOps after the write. */
+/** The issue's values in GitHub after the write. */
 export interface ConnectorSettleWriteResult {
   state?: string;
   stateCategory?: string;

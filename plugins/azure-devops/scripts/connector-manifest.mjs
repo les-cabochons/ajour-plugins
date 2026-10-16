@@ -59,7 +59,7 @@ function assertConnectorFieldValue(value, label) {
   throw new Error(label + " is not a valid connector field value.");
 }
 
-function assertConnectionField(field, index) {
+function assertConnectionField(field, index, capabilities) {
   const label = "connectionFields[" + index + "]";
   assertRecord(field, label);
   assertString(field.id, label + ".id", { min: 1, max: 120, trim: true });
@@ -100,6 +100,15 @@ function assertConnectionField(field, index) {
   assertOptionalFiniteNumber(field.min, label + ".min");
   assertOptionalFiniteNumber(field.max, label + ".max");
   assertOptionalFiniteNumber(field.step, label + ".step");
+
+  // The capability the field configures. Ajour hides it while that capability is off.
+  if (
+    field.capability !== undefined &&
+    (!["connector", "codeHost"].includes(field.capability) ||
+      capabilities?.[field.capability] === undefined)
+  ) {
+    throw new Error(label + ".capability must name a capability the plugin declares.");
+  }
 }
 
 export function assertConnectorPluginManifest(manifest) {
@@ -165,6 +174,8 @@ export function assertConnectorPluginManifest(manifest) {
     throw new Error("Connector manifest connectionFields must contain 1 to 50 fields.");
   }
 
-  manifest.connectionFields.forEach(assertConnectionField);
+  manifest.connectionFields.forEach((field, index) =>
+    assertConnectionField(field, index, manifest.capabilities),
+  );
   return manifest;
 }

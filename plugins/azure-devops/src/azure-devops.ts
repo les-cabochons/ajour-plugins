@@ -126,7 +126,7 @@ function normalizeOrganizationUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
-function createAuthHeader(personalAccessToken: string) {
+export function createAuthHeader(personalAccessToken: string) {
   return `Basic ${Buffer.from(`:${personalAccessToken}`, "utf8").toString("base64")}`;
 }
 

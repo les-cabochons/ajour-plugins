@@ -1,5 +1,8 @@
 import type {
+  CodeHostSyncRequest,
+  CodeHostSyncResult,
   ConnectorFieldValues,
+  ConnectorValidationContext,
   ConnectorPriorityLevel,
   ConnectorPluginConnection,
   ConnectorSettleStatesRequest,
@@ -13,6 +16,12 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
+import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
+import {
+  AzureReposClient,
+  fetchViewer,
+  syncPullRequests as syncAzurePullRequests,
+} from "./pull-requests.js";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
@@ -86,8 +95,74 @@ function buildAzureConfig(values: ConnectorFieldValues, connection?: { id: strin
   };
 }
 
-export async function validateConnection(config: ConnectorFieldValues) {
+/**
+ * Checks the access of the capabilities that are on, and keeps the values of
+ * the others. Ajour before per-capability switches sends no context: it only
+ * ran work items for this plugin.
+ */
+export async function validateConnection(
+  config: ConnectorFieldValues,
+  context?: ConnectorValidationContext,
+) {
   const parsed = parseConnectorFieldValues(config);
+  const capabilities = context?.capabilities ?? ["connector"];
+  const [pullRequestValues, otherValues] = splitFields(parsed, PULL_REQUEST_FIELD_IDS);
+  // A capability that is off keeps its values as entered, unchecked.
+  const workItems = capabilities.includes("connector")
+    ? await validateWorkItems(parsed)
+    : { normalizedConfig: otherValues, connectionSummary: {} };
+  const pullRequests = capabilities.includes("codeHost")
+    ? await validatePullRequests(parsed)
+    : { normalizedConfig: pullRequestValues, connectionSummary: {} };
+
+  return {
+    // The shared organization URL and token keep the work items' form when
+    // they are on, as before pull requests existed.
+    normalizedConfig: capabilities.includes("connector")
+      ? { ...pullRequests.normalizedConfig, ...workItems.normalizedConfig }
+      : { ...workItems.normalizedConfig, ...pullRequests.normalizedConfig },
+    connectionSummary: {
+      ...workItems.connectionSummary,
+      ...pullRequests.connectionSummary,
+    },
+  };
+}
+
+const PULL_REQUEST_FIELD_IDS = new Set([
+  "pullRequestsInclude",
+  "pullRequestsExclude",
+  "hideDraftPullRequests",
+  "includeTeamReviewRequests",
+]);
+
+function splitFields(values: ConnectorFieldValues, ids: ReadonlySet<string>) {
+  const entries = Object.entries(values);
+  return [
+    Object.fromEntries(entries.filter(([id]) => ids.has(id))),
+    Object.fromEntries(entries.filter(([id]) => !ids.has(id))),
+  ] as const;
+}
+
+async function validatePullRequests(parsed: ConnectorFieldValues) {
+  const config = buildPullRequestConfig(parsed);
+  const client = new AzureReposClient(config.organizationUrl, config.token);
+  const viewer = await fetchViewer(client);
+  // connectionData answers any valid token. Listing repositories proves Code (Read).
+  await client.checkCodeAccess();
+  return {
+    normalizedConfig: {
+      organizationUrl: config.organizationUrl,
+      personalAccessToken: config.token,
+      pullRequestsInclude: formatScopes(config.include),
+      pullRequestsExclude: formatScopes(config.exclude),
+      hideDraftPullRequests: config.hideDrafts,
+      includeTeamReviewRequests: config.includeTeamRequests,
+    } satisfies ConnectorFieldValues,
+    connectionSummary: { account: viewer.user.login },
+  };
+}
+
+async function validateWorkItems(parsed: ConnectorFieldValues) {
   const azureConfig = buildAzureConfig(parsed);
   const validation = await validateAzureDevOpsConnection(azureConfig);
 
@@ -175,4 +250,11 @@ export async function writeSettle(
   request: ConnectorSettleWriteRequest,
 ) {
   return await writeAzureSettle(buildAzureConfig(connection.config, connection), request);
+}
+
+export async function syncPullRequests(
+  connection: ConnectorPluginConnection,
+  request: CodeHostSyncRequest,
+): Promise<CodeHostSyncResult> {
+  return await syncAzurePullRequests(buildPullRequestConfig(connection.config), request.tracked);
 }

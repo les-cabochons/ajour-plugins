@@ -247,6 +247,12 @@ function toUser(actor: GitHubActor | null): CodeHostUser {
   };
 }
 
+/** "owner/name" as its two parts, empty when missing. */
+export function splitRepository(repository: string): [owner: string, name: string] {
+  const [owner = "", name = ""] = repository.split("/");
+  return [owner, name];
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -387,7 +393,7 @@ export async function fetchViewer(client: GitHubClient) {
   return toUser(data.viewer);
 }
 
-interface PageInfo {
+export interface PageInfo {
   hasNextPage: boolean;
   endCursor: string | null;
 }
@@ -396,7 +402,7 @@ interface TeamsPage {
   pageInfo: PageInfo;
 }
 
-function nextCursor(page: PageInfo, previous: string | null) {
+export function nextCursor(page: PageInfo, previous: string | null) {
   if (!page.hasNextPage) return null;
   if (!page.endCursor || page.endCursor === previous)
     throw new Error("GitHub returned an incomplete pagination cursor.");
@@ -467,7 +473,7 @@ async function fetchTracked(client: GitHubClient, refs: CodeHostPullRequestRef[]
     const variables: Record<string, unknown> = {};
     const declarations: string[] = [];
     const selections = batch.map((ref, index) => {
-      const [owner = "", name = ""] = ref.repository.split("/");
+      const [owner, name] = splitRepository(ref.repository);
       variables[`o${index}`] = owner;
       variables[`r${index}`] = name;
       variables[`n${index}`] = ref.number;

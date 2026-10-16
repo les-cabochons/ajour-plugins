@@ -1,8 +1,9 @@
 # Ajour Code Host - GitHub
 
 Ajour Code Host - GitHub brings your GitHub pull requests into Ajour: the ones
-you wrote and the ones you were asked to review. It implements the code host
-capability of Ajour's plugin API version 3.
+you wrote and the ones you were asked to review. It also syncs the issues
+assigned to you into the backlog. It implements the connector and code host
+capabilities of Ajour's plugin API version 3.
 
 ## What it does today
 
@@ -18,6 +19,22 @@ capability of Ajour's plugin API version 3.
 
 Ajour decides what needs you from these facts. The plugin only reports them.
 Review content and writes (comments, reviews, merge) come in later versions.
+
+## Issues
+
+The plugin also declares Ajour's connector capability, with settle:
+
+- `syncConnection` returns open issues assigned to you, filtered by **Only
+  these** and **Never these**, as backlog items. Issues Ajour tracks that
+  closed come back as done, so Ajour archives them. GitHub issues have no
+  estimates, so there are no work item updates.
+- `listSettleStates` offers Open, Closed and Closed as not planned.
+  `writeSettle` closes or reopens the issue. A priority alone writes nothing:
+  GitHub issues have no priority.
+
+Issues need read and write access to issues. Ajour lets the user turn issues
+and pull requests on and off separately. The fields only one capability uses
+declare it, so Ajour hides them while it is off.
 
 ## Requirements
 

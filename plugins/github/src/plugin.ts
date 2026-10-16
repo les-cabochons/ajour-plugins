@@ -5,10 +5,18 @@ import {
   type CodeHostSyncResult,
   type ConnectorFieldValues,
   type ConnectorPluginConnection,
+  type ConnectorPluginSyncResult,
   type ConnectorPluginValidationResult,
+  type ConnectorSettleStatesRequest,
+  type ConnectorSettleStatesResult,
+  type ConnectorSettleWriteRequest,
+  type ConnectorSettleWriteResult,
+  type ConnectorSyncWorkItem,
 } from "./contract.js";
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.js";
+import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.js";
 
+/** Both issues and pull requests need only a token GitHub accepts. */
 export async function validateConnection(
   values: ConnectorFieldValues,
 ): Promise<ConnectorPluginValidationResult> {
@@ -42,4 +50,26 @@ export async function syncPullRequests(
   request: CodeHostSyncRequest,
 ): Promise<CodeHostSyncResult> {
   return await syncGitHubPullRequests(buildGitHubConfig(connection.config), request.tracked);
+}
+
+/** Issues assigned to you, as backlog items. */
+export async function syncConnection(
+  connection: ConnectorPluginConnection,
+  workItems: ConnectorSyncWorkItem[] = [],
+): Promise<ConnectorPluginSyncResult> {
+  return await syncIssues(buildGitHubConfig(connection.config), connection, workItems);
+}
+
+export async function listSettleStates(
+  connection: ConnectorPluginConnection,
+  request: ConnectorSettleStatesRequest,
+): Promise<ConnectorSettleStatesResult> {
+  return await listIssueSettleStates(buildGitHubConfig(connection.config), request.sourceId);
+}
+
+export async function writeSettle(
+  connection: ConnectorPluginConnection,
+  request: ConnectorSettleWriteRequest,
+): Promise<ConnectorSettleWriteResult> {
+  return await writeIssueSettle(buildGitHubConfig(connection.config), request);
 }

@@ -44,7 +44,7 @@ The comment of every entry you write is the note, then " · ", then the external
   - Found at both places: delete the one at the committed place, then mark it.
   - Found nowhere: add it at the current place, then mark it.
   The committed day or the current day may be in another week: get_week_changes lists a moved entry as one updated change in both weeks. Go to that week for that step, then come back to the week of {{weekOf}}. Mark a moved change only after every step succeeded, whichever week each is in. If the add fails after the delete, ask with the choices "Retry" and "Stop", and do not mark the change. "Stop" ends the session as cancelled.
-- **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. Not found by its externalId: see below.
+- **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. No entry on the committed day has its externalId: it is already gone, so mark it and go on. Never delete an entry without the externalId, even one that looks like it. If an entry on that day and time type with no externalId of yours looks like it (same hours or same note), leave it and note it for the summary.
 
 To add an entry, open the entry dialog from the day itself. Workday's page may be in English or French. Click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower. Fill the dialog in this order, because Workday clears the hours when the time type changes:
    1. Pick the time type first. Wait about two seconds with browser_wait_for, then take a snapshot and check the time type shows and the dialog has settled.
@@ -52,12 +52,12 @@ To add an entry, open the entry dialog from the day itself. Workday's page may b
    3. Take a snapshot and check the hours are still there before you confirm. If they are empty, type them again.
    The same applies when you edit an entry and change its time type: set the time type, wait, then set the hours. Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours.
 
-After Workday saved a change, call mark_entries_committed with `changes: [{ entryId, version }]`, using the entryId and the version get_week_changes gave you. Never mark a change you did not apply. An added change that is already there and a finished move count as applied: mark them. If Ajour answers that the change changed since you read it, the user edited the entry in Ajour meanwhile: call get_week_changes again, apply the change's current values in Workday, then mark it with its new version.
+After Workday saved a change, call mark_entries_committed with `changes: [{ entryId, version }]`, using the entryId and the version get_week_changes gave you. Never mark a change you did not apply. An added change that is already there, a deleted change that is already gone and a finished move count as applied: mark them. If Ajour answers that the change changed since you read it, the user edited the entry in Ajour meanwhile: call get_week_changes again, apply the change's current values in Workday, then mark it with its new version.
 
-An updated change that did not move, or a deleted change, whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
+An updated change that did not move whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
 
 - One or more could be it: ask the user and show what you see. For example: "I cannot find Mon, Acme · Build (1,5 h) by its ID. Workday has an entry there with 1,5 h and the comment 'Standup'. Is it the same entry?", with the choices "Yes, it is the same", "Skip" and "Stop". "Yes, it is the same": treat it as that entry, and add the externalId at the end of its comment when you save it. "Skip": skip the change and do not mark it. "Stop": end the session as cancelled.
-- None could be it: say so and ask with the choices "Skip" and "Stop". This holds for a deleted change too: the user can mark it as committed in Ajour once they checked Workday.
+- None could be it: say so and ask with the choices "Skip" and "Stop".
 
 The time type is not found:
 
@@ -72,4 +72,4 @@ Never delete or change an entry in Workday that has no externalId of yours, unle
 
 ## 4. Summary
 
-End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday."
+End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday." For each deleted change marked as already gone while a similar entry without an Ajour ID remains, say so with its day, hours and comment, so the user can check it. For example: "Thu, Acme · Build (2 h) was already gone. Workday still has an entry there with 2 h and the comment 'Build' and no Ajour ID: check it."

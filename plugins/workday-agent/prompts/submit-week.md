@@ -7,7 +7,7 @@ Keep a list of what you checked, fixed and left. The final summary uses it.
 ## 1. Check the week in Ajour
 
 1. Send update_session: "Checking the week of {{weekOf}} in Ajour."
-2. Call get_week_status with weekOf {{weekOf}}.
+2. Call get_week_status with weekOf {{weekOf}}. Keep its `version`: it names the state of the week you compare against.
 3. `locked` is true: the week is already submitted in Ajour. End the session as done with "The week is already submitted." and stop.
 4. `uncommittedChanges` is not 0: end the session as failed with "Commit your changes first: some changes are not committed in Ajour." and stop. Do not open Workday.
 5. `pace.status` is not "on-pace": ask before anything else, with the hours in a decimal comma, for example "The week has 30,5 h logged and 40 h expected by now. Submit it anyway?", with the choices "Submit anyway" and "Stop". "Stop": end the session as cancelled.
@@ -50,7 +50,7 @@ No difference: go to step 5.
 
 Ask once, listing each difference with its day, project, task, and hours in Workday and in Ajour. For example: "Workday differs from Ajour on 2 days. Tue, Acme · Build: Workday has 2 h, Ajour committed 1,5 h. Thu: Workday has 1 h more, from an entry without an Ajour ID." List each entry whose Ajour ID is not in committedEntries with its day, time type, hours and comment, and say you will leave it alone. Offer the choices "Update Workday", "I'll fix Ajour" and "Leave it".
 
-- "Update Workday": make each Workday entry with one of this week's externalIds match its committed values, and add each committed entry Workday lacks. Never delete an entry whose Ajour ID is not in committedEntries: leave it and note it for the summary, for the user to check. Send update_session when you start each day. Then compare again, once. Differences left only from entries without an Ajour ID, or with an Ajour ID not in committedEntries, do not stop the submission: note them for the summary. Any other difference left: do not loop. Ask with the choices "Leave it" and "Stop". "Leave it": go on and note it for the summary. "Stop": end the session as cancelled.
+- "Update Workday": before you change anything in Workday, call get_week_status again. Its `version` differs from the one you compared against: the week changed in Ajour since. Then follow rules 3 and 4 of step 1, do step 3 again with the new values, once, and ask again about what differs. Then make each Workday entry with one of this week's externalIds match its committed values, and add each committed entry Workday lacks. Do not call mark_entries_committed for these repairs: they bring Workday back to values Ajour already committed, so there is no change to mark. Never delete an entry whose Ajour ID is not in committedEntries: leave it and note it for the summary, for the user to check. Send update_session when you start each day. Then compare again, once. Differences left only from entries without an Ajour ID, or with an Ajour ID not in committedEntries, do not stop the submission: note them for the summary. Any other difference left: do not loop. Ask with the choices "Leave it" and "Stop". "Leave it": go on and note it for the summary. "Stop": end the session as cancelled.
 - "I'll fix Ajour": end the session as cancelled with "Change the entries in Ajour, commit them, then run Check Workday and submit again." Do not submit.
 - "Leave it": go on with the differences as they are, and note them for the summary.
 
@@ -60,13 +60,16 @@ To add an entry, open the entry dialog from the day itself. Workday's page may b
    3. Take a snapshot and check the hours are still there before you confirm. If they are empty, type them again.
    The same applies when you edit an entry and change its time type: set the time type, wait, then set the hours. Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours.
 
-Workday shows an error on save: read the message. If it names a field you can fix, fix it once. Otherwise cancel the dialog, note the error, and ask with the choices "Leave it" and "Stop". "Stop" ends the session as failed.
+Workday shows an error on save: read the message. If it names a field you can fix, fix it once. Otherwise cancel the dialog, note the error, and ask with the choices "Leave it" and "Stop". "Stop" ends the session as cancelled.
 
 Never delete or change an entry in Workday whose Ajour ID is not in committedEntries, or that has no Ajour ID. Those are the user's own, or belong to another week or another Ajour.
 
 ## 5. Submit in Ajour
 
-Call submit_week with weekOf {{weekOf}}. Ajour refuses: end the session as failed with Ajour's reason.
+1. Right before submit_week, call get_week_status again. Follow rules 3 and 4 of step 1 with it. Its `version` differs from the one your last comparison used: do step 3 again with its values, once, and step 4 if anything differs. Do not read the status a third time here.
+2. Call submit_week with weekOf {{weekOf}} and the version of that last get_week_status call.
+3. Ajour refuses with "The week changed since you read it": call get_week_status again and do step 3 again with its values, once. Ask with the choices "Leave it" and "Stop", and list what differs, or say nothing differs. "Leave it": call submit_week with the version of that get_week_status call. "Stop": end the session as cancelled.
+4. Ajour refuses for any other reason, or refuses again: end the session as failed with Ajour's reason.
 
 ## 6. Summary
 

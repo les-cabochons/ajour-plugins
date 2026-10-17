@@ -80,3 +80,24 @@ test("the prompt marks changes with their version and never matches an entry by 
   assert.match(prompt, /mark_entries_committed with `changes: \[\{ entryId, version \}\]`/);
   assert.doesNotMatch(prompt, /Exactly one: treat it as that entry/);
 });
+
+test("the submit prompt reads the week's status again before a repair and before submit_week, and passes its version", async () => {
+  const submit = await readFile(new URL("prompts/submit-week.md", root), "utf8");
+  assert.match(submit, /before you change anything in Workday, call get_week_status again/i);
+  assert.match(submit, /Right before submit_week, call get_week_status again/);
+  assert.match(submit, /Call submit_week with weekOf \{\{weekOf\}\} and the version of that last get_week_status call/);
+  assert.match(submit, /The week changed since you read it/);
+  assert.match(submit, /Ask with the choices "Leave it" and "Stop"/);
+});
+
+test("the submit prompt marks nothing when it repairs Workday back to the committed values", async () => {
+  const submit = await readFile(new URL("prompts/submit-week.md", root), "utf8");
+  assert.match(submit, /Do not call mark_entries_committed for these repairs/);
+});
+
+test("every \"Stop\" ends the session as cancelled", async () => {
+  for (const name of ["commit-week.md", "submit-week.md"]) {
+    const prompt = await readFile(new URL(`prompts/${name}`, root), "utf8");
+    assert.doesNotMatch(prompt, /"Stop"[^.\n]*failed/, name);
+  }
+});

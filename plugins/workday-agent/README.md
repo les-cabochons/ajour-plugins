@@ -20,7 +20,7 @@ It never types a password or a code. With the optional "Sign-in username" settin
 4. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
 5. On the Commit page, click "Commit to Workday".
 
-Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.0 needs an Ajour with the Commit page.
+Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.1 needs an Ajour whose `mark_entries_committed` takes `changes` with versions.
 
 ## Development
 

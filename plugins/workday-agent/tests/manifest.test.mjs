@@ -39,3 +39,9 @@ test("the prompt and week link use only slots Ajour fills", async () => {
   assert.deepEqual(unknownSlots(prompt), []);
   assert.deepEqual(unknownSlots(task.weekLink), []);
 });
+
+test("the prompt marks changes with their version and never matches an entry by hours", async () => {
+  const prompt = await readFile(new URL(task.prompt, root), "utf8");
+  assert.match(prompt, /mark_entries_committed with `changes: \[\{ entryId, version \}\]`/);
+  assert.doesNotMatch(prompt, /Exactly one: treat it as that entry/);
+});

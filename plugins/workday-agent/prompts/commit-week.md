@@ -2,7 +2,7 @@
 
 You commit the changes the user made in Ajour for the week of {{weekOf}} to their Workday timesheet: you add, update and delete one Workday entry per Ajour entry. Workday saves each entry when you confirm its dialog. There is no Submit step: do not look for one and do not click "Submit".
 
-Keep a list of what you added, updated, deleted and skipped. The final summary uses it.
+Keep a list of what you added, updated, deleted and skipped. The final summary uses it. For each entry, also note every Workday place, a day and a time type, where you added, edited or deleted an entry with its externalId during this run.
 
 ## 1. Read the changes
 
@@ -55,10 +55,12 @@ After Workday saved a change, call mark_entries_committed with `changes: [{ entr
 
 Ajour refuses the mark when the user changed the entry in Ajour since you read it ("changed since you read it") or when it no longer knows the ID. You may already have changed Workday for it, so call get_week_changes again, with onlyChecked false, and find the change by its entryId:
 
+Whatever you find, check every place you noted for that externalId during this run, not only the committed and current places of the refreshed change. Only the place Ajour now expects may keep an entry with that externalId.
+
 - Still listed, with new values: apply its current values in Workday, then mark it with its new version.
 - No longer listed: Ajour already has no change for it, for example because an earlier mark went through or the user put the entry back as it was. Make Workday match the entry as Ajour has it now. Call list_time_entries from the Monday of the change's earliest day to the Sunday of its latest day, current or committed, and look for the entry with this entryId. It gives the date, the project and task names, the minutes and the note, but no externalId: keep the externalId from get_week_changes.
   - The entry exists: Workday must have exactly one entry with this externalId, on the entry's day and time type, with its hours (minutes divided by 60, with a decimal comma) and its comment. Add, edit or move that Workday entry so it does, and delete any other Workday entry with this externalId. Find the time type as you did for this change: list_time_entries has no Workday name or code. If the entry's project or task is not one of the change's current or committed values, do not guess the time type: ask with the choices "Skip" and "Stop".
-  - The entry does not exist: Workday must have no entry with this externalId. Delete any that is there.
+  - The entry is not in the list: do not conclude it was deleted. It may have moved to another week. Leave the Workday entry as it is and ask with the choices "Skip" and "Stop". "Stop" ends the session as cancelled. Say in the summary that the user should commit the other week again or check that Workday entry.
   Do not mark anything for it. Say in the summary what you did for that entry and why.
 
 An updated change that did not move whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.

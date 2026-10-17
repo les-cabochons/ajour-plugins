@@ -38,12 +38,11 @@ The comment of every entry you write is the note, then " · ", then the external
 
 - **Added**: look first for an entry on that day and time type whose comment ends with the externalId. Found with the same hours and comment: it is already there. Found with other hours or another comment: edit it to the current values, as for an updated change. Not found: add it as a new entry.
 - **Updated**, same day and time type: find the Workday entry whose comment ends with the externalId, on the committed day, and edit its hours and comment.
-- **Updated**, moved (the day or the time type changed): look for the externalId at both places, the committed day and time type, and the current day and time type. A previous run may have stopped halfway through the move.
-  - Found at the current place with the current hours and comment: the move is done. Mark it.
-  - Found at the committed place only: delete it there, add it at the current place, then mark it.
-  - Found at both places: delete the one at the committed place, then mark it.
-  - Found nowhere: add it at the current place, then mark it.
-  The committed day or the current day may be in another week: get_week_changes lists a moved entry as one updated change in both weeks. Go to that week for that step, then come back to the week of {{weekOf}}. Mark a moved change only after every step succeeded, whichever week each is in. If the add fails after the delete, ask with the choices "Retry" and "Stop", and do not mark the change. "Stop" ends the session as cancelled.
+- **Updated**, moved (the day or the time type changed): a previous run may have stopped halfway through the move, so follow these steps in order, whatever you find.
+  1. Destination, the current day and time type: find the entry whose comment ends with the externalId. If it is there, make its hours and comment match the current values, editing it when they differ. If it is not there, add it with the current values. Take a snapshot and check the destination entry has the current hours and comment.
+  2. Source, the committed day and time type, only when it differs from the destination: if an entry whose comment ends with the externalId is there, delete it. Take a snapshot and check it is gone.
+  3. Mark the change only when the destination entry has the current values and the source has no entry with the externalId.
+  If any step fails, ask with the choices "Retry" and "Stop", and do not mark the change. "Stop" ends the session as cancelled. The committed day or the current day may be in another week: get_week_changes lists a moved entry as one updated change in both weeks. Go to that week for that step, then come back to the week of {{weekOf}}.
 - **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. No entry on the committed day has its externalId: it is already gone, so mark it and go on. Never delete an entry without the externalId, even one that looks like it. If an entry on that day and time type with no externalId of yours looks like it (same hours or same note), leave it and note it for the summary.
 
 To add an entry, open the entry dialog from the day itself. Workday's page may be in English or French. Click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower. Fill the dialog in this order, because Workday clears the hours when the time type changes:
@@ -52,7 +51,14 @@ To add an entry, open the entry dialog from the day itself. Workday's page may b
    3. Take a snapshot and check the hours are still there before you confirm. If they are empty, type them again.
    The same applies when you edit an entry and change its time type: set the time type, wait, then set the hours. Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours.
 
-After Workday saved a change, call mark_entries_committed with `changes: [{ entryId, version }]`, using the entryId and the version get_week_changes gave you. Never mark a change you did not apply. An added change that is already there, a deleted change that is already gone and a finished move count as applied: mark them. If Ajour answers that the change changed since you read it, the user edited the entry in Ajour meanwhile: call get_week_changes again, apply the change's current values in Workday, then mark it with its new version.
+After Workday saved a change, call mark_entries_committed with `changes: [{ entryId, version }]`, using the entryId and the version get_week_changes gave you. Never mark a change you did not apply. An added change that is already there, a deleted change that is already gone and a finished move count as applied: mark them.
+
+Ajour refuses the mark when the user changed the entry in Ajour since you read it ("changed since you read it") or when it no longer knows the ID. You may already have changed Workday for it, so call get_week_changes again, with onlyChecked false, and find the change by its entryId:
+
+- Still listed, with new values: apply its current values in Workday, then mark it with its new version.
+- No longer listed: Ajour went back to what Workday had before your step, or the entry no longer exists. Undo every Workday step you made for it: add back an entry you deleted, with the values it had, delete an entry you added (it carries the externalId), or put back the hours and comment you overwrote. Do not mark anything for it. Say in the summary which entry you reverted and why.
+
+Never leave a Workday change in place after Ajour refused its mark, unless you marked it with the new version.
 
 An updated change that did not move whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
 
@@ -72,4 +78,4 @@ Never delete or change an entry in Workday that has no externalId of yours, unle
 
 ## 4. Summary
 
-End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday." For each deleted change marked as already gone while a similar entry without an Ajour ID remains, say so with its day, hours and comment, so the user can check it. For example: "Thu, Acme · Build (2 h) was already gone. Workday still has an entry there with 2 h and the comment 'Build' and no Ajour ID: check it."
+End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday." Name each entry you reverted after a refused mark, and why. For each deleted change marked as already gone while a similar entry without an Ajour ID remains, say so with its day, hours and comment, so the user can check it. For example: "Thu, Acme · Build (2 h) was already gone. Workday still has an entry there with 2 h and the comment 'Build' and no Ajour ID: check it."

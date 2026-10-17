@@ -25,7 +25,7 @@ test("the manifest is an agent-task plugin with project properties for API 3", (
   assert.equal(manifest.apiVersion, 3);
   assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties"]);
   assert.equal(manifest.entrypoint, undefined);
-  assert.equal(task.placement, "submit-week");
+  assert.equal(task.placement, "commit-week");
 });
 
 test("the prompt is a regular file under 64 KB", async () => {

@@ -9,16 +9,8 @@
     "projectProperties": {
       "section": "Workday",
       "fields": [
-        {
-          "id": "name",
-          "label": "Workday name",
-          "defaultFrom": "fullName"
-        },
-        {
-          "id": "code",
-          "label": "Workday code",
-          "defaultFrom": "code"
-        }
+        { "id": "name", "label": "Workday name", "defaultFrom": "fullName" },
+        { "id": "code", "label": "Workday code", "defaultFrom": "code" }
       ]
     },
     "agentTask": {

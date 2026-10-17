@@ -41,16 +41,16 @@ For each day, Monday first, compare Workday's total for the day with committedHo
 
 - A committed entry with no Workday entry whose comment ends with its externalId.
 - A Workday entry with one of these externalIds whose day, time type, hours or comment differs from the committed values.
-- A Workday entry on a day of this week whose comment ends with "ajour:" and an ID that is not in committedEntries.
+- A Workday entry on a day of this week whose comment ends with "ajour:" and an ID that is not in committedEntries. It may belong to another week or another Ajour: report it, never delete it.
 - A day whose total still differs once those are counted. The difference comes from entries without an Ajour ID, the user's own.
 
 No difference: go to step 5.
 
 ## 4. Ask about the differences
 
-Ask once, listing each difference with its day, project, task, and hours in Workday and in Ajour. For example: "Workday differs from Ajour on 2 days. Tue, Acme · Build: Workday has 2 h, Ajour committed 1,5 h. Thu: Workday has 1 h more, from an entry without an Ajour ID." Offer the choices "Update Workday", "I'll fix Ajour" and "Leave it".
+Ask once, listing each difference with its day, project, task, and hours in Workday and in Ajour. For example: "Workday differs from Ajour on 2 days. Tue, Acme · Build: Workday has 2 h, Ajour committed 1,5 h. Thu: Workday has 1 h more, from an entry without an Ajour ID." List each entry whose Ajour ID is not in committedEntries with its day, time type, hours and comment, and say you will leave it alone. Offer the choices "Update Workday", "I'll fix Ajour" and "Leave it".
 
-- "Update Workday": make each Workday entry with one of this week's externalIds match its committed values, add each committed entry Workday lacks, and delete each entry whose Ajour ID is not in committedEntries. Send update_session when you start each day. Then compare again. A difference left from entries without an Ajour ID does not stop the submission: note it for the summary.
+- "Update Workday": make each Workday entry with one of this week's externalIds match its committed values, and add each committed entry Workday lacks. Never delete an entry whose Ajour ID is not in committedEntries: leave it and note it for the summary, for the user to check. Send update_session when you start each day. Then compare again, once. Differences left only from entries without an Ajour ID, or with an Ajour ID not in committedEntries, do not stop the submission: note them for the summary. Any other difference left: do not loop. Ask with the choices "Leave it" and "Stop". "Leave it": go on and note it for the summary. "Stop": end the session as cancelled.
 - "I'll fix Ajour": end the session as cancelled with "Change the entries in Ajour, commit them, then run Check Workday and submit again." Do not submit.
 - "Leave it": go on with the differences as they are, and note them for the summary.
 
@@ -62,7 +62,7 @@ To add an entry, open the entry dialog from the day itself. Workday's page may b
 
 Workday shows an error on save: read the message. If it names a field you can fix, fix it once. Otherwise cancel the dialog, note the error, and ask with the choices "Leave it" and "Stop". "Stop" ends the session as failed.
 
-Never delete or change an entry in Workday that has no externalId of yours. Those are the user's own.
+Never delete or change an entry in Workday whose Ajour ID is not in committedEntries, or that has no Ajour ID. Those are the user's own, or belong to another week or another Ajour.
 
 ## 5. Submit in Ajour
 
@@ -70,4 +70,4 @@ Call submit_week with weekOf {{weekOf}}. Ajour refuses: end the session as faile
 
 ## 6. Summary
 
-End the session with what you did, for example: "Workday matched Ajour. Submitted the week in Ajour." or "Updated 2 Workday entries to match Ajour, then submitted the week in Ajour." List each difference you left, with its day, and each day whose total differs because of entries without an Ajour ID.
+End the session with what you did, for example: "Workday matched Ajour. Submitted the week in Ajour." or "Updated 2 Workday entries to match Ajour, then submitted the week in Ajour." List each difference you left, with its day, and each day whose total differs because of entries without an Ajour ID, and each entry with an Ajour ID not in committedEntries, with its day, hours and comment, for the user to check.

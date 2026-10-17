@@ -56,9 +56,10 @@ After Workday saved a change, call mark_entries_committed with `changes: [{ entr
 Ajour refuses the mark when the user changed the entry in Ajour since you read it ("changed since you read it") or when it no longer knows the ID. You may already have changed Workday for it, so call get_week_changes again, with onlyChecked false, and find the change by its entryId:
 
 - Still listed, with new values: apply its current values in Workday, then mark it with its new version.
-- No longer listed: Ajour went back to what Workday had before your step, or the entry no longer exists. Undo every Workday step you made for it: add back an entry you deleted, with the values it had, delete an entry you added (it carries the externalId), or put back the hours and comment you overwrote. Do not mark anything for it. Say in the summary which entry you reverted and why.
-
-Never leave a Workday change in place after Ajour refused its mark, unless you marked it with the new version.
+- No longer listed: Ajour already has no change for it, for example because an earlier mark went through or the user put the entry back as it was. Make Workday match the entry as Ajour has it now. Call list_time_entries from the Monday of the change's earliest day to the Sunday of its latest day, current or committed, and look for the entry with this entryId. It gives the date, the project and task names, the minutes and the note, but no externalId: keep the externalId from get_week_changes.
+  - The entry exists: Workday must have exactly one entry with this externalId, on the entry's day and time type, with its hours (minutes divided by 60, with a decimal comma) and its comment. Add, edit or move that Workday entry so it does, and delete any other Workday entry with this externalId. Find the time type as you did for this change: list_time_entries has no Workday name or code. If the entry's project or task is not one of the change's current or committed values, do not guess the time type: ask with the choices "Skip" and "Stop".
+  - The entry does not exist: Workday must have no entry with this externalId. Delete any that is there.
+  Do not mark anything for it. Say in the summary what you did for that entry and why.
 
 An updated change that did not move whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
 
@@ -78,4 +79,4 @@ Never delete or change an entry in Workday that has no externalId of yours, unle
 
 ## 4. Summary
 
-End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday." Name each entry you reverted after a refused mark, and why. For each deleted change marked as already gone while a similar entry without an Ajour ID remains, say so with its day, hours and comment, so the user can check it. For example: "Thu, Acme · Build (2 h) was already gone. Workday still has an entry there with 2 h and the comment 'Build' and no Ajour ID: check it."
+End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday." Name each entry you fixed after a refused mark, what you did and why. For each deleted change marked as already gone while a similar entry without an Ajour ID remains, say so with its day, hours and comment, so the user can check it. For example: "Thu, Acme · Build (2 h) was already gone. Workday still has an entry there with 2 h and the comment 'Build' and no Ajour ID: check it."

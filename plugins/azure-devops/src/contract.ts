@@ -97,6 +97,8 @@ export interface ConnectorSyncWorkItem {
     remainingEstimateHours?: ConnectorSyncEstimateFieldState;
     completedEstimateHours?: ConnectorSyncEstimateFieldState;
   };
+  /** Set on settled items: report the comments posted after it (ISO 8601). */
+  commentsSince?: string;
 }
 
 export interface ConnectorSyncFieldUpdate {
@@ -151,6 +153,10 @@ export interface ConnectorSettleWriteResult {
 export interface ConnectorPluginSyncResult {
   items: ConnectorImportCandidateInput[];
   workItemUpdates?: ConnectorSyncWorkItemUpdate[];
+  /** The user, in the id space of comment authors. Needed with `commentFacts`. */
+  viewer?: BacklogPerson;
+  /** New comments on the settled items, so someone else's comment returns one. */
+  commentFacts?: BacklogItemCommentFacts[];
 }
 
 // Code host capability. These types mirror packages/shared/code-host.ts in
@@ -250,6 +256,21 @@ export type BacklogReaction =
 export interface BacklogPerson {
   id: string;
   displayName: string;
+}
+
+/** A comment without its text, for a settled item. */
+export interface BacklogCommentFact {
+  id: string;
+  author: BacklogPerson;
+  /** ISO 8601. */
+  createdAt: string;
+  mentionsViewer?: boolean;
+}
+
+export interface BacklogItemCommentFacts {
+  localWorkItemId: string;
+  /** At most 50. */
+  comments: BacklogCommentFact[];
 }
 
 export interface BacklogListItemCommentsRequest {

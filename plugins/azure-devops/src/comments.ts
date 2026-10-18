@@ -8,8 +8,10 @@ import {
 } from "./azure-devops.js";
 import type {
   BacklogComment,
+  BacklogCommentFact,
   BacklogDeleteItemCommentRequest,
   BacklogEditItemCommentRequest,
+  BacklogItemCommentFacts,
   BacklogListItemCommentsRequest,
   BacklogListItemCommentsResult,
   BacklogPerson,
@@ -20,6 +22,7 @@ import type {
   BacklogSearchItemPeopleResult,
   BacklogSetItemCommentReactionRequest,
   BacklogSetItemCommentReactionResult,
+  ConnectorSyncWorkItem,
 } from "./contract.js";
 import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.js";
 
@@ -404,4 +407,111 @@ export async function searchAzureItemPeople(
     .filter((person) => person.displayName)
     .slice(0, request.limit);
   return { people };
+}
+
+/** How many of a settled item's newest comments a sync reads. */
+const SETTLED_COMMENT_PAGE = 20;
+/** Settled items whose comments are read at the same time. */
+const SETTLED_COMMENT_CONCURRENCY = 5;
+
+/** The projects of these work items, in one request per 200. */
+async function fetchProjectNames(config: AzureDevOpsConnectionInput, ids: number[]) {
+  const projects = new Map<number, string>();
+  for (let start = 0; start < ids.length; start += 200) {
+    const batch = await requestAzureDevOps<{ value?: (AzureWorkItem | null)[] }>(
+      config,
+      "/_apis/wit/workitemsbatch?api-version=7.1",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ids: ids.slice(start, start + 200),
+          fields: ["System.TeamProject"],
+          errorPolicy: "omit",
+        }),
+      },
+    );
+    for (const workItem of batch.value ?? []) {
+      const project = workItem ? getProjectName(workItem) : undefined;
+      if (workItem && project) projects.set(workItem.id, project);
+    }
+  }
+  return projects;
+}
+
+/**
+ * The comments posted on settled items since they were settled, without their
+ * text, so Ajour can return an item someone else commented on (its ADR 0008).
+ * Best effort: an item whose comments fail is skipped, and the sync goes on.
+ */
+export async function findAzureCommentFacts(
+  config: AzureDevOpsConnectionInput,
+  workItems: ConnectorSyncWorkItem[],
+): Promise<{ viewer?: BacklogPerson; commentFacts: BacklogItemCommentFacts[] }> {
+  const settled = workItems.flatMap((workItem) => {
+    const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
+    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
+    return Number.isFinite(since) && id !== null
+      ? [{ localWorkItemId: workItem.localWorkItemId, id, since }]
+      : [];
+  });
+  if (settled.length === 0) return { commentFacts: [] };
+
+  let viewer: BacklogPerson;
+  let projects: Map<number, string>;
+  try {
+    [viewer, projects] = await Promise.all([
+      fetchViewer(config),
+      fetchProjectNames(config, settled.map((entry) => entry.id)),
+    ]);
+  } catch {
+    return { commentFacts: [] };
+  }
+
+  const params = new URLSearchParams({
+    $top: String(SETTLED_COMMENT_PAGE),
+    order: "desc",
+    "api-version": COMMENTS_API_VERSION,
+  });
+  const commentFacts: BacklogItemCommentFacts[] = [];
+  for (let start = 0; start < settled.length; start += SETTLED_COMMENT_CONCURRENCY) {
+    const chunk = settled.slice(start, start + SETTLED_COMMENT_CONCURRENCY);
+    const found = await Promise.all(
+      chunk.map(async (entry) => {
+        const project = projects.get(entry.id);
+        if (!project) return null;
+        try {
+          const page = await requestAzureDevOps<AzureCommentList>(
+            config,
+            `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments?${params}`,
+          );
+          const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
+            !comment.isDeleted &&
+            comment.createdDate &&
+            Date.parse(comment.createdDate) > entry.since
+              ? [
+                  {
+                    id: String(comment.id),
+                    author: person(comment.createdBy),
+                    createdAt: comment.createdDate,
+                    // Both formats name a mentioned person by identity id.
+                    ...((comment.text ?? "").toLowerCase().includes(viewer.id)
+                      ? { mentionsViewer: true }
+                      : {}),
+                  },
+                ]
+              : [],
+          );
+          return comments.length > 0
+            ? { localWorkItemId: entry.localWorkItemId, comments }
+            : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const facts of found) {
+      if (facts) commentFacts.push(facts);
+    }
+  }
+  return { viewer, commentFacts };
 }

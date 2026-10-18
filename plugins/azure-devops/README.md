@@ -100,6 +100,12 @@ comment's reactions.
 no list of the people allowed on one work item, so it searches the
 organization's active users on the identities service.
 
+On each sync, for the items the user settled, the plugin reads the newest 20
+comments and returns those posted since the settle as `commentFacts`: id,
+author, time and whether they mention the user, never the text. Ajour brings
+the item back when one is from someone else. An item whose comments fail is
+skipped; the sync goes on.
+
 Reading comments needs Work Items (Read). Posting, editing, deleting and
 reacting need Work Items (Read & write). People search needs Identity (Read).
 Ajour never stores comment text.

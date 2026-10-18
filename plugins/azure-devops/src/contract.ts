@@ -318,3 +318,15 @@ export interface BacklogSetItemCommentReactionRequest {
 export interface BacklogSetItemCommentReactionResult {
   reactions: NonNullable<BacklogComment["reactions"]>;
 }
+
+export interface BacklogSearchItemPeopleRequest {
+  sourceId: string;
+  query: string;
+  /** 1 to 20. */
+  limit: number;
+}
+
+export interface BacklogSearchItemPeopleResult {
+  /** In the id space of `mention:<id>`. */
+  people: BacklogPerson[];
+}

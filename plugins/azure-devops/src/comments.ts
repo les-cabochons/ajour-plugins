@@ -1,4 +1,5 @@
 import {
+  createAuthHeader,
   getProjectName,
   parseAzureWorkItemId,
   requestAzureDevOps,
@@ -15,6 +16,8 @@ import type {
   BacklogPostItemCommentRequest,
   BacklogPostItemCommentResult,
   BacklogReaction,
+  BacklogSearchItemPeopleRequest,
+  BacklogSearchItemPeopleResult,
   BacklogSetItemCommentReactionRequest,
   BacklogSetItemCommentReactionResult,
 } from "./contract.js";
@@ -329,4 +332,76 @@ export async function setAzureItemCommentReaction(
     `${path}?$expand=reactions&api-version=${COMMENTS_API_VERSION}`,
   );
   return { reactions: toBacklogComment(comment).reactions ?? [] };
+}
+
+interface AzureIdentity2 {
+  id?: string;
+  providerDisplayName?: string;
+  customDisplayName?: string;
+  isActive?: boolean;
+  isContainer?: boolean;
+}
+
+/**
+ * Where identities live: vssps.dev.azure.com/{org} for dev.azure.com,
+ * {org}.vssps.visualstudio.com for the older hosts, and the collection
+ * itself for Azure DevOps Server.
+ */
+export function identitiesBaseUrl(organizationUrl: string) {
+  const url = new URL(organizationUrl.replace(/\/+$/, ""));
+  if (url.hostname === "dev.azure.com") {
+    return `https://vssps.dev.azure.com${url.pathname}`;
+  }
+  const legacy = /^([^.]+)\.visualstudio\.com$/.exec(url.hostname);
+  if (legacy) {
+    return `https://${legacy[1]}.vssps.visualstudio.com`;
+  }
+  return `${url.origin}${url.pathname}`;
+}
+
+/**
+ * People whose name starts like the query, for the editor's @ suggestions.
+ * Azure DevOps has no list of people allowed on one work item, so this
+ * searches the organization's users, without groups or inactive accounts.
+ */
+export async function searchAzureItemPeople(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSearchItemPeopleRequest,
+): Promise<BacklogSearchItemPeopleResult> {
+  requireWorkItemId(config, request.sourceId);
+  const query = request.query.trim();
+  if (!query) return { people: [] };
+  const url = new URL(`${identitiesBaseUrl(config.organizationUrl)}/_apis/identities`);
+  url.searchParams.set("searchFilter", "General");
+  url.searchParams.set("filterValue", query);
+  url.searchParams.set("queryMembership", "None");
+  url.searchParams.set("api-version", "7.1");
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        Authorization: createAuthHeader(config.personalAccessToken),
+      },
+      redirect: "manual",
+    });
+  } catch (error) {
+    throw new Error(
+      `Azure DevOps request failed: ${error instanceof Error ? error.message : "Network error"}`,
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`Azure DevOps request failed (${response.status}): people search`);
+  }
+  const data = (await response.json()) as { value?: AzureIdentity2[] };
+  const people = (data.value ?? [])
+    .filter((identity) => identity.id && identity.isActive !== false && !identity.isContainer)
+    .map((identity) => ({
+      id: identity.id!.toLowerCase(),
+      displayName: (identity.customDisplayName || identity.providerDisplayName || "").trim(),
+    }))
+    .filter((person) => person.displayName)
+    .slice(0, request.limit);
+  return { people };
 }

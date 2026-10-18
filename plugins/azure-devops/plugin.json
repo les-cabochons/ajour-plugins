@@ -17,7 +17,7 @@
     { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Contoso Platform" },
     { "id": "tenantLabel", "label": "Tenant", "type": "text", "required": true, "placeholder": "Contoso Entra" },
     { "id": "organizationUrl", "label": "Organization URL", "type": "url", "required": true, "placeholder": "https://dev.azure.com/your-org" },
-    { "id": "personalAccessToken", "label": "Personal Access Token", "type": "password", "required": true, "secret": true, "placeholder": "PAT with Work Items and Code access", "helpText": "Work items need Work Items (Read, or Read & write to write back). Pull requests need Code (Read), and Project and Team (Read) for team review requests." },
+    { "id": "personalAccessToken", "label": "Personal Access Token", "type": "password", "required": true, "secret": true, "placeholder": "PAT with Work Items and Code access", "helpText": "Work items need Work Items (Read, or Read & write to write back and to post comments), and mentions need Identity (Read). Pull requests need Code (Read), and Project and Team (Read) for team review requests." },
     {
       "id": "queryScope",
       "label": "Import scope",

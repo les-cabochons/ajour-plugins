@@ -1,4 +1,5 @@
 import type {
+  BacklogSearchItemPeopleRequest,
   BacklogDeleteItemCommentRequest,
   BacklogEditItemCommentRequest,
   BacklogSetItemCommentReactionRequest,
@@ -28,6 +29,7 @@ import {
   editAzureItemComment,
   listAzureItemComments,
   postAzureItemComment,
+  searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "./comments.js";
 import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
@@ -304,6 +306,14 @@ export async function setItemCommentReaction(
   request: BacklogSetItemCommentReactionRequest,
 ) {
   return await setAzureItemCommentReaction(buildAzureConfig(connection.config, connection), request);
+}
+
+/** People to mention, for Ajour's @ suggestions. */
+export async function searchItemPeople(
+  connection: ConnectorPluginConnection,
+  request: BacklogSearchItemPeopleRequest,
+) {
+  return await searchAzureItemPeople(buildAzureConfig(connection.config, connection), request);
 }
 
 export async function syncPullRequests(

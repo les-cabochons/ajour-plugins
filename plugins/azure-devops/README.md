@@ -96,8 +96,13 @@ closes. An edit goes as Markdown, like a new comment.
 `setItemCommentReaction` adds or removes the user's reaction, then returns the
 comment's reactions.
 
+`searchItemPeople` suggests people for Ajour's @ mentions. Azure DevOps has
+no list of the people allowed on one work item, so it searches the
+organization's active users on the identities service.
+
 Reading comments needs Work Items (Read). Posting, editing, deleting and
-reacting need Work Items (Read & write). Ajour never stores comment text.
+reacting need Work Items (Read & write). People search needs Identity (Read).
+Ajour never stores comment text.
 
 ## Pull requests
 

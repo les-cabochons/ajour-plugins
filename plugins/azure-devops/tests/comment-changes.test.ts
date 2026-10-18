@@ -3,6 +3,8 @@ import type { AzureDevOpsConnectionInput } from "../src/azure-devops.ts";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
+  identitiesBaseUrl,
+  searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "../src/comments.ts";
 import {
@@ -162,5 +164,54 @@ describe("changing Azure DevOps comments", () => {
     await expect(
       deleteAzureItemComment(config(), { sourceId: SOURCE_ID, commentId: "7/../8" }),
     ).rejects.toThrow("is not an Azure DevOps comment");
+  });
+});
+
+describe("searching Azure DevOps people", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("finds active users on the identities host and skips groups", async () => {
+    const urls: URL[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        urls.push(url);
+        return json({
+          value: [
+            { id: ANA.toUpperCase(), providerDisplayName: "Ana Silva" },
+            { id: ME, providerDisplayName: "Andrew Lee", isActive: false },
+            { id: "22222222-2222-2222-2222-222222222222", providerDisplayName: "[Contoso]\\Analysts", isContainer: true },
+          ],
+        });
+      }),
+    );
+
+    const result = await searchAzureItemPeople(config(), {
+      sourceId: SOURCE_ID,
+      query: "An",
+      limit: 8,
+    });
+
+    expect(result.people).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(urls[0]!.origin + urls[0]!.pathname).toBe(
+      "https://vssps.dev.azure.com/contoso/_apis/identities",
+    );
+    expect(urls[0]!.searchParams.get("filterValue")).toBe("An");
+  });
+
+  it("finds the identities host for each kind of organization URL", () => {
+    expect(identitiesBaseUrl("https://dev.azure.com/contoso/")).toBe(
+      "https://vssps.dev.azure.com/contoso",
+    );
+    expect(identitiesBaseUrl("https://contoso.visualstudio.com")).toBe(
+      "https://contoso.vssps.visualstudio.com",
+    );
+    expect(identitiesBaseUrl("https://tfs.contoso.local/DefaultCollection")).toBe(
+      "https://tfs.contoso.local/DefaultCollection",
+    );
   });
 });

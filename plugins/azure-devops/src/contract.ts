@@ -235,3 +235,53 @@ export interface CodeHostSyncResult {
   instanceUrl?: string;
   pullRequests: CodeHostPullRequestFacts[];
 }
+
+export type BacklogReaction =
+  | "like"
+  | "dislike"
+  | "heart"
+  | "hooray"
+  | "laugh"
+  | "confused"
+  | "rocket"
+  | "eyes";
+
+/** A person in Azure DevOps, by identity id, the id comment authors carry. */
+export interface BacklogPerson {
+  id: string;
+  displayName: string;
+}
+
+export interface BacklogListItemCommentsRequest {
+  sourceId: string;
+  /** 1 to 50. */
+  limit: number;
+  /** An `earlierCursor` returned before. */
+  cursor?: string;
+}
+
+export interface BacklogComment {
+  id: string;
+  author: BacklogPerson;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601, when the comment changed after it was posted. */
+  updatedAt?: string;
+  reactions?: {
+    reaction: BacklogReaction;
+    count: number;
+    viewerReacted: boolean;
+  }[];
+  restrictedTo?: string;
+}
+
+export interface BacklogListItemCommentsResult {
+  viewer: BacklogPerson;
+  /** Oldest first, at most 50. */
+  comments: BacklogComment[];
+  total?: number;
+  /** Set while earlier comments remain. */
+  earlierCursor?: string;
+}

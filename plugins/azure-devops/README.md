@@ -90,8 +90,14 @@ and returns each page oldest first, with the total and a continuation cursor.
 reaches Azure DevOps as written. Ajour's mentions go as `@<id>` mentions, which
 notify the person.
 
-Reading comments needs Work Items (Read), and posting needs Work Items (Read &
-write). Ajour never stores comment text.
+`editItemComment` and `deleteItemComment` change or remove the user's own
+comments; Ajour offers them only there, and sends a delete once its Undo toast
+closes. An edit goes as Markdown, like a new comment.
+`setItemCommentReaction` adds or removes the user's reaction, then returns the
+comment's reactions.
+
+Reading comments needs Work Items (Read). Posting, editing, deleting and
+reacting need Work Items (Read & write). Ajour never stores comment text.
 
 ## Pull requests
 

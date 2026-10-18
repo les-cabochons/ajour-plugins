@@ -308,7 +308,9 @@ export async function requestAzureDevOps<T>(
     throw new Error(`Azure DevOps request failed (${response.status}): ${detail}`);
   }
 
-  return (await response.json()) as T;
+  // A delete answers 204 with no body.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 async function executeWiqlQuery(

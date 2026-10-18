@@ -9,7 +9,7 @@
   "capabilities": {
     "connector": {
       "settle": true,
-      "comments": { "reactions": ["like", "dislike", "heart", "hooray", "laugh", "confused"], "mentions": true }
+      "comments": { "edit": true, "delete": true, "reactions": ["like", "dislike", "heart", "hooray", "laugh", "confused"], "mentions": true }
     },
     "codeHost": {}
   },

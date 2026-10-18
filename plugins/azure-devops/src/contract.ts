@@ -295,3 +295,26 @@ export interface BacklogPostItemCommentRequest {
 export interface BacklogPostItemCommentResult {
   comment: BacklogComment;
 }
+
+export interface BacklogEditItemCommentRequest {
+  sourceId: string;
+  commentId: string;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+}
+
+export interface BacklogDeleteItemCommentRequest {
+  sourceId: string;
+  commentId: string;
+}
+
+export interface BacklogSetItemCommentReactionRequest {
+  sourceId: string;
+  commentId: string;
+  reaction: BacklogReaction;
+  reacted: boolean;
+}
+
+export interface BacklogSetItemCommentReactionResult {
+  reactions: NonNullable<BacklogComment["reactions"]>;
+}

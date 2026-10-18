@@ -10,6 +10,8 @@ import type {
   BacklogListItemCommentsRequest,
   BacklogListItemCommentsResult,
   BacklogPerson,
+  BacklogPostItemCommentRequest,
+  BacklogPostItemCommentResult,
   BacklogReaction,
 } from "./contract.js";
 import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.js";
@@ -172,15 +174,28 @@ async function fetchProjectName(config: AzureDevOpsConnectionInput, id: number) 
   return project;
 }
 
+function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {
+  const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
+  if (id === null) {
+    throw new Error(`"${sourceId}" is not an Azure DevOps work item.`);
+  }
+  return id;
+}
+
+// Ajour writes a mention as [@Name](mention:<id>); a Markdown comment takes @<id>.
+const AJOUR_MENTION = /\[@[^\]]*\]\(mention:([0-9a-fA-F-]{36})\)/g;
+
+/** Ajour's Markdown as an Azure DevOps Markdown comment. */
+export function toAzureMarkdown(body: string) {
+  return body.replace(AJOUR_MENTION, (_match, id: string) => `@<${id}>`);
+}
+
 /** A page of the item's comments: the newest `limit` before the cursor, oldest first. */
 export async function listAzureItemComments(
   config: AzureDevOpsConnectionInput,
   request: BacklogListItemCommentsRequest,
 ): Promise<BacklogListItemCommentsResult> {
-  const id = parseAzureWorkItemId(request.sourceId, config.organizationUrl);
-  if (id === null) {
-    throw new Error(`"${request.sourceId}" is not an Azure DevOps work item.`);
-  }
+  const id = requireWorkItemId(config, request.sourceId);
   const [viewer, project] = await Promise.all([
     fetchViewer(config),
     fetchProjectName(config, id),
@@ -206,4 +221,31 @@ export async function listAzureItemComments(
     ...(typeof page.totalCount === "number" ? { total: page.totalCount } : {}),
     ...(page.continuationToken ? { earlierCursor: page.continuationToken } : {}),
   };
+}
+
+/**
+ * Posts a Markdown comment at once (Ajour's ADR 0008). Markdown keeps Ajour's
+ * text as written; mentions go as Azure DevOps @<id> mentions, which notify.
+ */
+export async function postAzureItemComment(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogPostItemCommentRequest,
+): Promise<BacklogPostItemCommentResult> {
+  const id = requireWorkItemId(config, request.sourceId);
+  const body = request.body.trim();
+  if (!body) {
+    throw new Error("A comment needs some text.");
+  }
+  const project = await fetchProjectName(config, id);
+  const params = new URLSearchParams({
+    format: "markdown",
+    "api-version": COMMENTS_API_VERSION,
+  });
+  const created = await requestAzureDevOps<AzureComment>(
+    config,
+    `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?${params}`,
+    { method: "POST", body: JSON.stringify({ text: toAzureMarkdown(body) }) },
+  );
+  // The comment reads back as Ajour wrote it, with its mentions named.
+  return { comment: { ...toBacklogComment(created), body } };
 }

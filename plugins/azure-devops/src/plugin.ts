@@ -1,6 +1,8 @@
 import type {
   BacklogListItemCommentsRequest,
   BacklogListItemCommentsResult,
+  BacklogPostItemCommentRequest,
+  BacklogPostItemCommentResult,
   CodeHostSyncRequest,
   CodeHostSyncResult,
   ConnectorFieldValues,
@@ -18,7 +20,7 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
-import { listAzureItemComments } from "./comments.js";
+import { listAzureItemComments, postAzureItemComment } from "./comments.js";
 import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
 import {
   AzureReposClient,
@@ -261,6 +263,14 @@ export async function listItemComments(
   request: BacklogListItemCommentsRequest,
 ): Promise<BacklogListItemCommentsResult> {
   return await listAzureItemComments(buildAzureConfig(connection.config, connection), request);
+}
+
+/** Posts a comment on a work item, as Markdown. */
+export async function postItemComment(
+  connection: ConnectorPluginConnection,
+  request: BacklogPostItemCommentRequest,
+): Promise<BacklogPostItemCommentResult> {
+  return await postAzureItemComment(buildAzureConfig(connection.config, connection), request);
 }
 
 export async function syncPullRequests(

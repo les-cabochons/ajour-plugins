@@ -86,7 +86,12 @@ and returns each page oldest first, with the total and a continuation cursor.
 - The viewer comes from `connectionData`, in the same id space as comment
   authors.
 
-Reading comments needs Work Items (Read). Ajour never stores comment text.
+`postItemComment` posts a comment at once, as Markdown, so Ajour's text
+reaches Azure DevOps as written. Ajour's mentions go as `@<id>` mentions, which
+notify the person.
+
+Reading comments needs Work Items (Read), and posting needs Work Items (Read &
+write). Ajour never stores comment text.
 
 ## Pull requests
 

@@ -27,6 +27,7 @@ import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
+  findAzureCommentFacts,
   listAzureItemComments,
   postAzureItemComment,
   searchAzureItemPeople,
@@ -251,7 +252,8 @@ export async function syncConnection(
   workItems: ConnectorSyncWorkItem[] = [],
 ) {
   const azureConfig = buildAzureConfig(connection.config, connection);
-  return await syncAzureDevOpsConnection(azureConfig, workItems);
+  const result = await syncAzureDevOpsConnection(azureConfig, workItems);
+  return { ...result, ...(await findAzureCommentFacts(azureConfig, workItems)) };
 }
 
 export async function listSettleStates(

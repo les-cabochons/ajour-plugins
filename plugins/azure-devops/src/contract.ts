@@ -285,3 +285,13 @@ export interface BacklogListItemCommentsResult {
   /** Set while earlier comments remain. */
   earlierCursor?: string;
 }
+
+export interface BacklogPostItemCommentRequest {
+  sourceId: string;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+}
+
+export interface BacklogPostItemCommentResult {
+  comment: BacklogComment;
+}

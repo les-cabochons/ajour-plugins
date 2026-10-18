@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AzureDevOpsConnectionInput } from "../src/azure-devops.ts";
-import { commentBodyToMarkdown, listAzureItemComments } from "../src/comments.ts";
+import {
+  commentBodyToMarkdown,
+  listAzureItemComments,
+  postAzureItemComment,
+  toAzureMarkdown,
+} from "../src/comments.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
@@ -186,5 +191,65 @@ describe("Azure DevOps comment text", () => {
 
   it("treats a numeric 0 format as Markdown", () => {
     expect(commentBodyToMarkdown({ id: 1, format: 0, text: "**kept**" })).toBe("**kept**");
+  });
+});
+
+describe("posting an Azure DevOps comment", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("posts Markdown with Azure DevOps mentions and returns Ajour's text", async () => {
+    const posts: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (/\/_apis\/wit\/workitems\/4821\?fields=System\.TeamProject/.test(url)) {
+          return json({ id: 4821, fields: { "System.TeamProject": "Contoso Portal" } });
+        }
+        if (url.includes("/_apis/wit/workItems/4821/comments") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { text: string };
+          posts.push({ url, body });
+          return json({
+            id: 99,
+            text: body.text,
+            format: "markdown",
+            createdBy: { id: ME, displayName: "Alex" },
+            createdDate: "2026-10-18T09:00:00Z",
+            modifiedDate: "2026-10-18T09:00:00Z",
+          });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    const body = `Done, [@Ana Silva](mention:${ANA}). **Shipping** today.`;
+    const result = await postAzureItemComment(config(), { sourceId: SOURCE_ID, body });
+
+    expect(posts).toHaveLength(1);
+    const url = new URL(posts[0]!.url);
+    expect(url.pathname).toBe("/contoso/Contoso%20Portal/_apis/wit/workItems/4821/comments");
+    expect(url.searchParams.get("format")).toBe("markdown");
+    expect(posts[0]!.body).toEqual({ text: `Done, @<${ANA}>. **Shipping** today.` });
+    expect(result.comment).toEqual({
+      id: "99",
+      author: { id: ME, displayName: "Alex" },
+      body,
+      createdAt: "2026-10-18T09:00:00Z",
+    });
+  });
+
+  it("refuses an empty comment", async () => {
+    await expect(
+      postAzureItemComment(config(), { sourceId: SOURCE_ID, body: "   " }),
+    ).rejects.toThrow("A comment needs some text.");
+  });
+
+  it("leaves links that are not mentions alone", () => {
+    expect(toAzureMarkdown("[spec](https://example.com) and [@x](mention:bad)")).toBe(
+      "[spec](https://example.com) and [@x](mention:bad)",
+    );
   });
 });

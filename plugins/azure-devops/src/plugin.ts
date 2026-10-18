@@ -1,4 +1,7 @@
 import type {
+  BacklogDeleteItemCommentRequest,
+  BacklogEditItemCommentRequest,
+  BacklogSetItemCommentReactionRequest,
   BacklogListItemCommentsRequest,
   BacklogListItemCommentsResult,
   BacklogPostItemCommentRequest,
@@ -20,7 +23,13 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
-import { listAzureItemComments, postAzureItemComment } from "./comments.js";
+import {
+  deleteAzureItemComment,
+  editAzureItemComment,
+  listAzureItemComments,
+  postAzureItemComment,
+  setAzureItemCommentReaction,
+} from "./comments.js";
 import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
 import {
   AzureReposClient,
@@ -271,6 +280,30 @@ export async function postItemComment(
   request: BacklogPostItemCommentRequest,
 ): Promise<BacklogPostItemCommentResult> {
   return await postAzureItemComment(buildAzureConfig(connection.config, connection), request);
+}
+
+/** Edits one of the user's comments, as Markdown. */
+export async function editItemComment(
+  connection: ConnectorPluginConnection,
+  request: BacklogEditItemCommentRequest,
+) {
+  return await editAzureItemComment(buildAzureConfig(connection.config, connection), request);
+}
+
+/** Deletes one of the user's comments. */
+export async function deleteItemComment(
+  connection: ConnectorPluginConnection,
+  request: BacklogDeleteItemCommentRequest,
+) {
+  return await deleteAzureItemComment(buildAzureConfig(connection.config, connection), request);
+}
+
+/** Adds or removes the user's reaction on a comment. */
+export async function setItemCommentReaction(
+  connection: ConnectorPluginConnection,
+  request: BacklogSetItemCommentReactionRequest,
+) {
+  return await setAzureItemCommentReaction(buildAzureConfig(connection.config, connection), request);
 }
 
 export async function syncPullRequests(

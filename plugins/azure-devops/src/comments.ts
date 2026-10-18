@@ -7,12 +7,16 @@ import {
 } from "./azure-devops.js";
 import type {
   BacklogComment,
+  BacklogDeleteItemCommentRequest,
+  BacklogEditItemCommentRequest,
   BacklogListItemCommentsRequest,
   BacklogListItemCommentsResult,
   BacklogPerson,
   BacklogPostItemCommentRequest,
   BacklogPostItemCommentResult,
   BacklogReaction,
+  BacklogSetItemCommentReactionRequest,
+  BacklogSetItemCommentReactionResult,
 } from "./contract.js";
 import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.js";
 
@@ -248,4 +252,81 @@ export async function postAzureItemComment(
   );
   // The comment reads back as Ajour wrote it, with its mentions named.
   return { comment: { ...toBacklogComment(created), body } };
+}
+
+/** Ajour's reaction names, as Azure DevOps reaction types. */
+const AZURE_REACTIONS = Object.fromEntries(
+  Object.entries(REACTIONS).map(([azure, ajour]) => [ajour, azure]),
+) as Partial<Record<BacklogReaction, string>>;
+
+function requireCommentId(commentId: string) {
+  if (!/^\d+$/.test(commentId)) {
+    throw new Error(`"${commentId}" is not an Azure DevOps comment.`);
+  }
+  return commentId;
+}
+
+async function commentPath(
+  config: AzureDevOpsConnectionInput,
+  request: { sourceId: string; commentId: string },
+) {
+  const id = requireWorkItemId(config, request.sourceId);
+  const project = await fetchProjectName(config, id);
+  return `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments/${requireCommentId(request.commentId)}`;
+}
+
+/** Edits one of the user's comments at once, as Markdown. */
+export async function editAzureItemComment(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogEditItemCommentRequest,
+): Promise<BacklogPostItemCommentResult> {
+  const body = request.body.trim();
+  if (!body) {
+    throw new Error("A comment needs some text.");
+  }
+  const params = new URLSearchParams({
+    format: "markdown",
+    "api-version": COMMENTS_API_VERSION,
+  });
+  const updated = await requestAzureDevOps<AzureComment>(
+    config,
+    `${await commentPath(config, request)}?${params}`,
+    { method: "PATCH", body: JSON.stringify({ text: toAzureMarkdown(body) }) },
+  );
+  return { comment: { ...toBacklogComment(updated), body } };
+}
+
+/** Deletes one of the user's comments. Ajour sends it after its Undo window. */
+export async function deleteAzureItemComment(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogDeleteItemCommentRequest,
+): Promise<Record<string, never>> {
+  await requestAzureDevOps<unknown>(
+    config,
+    `${await commentPath(config, request)}?api-version=${COMMENTS_API_VERSION}`,
+    { method: "DELETE" },
+  );
+  return {};
+}
+
+/** Adds or removes the user's reaction, then returns the comment's reactions. */
+export async function setAzureItemCommentReaction(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSetItemCommentReactionRequest,
+): Promise<BacklogSetItemCommentReactionResult> {
+  const type = AZURE_REACTIONS[request.reaction];
+  if (!type) {
+    throw new Error(`Azure DevOps has no "${request.reaction}" reaction.`);
+  }
+  const path = await commentPath(config, request);
+  await requestAzureDevOps<unknown>(
+    config,
+    `${path}/reactions/${type}?api-version=7.1-preview.1`,
+    { method: request.reacted ? "PUT" : "DELETE" },
+  );
+  const comment = await requestAzureDevOps<AzureComment>(
+    config,
+    `${path}?$expand=reactions&api-version=${COMMENTS_API_VERSION}`,
+  );
+  return { reactions: toBacklogComment(comment).reactions ?? [] };
 }

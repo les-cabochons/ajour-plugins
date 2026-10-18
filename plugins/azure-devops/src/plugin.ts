@@ -1,4 +1,6 @@
 import type {
+  BacklogListItemCommentsRequest,
+  BacklogListItemCommentsResult,
   CodeHostSyncRequest,
   CodeHostSyncResult,
   ConnectorFieldValues,
@@ -16,6 +18,7 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
+import { listAzureItemComments } from "./comments.js";
 import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
 import {
   AzureReposClient,
@@ -250,6 +253,14 @@ export async function writeSettle(
   request: ConnectorSettleWriteRequest,
 ) {
   return await writeAzureSettle(buildAzureConfig(connection.config, connection), request);
+}
+
+/** A page of a work item's comments for Ajour's item page. */
+export async function listItemComments(
+  connection: ConnectorPluginConnection,
+  request: BacklogListItemCommentsRequest,
+): Promise<BacklogListItemCommentsResult> {
+  return await listAzureItemComments(buildAzureConfig(connection.config, connection), request);
 }
 
 export async function syncPullRequests(

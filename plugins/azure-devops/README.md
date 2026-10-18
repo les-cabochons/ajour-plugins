@@ -70,6 +70,24 @@ Removed categories count as done. Resolved remains open. Sync reports items
 Ajour already tracks that reached a done category, even when the query no
 longer returns them.
 
+## Comments
+
+`listItemComments` returns a work item's comments for Ajour's item page,
+through the work item Comments API (`7.1-preview.4`). Ajour asks for the
+newest page and then earlier ones; the plugin reads Azure DevOps newest first
+and returns each page oldest first, with the total and a continuation cursor.
+
+- HTML comments go through the same converter as descriptions. Markdown
+  comments stay as written.
+- Mentions become `[@Name](mention:<identity id>)`. A Markdown comment's
+  `@<id>` takes its name from the rendered text.
+- Reactions map to Ajour's names: like, dislike, heart, hooray, smile as
+  laugh, and confused.
+- The viewer comes from `connectionData`, in the same id space as comment
+  authors.
+
+Reading comments needs Work Items (Read). Ajour never stores comment text.
+
 ## Pull requests
 
 The plugin also declares Ajour's code host capability. `syncPullRequests`

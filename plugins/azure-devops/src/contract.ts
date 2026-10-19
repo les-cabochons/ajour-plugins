@@ -256,6 +256,8 @@ export type BacklogReaction =
 export interface BacklogPerson {
   id: string;
   displayName: string;
+  /** Under the name in Ajour's @ suggestions, to tell people apart. */
+  email?: string;
 }
 
 /** A comment without its text, for a settled item. */
@@ -342,6 +344,7 @@ export interface BacklogSetItemCommentReactionResult {
 
 export interface BacklogSearchItemPeopleRequest {
   sourceId: string;
+  /** Empty after a bare @, which asks for the item's own people. */
   query: string;
   /** 1 to 20. */
   limit: number;

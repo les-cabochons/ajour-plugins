@@ -350,6 +350,23 @@ interface AzureIdentity2 {
   customDisplayName?: string;
   isActive?: boolean;
   isContainer?: boolean;
+  properties?: Record<string, { $value?: unknown } | undefined>;
+}
+
+/** An account name that is an email, as Azure DevOps names most users. */
+function emailOf(...candidates: unknown[]) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && /^[^\s@]+@[^\s@]+$/.test(candidate.trim())) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
+/** A person for the @ suggestions, with their email when there is one. */
+function suggestion(identity: AzureIdentity): BacklogPerson {
+  const email = emailOf(identity.uniqueName);
+  return { ...person(identity), ...(email ? { email } : {}) };
 }
 
 /**
@@ -466,19 +483,27 @@ async function searchOrganizationPeople(
   const data = (await response.json()) as { value?: AzureIdentity2[] };
   return (data.value ?? [])
     .filter((identity) => identity.id && identity.isActive !== false && !identity.isContainer)
-    .map((identity) => ({
-      id: identity.id!.toLowerCase(),
-      displayName: (identity.customDisplayName || identity.providerDisplayName || "").trim(),
-    }))
+    .map((identity): BacklogPerson => {
+      const email = emailOf(
+        identity.properties?.Mail?.$value,
+        identity.properties?.Account?.$value,
+      );
+      return {
+        id: identity.id!.toLowerCase(),
+        displayName: (identity.customDisplayName || identity.providerDisplayName || "").trim(),
+        ...(email ? { email } : {}),
+      };
+    })
     .filter((person) => person.displayName);
 }
 
 /**
  * People for the editor's @ suggestions. Azure DevOps has no list of people
  * allowed on one work item, so the people on the item come first, matched by
- * any part of their name, then the organization's users. Either search may
- * fail or run out of time, such as when the token can't read identities;
- * only both failing fails.
+ * any part of their name, then the organization's users. A bare @ asks with
+ * no query and gets only the item's people. Either search may fail or run
+ * out of time, such as when the token can't read identities; only both
+ * failing fails.
  */
 export async function searchAzureItemPeople(
   config: AzureDevOpsConnectionInput,
@@ -489,18 +514,19 @@ export async function searchAzureItemPeople(
   const id = requireWorkItemId(config, request.sourceId);
   const query = request.query.trim().replace(/\s+/g, " ");
   const queryWords = nameWords(query);
-  if (queryWords.length === 0) return { people: [] };
+  if (query && queryWords.length === 0) return { people: [] };
 
   const [onItem, inOrganization] = await Promise.allSettled([
     fetchItemPeople(config, id, timeoutMs),
-    searchOrganizationPeople(config, query, timeoutMs),
+    query ? searchOrganizationPeople(config, query, timeoutMs) : Promise.resolve([]),
   ]);
+  if (!query && onItem.status === "rejected") throw onItem.reason;
   if (onItem.status === "rejected" && inOrganization.status === "rejected") {
     throw inOrganization.reason;
   }
   const found = [
     ...(onItem.status === "fulfilled"
-      ? onItem.value.filter((identity) => matchesQuery(identity, queryWords)).map(person)
+      ? onItem.value.filter((identity) => matchesQuery(identity, queryWords)).map(suggestion)
       : []),
     ...(inOrganization.status === "fulfilled" ? inOrganization.value : []),
   ];

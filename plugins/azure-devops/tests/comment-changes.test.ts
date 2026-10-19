@@ -226,6 +226,7 @@ describe("searching Azure DevOps people", () => {
         "System.ChangedBy": { id: ME, displayName: "Alex Martin", uniqueName: "alex@contoso.com" },
       },
     });
+  const ANA_SUGGESTION = { id: ANA, displayName: "Ana Silva", email: "ana@contoso.com" };
   const brunoComments = () =>
     json({ comments: [{ id: 9, createdBy: { id: BRUNO, displayName: "Bruno Côté" } }] });
 
@@ -255,10 +256,10 @@ describe("searching Azure DevOps people", () => {
   it("finds the item's people by their last name, a full name or the start of their account", async () => {
     const searches = fakePeople({ item: itemWithPeople, comments: brunoComments });
 
-    expect(await search("silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("silva")).toEqual([ANA_SUGGESTION]);
     expect(await search("  bru   cote ")).toEqual([{ id: BRUNO, displayName: "Bruno Côté" }]);
-    expect(await search("ana@con")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
-    expect(await search("Ana Silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("ana@con")).toEqual([ANA_SUGGESTION]);
+    expect(await search("Ana Silva")).toEqual([ANA_SUGGESTION]);
     expect(await search("ana costa")).toEqual([]);
     expect(searches.map((url) => url.searchParams.get("filterValue"))).toContain("bru cote");
   });
@@ -275,7 +276,7 @@ describe("searching Azure DevOps people", () => {
     });
 
     expect(await search("al")).toEqual([
-      { id: ME, displayName: "Alex Martin" },
+      { id: ME, displayName: "Alex Martin", email: "alex@contoso.com" },
       { id: "44444444-4444-4444-4444-444444444444", displayName: "Alba Reyes" },
     ]);
   });
@@ -293,7 +294,7 @@ describe("searching Azure DevOps people", () => {
   it("keeps the item's fields' people when its comments fail", async () => {
     fakePeople({ item: itemWithPeople, comments: () => json({ message: "Busy" }, 503) });
 
-    expect(await search("silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("silva")).toEqual([ANA_SUGGESTION]);
   });
 
   it("answers with what it found when a request takes too long", async () => {
@@ -308,7 +309,48 @@ describe("searching Azure DevOps people", () => {
       { sourceId: SOURCE_ID, query: "ana", limit: 8 },
       20,
     );
-    expect(result.people).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(result.people).toEqual([ANA_SUGGESTION]);
+  });
+
+  it("answers a bare @ with the item's people, without searching the organization", async () => {
+    const searches = fakePeople({ item: itemWithPeople, comments: brunoComments });
+
+    expect(await search("")).toEqual([
+      ANA_SUGGESTION,
+      { id: ME, displayName: "Alex Martin", email: "alex@contoso.com" },
+      { id: BRUNO, displayName: "Bruno Côté" },
+    ]);
+    expect(searches).toEqual([]);
+  });
+
+  it("fails a bare @ when the item can't be read", async () => {
+    fakePeople({ item: () => json({ message: "No access" }, 401) });
+
+    await expect(search("")).rejects.toThrow("Azure DevOps request failed (401)");
+  });
+
+  it("gives the organization's users their email", async () => {
+    fakePeople({
+      identities: json({
+        value: [
+          {
+            id: "44444444-4444-4444-4444-444444444444",
+            providerDisplayName: "Alba Reyes",
+            properties: { Mail: { $type: "System.String", $value: "alba@contoso.com" } },
+          },
+          {
+            id: "55555555-5555-5555-5555-555555555555",
+            providerDisplayName: "Alan Build",
+            properties: { Account: { $value: "Build Service" } },
+          },
+        ],
+      }),
+    });
+
+    expect(await search("al")).toEqual([
+      { id: "44444444-4444-4444-4444-444444444444", displayName: "Alba Reyes", email: "alba@contoso.com" },
+      { id: "55555555-5555-5555-5555-555555555555", displayName: "Alan Build" },
+    ]);
   });
 
   it("fails only when both searches fail", async () => {

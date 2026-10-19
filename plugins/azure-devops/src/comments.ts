@@ -160,8 +160,15 @@ export function toBacklogComment(comment: AzureComment): BacklogComment {
   };
 }
 
-async function fetchViewer(config: AzureDevOpsConnectionInput): Promise<BacklogPerson> {
-  const data = await requestAzureDevOps<AzureConnectionData>(config, "/_apis/connectionData");
+async function fetchViewer(
+  config: AzureDevOpsConnectionInput,
+  init?: RequestInit,
+): Promise<BacklogPerson> {
+  const data = await requestAzureDevOps<AzureConnectionData>(
+    config,
+    "/_apis/connectionData",
+    init,
+  );
   const user = data.authenticatedUser;
   if (!user?.id) {
     throw new Error("Azure DevOps did not name the token's account. Check the organization URL.");
@@ -414,55 +421,108 @@ const SETTLED_COMMENT_PAGE = 20;
 /** Settled items whose comments are read at the same time. */
 const SETTLED_COMMENT_CONCURRENCY = 5;
 
-/** The projects of these work items, in one request per 200. */
-async function fetchProjectNames(config: AzureDevOpsConnectionInput, ids: number[]) {
-  const projects = new Map<number, string>();
-  for (let start = 0; start < ids.length; start += 200) {
-    const batch = await requestAzureDevOps<{ value?: (AzureWorkItem | null)[] }>(
-      config,
-      "/_apis/wit/workitemsbatch?api-version=7.1",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ids: ids.slice(start, start + 200),
-          fields: ["System.TeamProject"],
-          errorPolicy: "omit",
-        }),
-      },
-    );
-    for (const workItem of batch.value ?? []) {
-      const project = workItem ? getProjectName(workItem) : undefined;
-      if (workItem && project) projects.set(workItem.id, project);
-    }
+/**
+ * How long a sync spends on comments. Ajour gives the whole sync 30 seconds,
+ * and the rest of it has already run, so this stays well within it.
+ */
+export interface CommentFactsLimits {
+  budgetMs: number;
+  requestTimeoutMs: number;
+  /** Picks where the older items start; tests pass a fixed one. */
+  random?: () => number;
+}
+const COMMENT_FACTS_LIMITS: CommentFactsLimits = {
+  budgetMs: 10_000,
+  requestTimeoutMs: 4_000,
+};
+
+/**
+ * The order a sync reads settled items in: most recently settled first, from
+ * a random point each sync, so no item keeps losing the budget to the same
+ * others. Within a batch, items changed since their settle still go first.
+ */
+export function commentFactsOrder<Entry extends { since: number }>(
+  entries: readonly Entry[],
+  random: () => number = Math.random,
+): Entry[] {
+  const byRecency = [...entries].sort((left, right) => right.since - left.since);
+  const start = Math.floor(random() * byRecency.length);
+  return [...byRecency.slice(start), ...byRecency.slice(0, start)];
+}
+
+/** The most work items one batch request names. */
+const WORK_ITEM_BATCH_SIZE = 200;
+
+/** The project of each work item, and when it last changed, in one request. */
+async function fetchSettledDetails(
+  config: AzureDevOpsConnectionInput,
+  ids: number[],
+  signal: AbortSignal,
+) {
+  const details = new Map<number, { project: string; changedAt?: number }>();
+  const batch = await requestAzureDevOps<{ value?: (AzureWorkItem | null)[] }>(
+    config,
+    "/_apis/wit/workitemsbatch?api-version=7.1",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ids,
+        fields: ["System.TeamProject", "System.ChangedDate"],
+        errorPolicy: "omit",
+      }),
+      signal,
+    },
+  );
+  for (const workItem of batch.value ?? []) {
+    const project = workItem ? getProjectName(workItem) : undefined;
+    if (!workItem || !project) continue;
+    const changed = workItem.fields?.["System.ChangedDate"];
+    const changedAt = typeof changed === "string" ? Date.parse(changed) : NaN;
+    details.set(workItem.id, {
+      project,
+      ...(Number.isFinite(changedAt) ? { changedAt } : {}),
+    });
   }
-  return projects;
+  return details;
 }
 
 /**
  * The comments posted on settled items since they were settled, without their
  * text, so Ajour can return an item someone else commented on (its ADR 0008).
- * Best effort: an item whose comments fail is skipped, and the sync goes on.
+ *
+ * Best effort, within a time budget: an item whose comments fail or don't fit
+ * is skipped, and the sync goes on with what was found. Ajour asks again at
+ * the next sync. Items go 200 at a time in `commentFactsOrder`, each batch's
+ * projects then its comments, so a large backlog still gets its comments
+ * read. A comment changes its work item, so within a batch the items changed
+ * since their settle are read first.
  */
 export async function findAzureCommentFacts(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[],
+  limits: CommentFactsLimits = COMMENT_FACTS_LIMITS,
 ): Promise<{ viewer?: BacklogPerson; commentFacts: BacklogItemCommentFacts[] }> {
-  const settled = workItems.flatMap((workItem) => {
-    const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
-    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
-    return Number.isFinite(since) && id !== null
-      ? [{ localWorkItemId: workItem.localWorkItemId, id, since }]
-      : [];
-  });
+  const settled = commentFactsOrder(
+    workItems.flatMap((workItem) => {
+      const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
+      const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
+      return Number.isFinite(since) && id !== null
+        ? [{ localWorkItemId: workItem.localWorkItemId, id, since }]
+        : [];
+    }),
+    limits.random,
+  );
   if (settled.length === 0) return { commentFacts: [] };
 
+  const deadline = Date.now() + limits.budgetMs;
+  const signal = () =>
+    AbortSignal.timeout(
+      Math.max(1, Math.min(limits.requestTimeoutMs, deadline - Date.now())),
+    );
+
   let viewer: BacklogPerson;
-  let projects: Map<number, string>;
   try {
-    [viewer, projects] = await Promise.all([
-      fetchViewer(config),
-      fetchProjectNames(config, settled.map((entry) => entry.id)),
-    ]);
+    viewer = await fetchViewer(config, { signal: signal() });
   } catch {
     return { commentFacts: [] };
   }
@@ -472,45 +532,73 @@ export async function findAzureCommentFacts(
     order: "desc",
     "api-version": COMMENTS_API_VERSION,
   });
+  const readComments = async (
+    entry: (typeof settled)[number],
+    project: string,
+  ): Promise<BacklogItemCommentFacts | null> => {
+    try {
+      const page = await requestAzureDevOps<AzureCommentList>(
+        config,
+        `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments?${params}`,
+        { signal: signal() },
+      );
+      const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
+        !comment.isDeleted &&
+        comment.createdDate &&
+        Date.parse(comment.createdDate) > entry.since
+          ? [
+              {
+                id: String(comment.id),
+                author: person(comment.createdBy),
+                createdAt: comment.createdDate,
+                // Both formats name a mentioned person by identity id.
+                ...((comment.text ?? "").toLowerCase().includes(viewer.id)
+                  ? { mentionsViewer: true }
+                  : {}),
+              },
+            ]
+          : [],
+      );
+      return comments.length > 0 ? { localWorkItemId: entry.localWorkItemId, comments } : null;
+    } catch {
+      return null;
+    }
+  };
+
   const commentFacts: BacklogItemCommentFacts[] = [];
-  for (let start = 0; start < settled.length; start += SETTLED_COMMENT_CONCURRENCY) {
-    const chunk = settled.slice(start, start + SETTLED_COMMENT_CONCURRENCY);
-    const found = await Promise.all(
-      chunk.map(async (entry) => {
-        const project = projects.get(entry.id);
-        if (!project) return null;
-        try {
-          const page = await requestAzureDevOps<AzureCommentList>(
-            config,
-            `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments?${params}`,
-          );
-          const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
-            !comment.isDeleted &&
-            comment.createdDate &&
-            Date.parse(comment.createdDate) > entry.since
-              ? [
-                  {
-                    id: String(comment.id),
-                    author: person(comment.createdBy),
-                    createdAt: comment.createdDate,
-                    // Both formats name a mentioned person by identity id.
-                    ...((comment.text ?? "").toLowerCase().includes(viewer.id)
-                      ? { mentionsViewer: true }
-                      : {}),
-                  },
-                ]
-              : [],
-          );
-          return comments.length > 0
-            ? { localWorkItemId: entry.localWorkItemId, comments }
-            : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    for (const facts of found) {
-      if (facts) commentFacts.push(facts);
+  for (let start = 0; start < settled.length; start += WORK_ITEM_BATCH_SIZE) {
+    if (Date.now() >= deadline) break;
+    const batch = settled.slice(start, start + WORK_ITEM_BATCH_SIZE);
+    let details: Awaited<ReturnType<typeof fetchSettledDetails>>;
+    try {
+      details = await fetchSettledDetails(
+        config,
+        batch.map((entry) => entry.id),
+        signal(),
+      );
+    } catch {
+      continue;
+    }
+    const changedSinceSettle = (entry: (typeof settled)[number]) => {
+      const changedAt = details.get(entry.id)?.changedAt;
+      return changedAt === undefined || changedAt > entry.since;
+    };
+    const ordered = batch
+      .filter((entry) => details.has(entry.id))
+      .sort(
+        (left, right) =>
+          Number(changedSinceSettle(right)) - Number(changedSinceSettle(left)),
+      );
+    for (let group = 0; group < ordered.length; group += SETTLED_COMMENT_CONCURRENCY) {
+      if (Date.now() >= deadline) break;
+      const found = await Promise.all(
+        ordered
+          .slice(group, group + SETTLED_COMMENT_CONCURRENCY)
+          .map((entry) => readComments(entry, details.get(entry.id)!.project)),
+      );
+      for (const facts of found) {
+        if (facts) commentFacts.push(facts);
+      }
     }
   }
   return { viewer, commentFacts };

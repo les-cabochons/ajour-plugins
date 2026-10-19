@@ -160,8 +160,15 @@ export function toBacklogComment(comment: AzureComment): BacklogComment {
   };
 }
 
-async function fetchViewer(config: AzureDevOpsConnectionInput): Promise<BacklogPerson> {
-  const data = await requestAzureDevOps<AzureConnectionData>(config, "/_apis/connectionData");
+async function fetchViewer(
+  config: AzureDevOpsConnectionInput,
+  init?: RequestInit,
+): Promise<BacklogPerson> {
+  const data = await requestAzureDevOps<AzureConnectionData>(
+    config,
+    "/_apis/connectionData",
+    init,
+  );
   const user = data.authenticatedUser;
   if (!user?.id) {
     throw new Error("Azure DevOps did not name the token's account. Check the organization URL.");
@@ -414,9 +421,26 @@ const SETTLED_COMMENT_PAGE = 20;
 /** Settled items whose comments are read at the same time. */
 const SETTLED_COMMENT_CONCURRENCY = 5;
 
-/** The projects of these work items, in one request per 200. */
-async function fetchProjectNames(config: AzureDevOpsConnectionInput, ids: number[]) {
-  const projects = new Map<number, string>();
+/**
+ * How long a sync spends on comments. Ajour gives the whole sync 30 seconds,
+ * and the rest of it has already run, so this stays well within it.
+ */
+export interface CommentFactsLimits {
+  budgetMs: number;
+  requestTimeoutMs: number;
+}
+const COMMENT_FACTS_LIMITS: CommentFactsLimits = {
+  budgetMs: 10_000,
+  requestTimeoutMs: 4_000,
+};
+
+/** The project of each work item, and when it last changed, in one request per 200. */
+async function fetchSettledDetails(
+  config: AzureDevOpsConnectionInput,
+  ids: number[],
+  signal: () => AbortSignal,
+) {
+  const details = new Map<number, { project: string; changedAt?: number }>();
   for (let start = 0; start < ids.length; start += 200) {
     const batch = await requestAzureDevOps<{ value?: (AzureWorkItem | null)[] }>(
       config,
@@ -425,27 +449,39 @@ async function fetchProjectNames(config: AzureDevOpsConnectionInput, ids: number
         method: "POST",
         body: JSON.stringify({
           ids: ids.slice(start, start + 200),
-          fields: ["System.TeamProject"],
+          fields: ["System.TeamProject", "System.ChangedDate"],
           errorPolicy: "omit",
         }),
+        signal: signal(),
       },
     );
     for (const workItem of batch.value ?? []) {
       const project = workItem ? getProjectName(workItem) : undefined;
-      if (workItem && project) projects.set(workItem.id, project);
+      if (!workItem || !project) continue;
+      const changed = workItem.fields?.["System.ChangedDate"];
+      const changedAt = typeof changed === "string" ? Date.parse(changed) : NaN;
+      details.set(workItem.id, {
+        project,
+        ...(Number.isFinite(changedAt) ? { changedAt } : {}),
+      });
     }
   }
-  return projects;
+  return details;
 }
 
 /**
  * The comments posted on settled items since they were settled, without their
  * text, so Ajour can return an item someone else commented on (its ADR 0008).
- * Best effort: an item whose comments fail is skipped, and the sync goes on.
+ *
+ * Best effort, within a time budget: an item whose comments fail or don't fit
+ * is skipped, and the sync goes on with what was found. Ajour asks again at
+ * the next sync. A comment changes its work item, so items changed since
+ * their settle are read first.
  */
 export async function findAzureCommentFacts(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[],
+  limits: CommentFactsLimits = COMMENT_FACTS_LIMITS,
 ): Promise<{ viewer?: BacklogPerson; commentFacts: BacklogItemCommentFacts[] }> {
   const settled = workItems.flatMap((workItem) => {
     const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
@@ -456,16 +492,38 @@ export async function findAzureCommentFacts(
   });
   if (settled.length === 0) return { commentFacts: [] };
 
+  const deadline = Date.now() + limits.budgetMs;
+  const signal = () =>
+    AbortSignal.timeout(
+      Math.max(1, Math.min(limits.requestTimeoutMs, deadline - Date.now())),
+    );
+
   let viewer: BacklogPerson;
-  let projects: Map<number, string>;
+  let details: Awaited<ReturnType<typeof fetchSettledDetails>>;
   try {
-    [viewer, projects] = await Promise.all([
-      fetchViewer(config),
-      fetchProjectNames(config, settled.map((entry) => entry.id)),
+    [viewer, details] = await Promise.all([
+      fetchViewer(config, { signal: signal() }),
+      fetchSettledDetails(
+        config,
+        settled.map((entry) => entry.id),
+        signal,
+      ),
     ]);
   } catch {
     return { commentFacts: [] };
   }
+
+  const changedSinceSettle = (entry: (typeof settled)[number]) => {
+    const changedAt = details.get(entry.id)?.changedAt;
+    return changedAt === undefined || changedAt > entry.since;
+  };
+  const ordered = settled
+    .filter((entry) => details.has(entry.id))
+    .sort(
+      (left, right) =>
+        Number(changedSinceSettle(right)) - Number(changedSinceSettle(left)) ||
+        right.since - left.since,
+    );
 
   const params = new URLSearchParams({
     $top: String(SETTLED_COMMENT_PAGE),
@@ -473,16 +531,17 @@ export async function findAzureCommentFacts(
     "api-version": COMMENTS_API_VERSION,
   });
   const commentFacts: BacklogItemCommentFacts[] = [];
-  for (let start = 0; start < settled.length; start += SETTLED_COMMENT_CONCURRENCY) {
-    const chunk = settled.slice(start, start + SETTLED_COMMENT_CONCURRENCY);
+  for (let start = 0; start < ordered.length; start += SETTLED_COMMENT_CONCURRENCY) {
+    if (Date.now() >= deadline) break;
+    const chunk = ordered.slice(start, start + SETTLED_COMMENT_CONCURRENCY);
     const found = await Promise.all(
       chunk.map(async (entry) => {
-        const project = projects.get(entry.id);
-        if (!project) return null;
+        const project = details.get(entry.id)!.project;
         try {
           const page = await requestAzureDevOps<AzureCommentList>(
             config,
             `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments?${params}`,
+            { signal: signal() },
           );
           const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
             !comment.isDeleted &&

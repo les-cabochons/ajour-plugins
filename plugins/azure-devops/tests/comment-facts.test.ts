@@ -31,8 +31,15 @@ function json(body: unknown, status = 200) {
 
 const sourceId = (id: number) => `${ORG}/Contoso%20Portal/_workitems/edit/${id}`;
 
-/** `comments` maps a work item id to its newest comments, or to a status that fails. */
-function fakeAzure(comments: Record<number, unknown[] | number>) {
+/**
+ * `comments` maps a work item id to its newest comments, to a status that
+ * fails, or to "stall" for a request that only ends when it is aborted.
+ * `changed` maps a work item id to its System.ChangedDate.
+ */
+function fakeAzure(
+  comments: Record<number, unknown[] | number | "stall">,
+  changed: Record<number, string> = {},
+) {
   const requests: string[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -43,11 +50,22 @@ function fakeAzure(comments: Record<number, unknown[] | number>) {
     if (url.includes("/_apis/wit/workitemsbatch")) {
       const { ids } = JSON.parse(String(init?.body)) as { ids: number[] };
       return json({
-        value: ids.map((id) => ({ id, fields: { "System.TeamProject": "Contoso Portal" } })),
+        value: ids.map((id) => ({
+          id,
+          fields: {
+            "System.TeamProject": "Contoso Portal",
+            ...(changed[id] ? { "System.ChangedDate": changed[id] } : {}),
+          },
+        })),
       });
     }
     const match = /\/_apis\/wit\/workItems\/(\d+)\/comments\?/.exec(url);
     const found = match ? comments[Number(match[1])] : undefined;
+    if (found === "stall") {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    }
     if (typeof found === "number") return json({ message: "Nope" }, found);
     if (found) return json({ comments: found });
     throw new Error(`Unexpected request: ${url}`);
@@ -153,5 +171,70 @@ describe("Azure DevOps comment facts for settled items", () => {
       findAzureCommentFacts(config(), [{ localWorkItemId: "active", sourceId: sourceId(4821) }]),
     ).resolves.toEqual({ commentFacts: [] });
     expect(requests).toEqual([]);
+  });
+
+  const fromAna = (id: number) => ({
+    id,
+    text: "<p>Any news?</p>",
+    createdBy: { id: ANA, displayName: "Ana Silva" },
+    createdDate: "2026-10-18T11:00:00Z",
+  });
+  const settledItem = (id: number) => ({
+    localWorkItemId: `local-${id}`,
+    sourceId: sourceId(id),
+    commentsSince: "2026-10-18T10:00:00Z",
+  });
+
+  it("gives up on a stalled item and keeps the others", async () => {
+    fakeAzure({ 4821: "stall", 4822: [fromAna(3)] });
+
+    const result = await findAzureCommentFacts(
+      config(),
+      [settledItem(4821), settledItem(4822)],
+      { budgetMs: 5_000, requestTimeoutMs: 50 },
+    );
+
+    expect(result.commentFacts.map((facts) => facts.localWorkItemId)).toEqual([
+      "local-4822",
+    ]);
+  });
+
+  it("stops reading comments when its time budget runs out", async () => {
+    const ids = [1, 2, 3, 4, 5, 6, 7];
+    const { requests } = fakeAzure(
+      Object.fromEntries(ids.map((id) => [id, "stall" as const])),
+    );
+
+    const result = await findAzureCommentFacts(config(), ids.map(settledItem), {
+      budgetMs: 80,
+      requestTimeoutMs: 1_000,
+    });
+
+    expect(result.commentFacts).toEqual([]);
+    // The first five ran out the budget; the other two were never asked.
+    expect(requests.filter((url) => url.includes("/comments?"))).toHaveLength(5);
+  });
+
+  it("reads the items changed since their settle first", async () => {
+    const ids = [1, 2, 3, 4, 5, 6];
+    const { requests } = fakeAzure(
+      Object.fromEntries(ids.map((id) => [id, id === 6 ? [fromAna(9)] : []])),
+      {
+        1: "2026-10-18T09:00:00Z",
+        2: "2026-10-18T09:00:00Z",
+        3: "2026-10-18T09:00:00Z",
+        4: "2026-10-18T09:00:00Z",
+        5: "2026-10-18T09:00:00Z",
+        6: "2026-10-18T11:00:00Z",
+      },
+    );
+
+    const result = await findAzureCommentFacts(config(), ids.map(settledItem));
+
+    const first = requests.find((url) => url.includes("/comments?"));
+    expect(first).toContain("/workItems/6/comments?");
+    expect(result.commentFacts.map((facts) => facts.localWorkItemId)).toEqual([
+      "local-6",
+    ]);
   });
 });

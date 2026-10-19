@@ -97,8 +97,14 @@ closes. An edit goes as Markdown, like a new comment.
 comment's reactions.
 
 `searchItemPeople` suggests people for Ajour's @ mentions. Azure DevOps has
-no list of the people allowed on one work item, so it searches the
-organization's active users on the identities service.
+no list of the people allowed on one work item, so it suggests the people on
+the item first: who it is assigned to, who created and last changed it, and
+who wrote its newest 100 comments. They match when each word of the query
+starts a word of their name or account, so a last name finds them. Then come
+the organization's active users from the identities service, matched as Azure
+DevOps decides. Each request gets 4 seconds. Either search may fail or run out
+of time; only both failing fails, and a failed comments request still leaves
+the item's assignee, creator and last editor.
 
 On each sync, for the items the user settled, the plugin reads the newest 20
 comments and returns those posted since the settle as `commentFacts`: id,
@@ -111,7 +117,8 @@ later sync. In each batch it reads the items changed since their settle
 first.
 
 Reading comments needs Work Items (Read). Posting, editing, deleting and
-reacting need Work Items (Read & write). People search needs Identity (Read).
+reacting need Work Items (Read & write). People search needs Identity (Read) to search the organization; without it,
+it suggests only the people on the item.
 Ajour never stores comment text.
 
 ## Pull requests

@@ -173,34 +173,151 @@ describe("searching Azure DevOps people", () => {
     vi.restoreAllMocks();
   });
 
-  it("finds active users on the identities host and skips groups", async () => {
-    const urls: URL[] = [];
+  const BRUNO = "33333333-3333-3333-3333-333333333333";
+
+  /** A reply, or "stall" for a request that answers only when it times out. */
+  type Answer = Response | (() => Response) | "stall";
+
+  /** Answers the item, its comments and the identities search; records the search URLs. */
+  function fakePeople(answers: {
+    item?: Answer;
+    comments?: Answer;
+    identities?: Answer;
+  }) {
+    const searches: URL[] = [];
+    const reply = (answer: Answer | undefined, empty: unknown, signal?: AbortSignal | null) =>
+      answer === "stall"
+        ? new Promise<Response>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason));
+          })
+        : typeof answer === "function"
+          ? answer()
+          : (answer ?? json(empty));
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input));
-        urls.push(url);
-        return json({
-          value: [
-            { id: ANA.toUpperCase(), providerDisplayName: "Ana Silva" },
-            { id: ME, providerDisplayName: "Andrew Lee", isActive: false },
-            { id: "22222222-2222-2222-2222-222222222222", providerDisplayName: "[Contoso]\\Analysts", isContainer: true },
-          ],
-        });
+        if (url.pathname.endsWith("/_apis/identities")) {
+          searches.push(url);
+          return reply(answers.identities, { value: [] }, init?.signal);
+        }
+        if (url.pathname.endsWith("/4821/comments")) {
+          return reply(answers.comments, { comments: [] }, init?.signal);
+        }
+        if (url.pathname.endsWith("/_apis/wit/workitems/4821")) {
+          return reply(answers.item, {
+            id: 4821,
+            fields: { "System.TeamProject": "Contoso Portal" },
+          }, init?.signal);
+        }
+        throw new Error(`Unexpected request: ${url}`);
       }),
     );
+    return searches;
+  }
 
-    const result = await searchAzureItemPeople(config(), {
-      sourceId: SOURCE_ID,
-      query: "An",
-      limit: 8,
+  const itemWithPeople = () =>
+    json({
+      id: 4821,
+      fields: {
+        "System.TeamProject": "Contoso Portal",
+        "System.AssignedTo": { id: ANA.toUpperCase(), displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
+        "System.CreatedBy": { id: ME, displayName: "Alex Martin", uniqueName: "alex@contoso.com" },
+        "System.ChangedBy": { id: ME, displayName: "Alex Martin", uniqueName: "alex@contoso.com" },
+      },
+    });
+  const brunoComments = () =>
+    json({ comments: [{ id: 9, createdBy: { id: BRUNO, displayName: "Bruno Côté" } }] });
+
+  async function search(query: string) {
+    return (await searchAzureItemPeople(config(), { sourceId: SOURCE_ID, query, limit: 8 }))
+      .people;
+  }
+
+  it("finds active users on the identities host and skips groups", async () => {
+    const searches = fakePeople({
+      identities: json({
+        value: [
+          { id: ANA.toUpperCase(), providerDisplayName: "Ana Silva" },
+          { id: ME, providerDisplayName: "Andrew Lee", isActive: false },
+          { id: "22222222-2222-2222-2222-222222222222", providerDisplayName: "[Contoso]\Analysts", isContainer: true },
+        ],
+      }),
     });
 
-    expect(result.people).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
-    expect(urls[0]!.origin + urls[0]!.pathname).toBe(
+    expect(await search("An")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(searches[0]!.origin + searches[0]!.pathname).toBe(
       "https://vssps.dev.azure.com/contoso/_apis/identities",
     );
-    expect(urls[0]!.searchParams.get("filterValue")).toBe("An");
+    expect(searches[0]!.searchParams.get("filterValue")).toBe("An");
+  });
+
+  it("finds the item's people by their last name, a full name or the start of their account", async () => {
+    const searches = fakePeople({ item: itemWithPeople, comments: brunoComments });
+
+    expect(await search("silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("  bru   cote ")).toEqual([{ id: BRUNO, displayName: "Bruno Côté" }]);
+    expect(await search("ana@con")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("Ana Silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+    expect(await search("ana costa")).toEqual([]);
+    expect(searches.map((url) => url.searchParams.get("filterValue"))).toContain("bru cote");
+  });
+
+  it("lists the item's people first and each person once", async () => {
+    fakePeople({
+      item: itemWithPeople,
+      identities: json({
+        value: [
+          { id: "44444444-4444-4444-4444-444444444444", providerDisplayName: "Alba Reyes" },
+          { id: ME, providerDisplayName: "Alex Martin" },
+        ],
+      }),
+    });
+
+    expect(await search("al")).toEqual([
+      { id: ME, displayName: "Alex Martin" },
+      { id: "44444444-4444-4444-4444-444444444444", displayName: "Alba Reyes" },
+    ]);
+  });
+
+  it("still suggests the item's people when the token can't search identities", async () => {
+    fakePeople({
+      item: itemWithPeople,
+      comments: brunoComments,
+      identities: () => new Response("Unauthorized", { status: 401 }),
+    });
+
+    expect(await search("côté")).toEqual([{ id: BRUNO, displayName: "Bruno Côté" }]);
+  });
+
+  it("keeps the item's fields' people when its comments fail", async () => {
+    fakePeople({ item: itemWithPeople, comments: () => json({ message: "Busy" }, 503) });
+
+    expect(await search("silva")).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+  });
+
+  it("answers with what it found when a request takes too long", async () => {
+    fakePeople({
+      item: itemWithPeople,
+      comments: "stall",
+      identities: "stall",
+    });
+
+    const result = await searchAzureItemPeople(
+      config(),
+      { sourceId: SOURCE_ID, query: "ana", limit: 8 },
+      20,
+    );
+    expect(result.people).toEqual([{ id: ANA, displayName: "Ana Silva" }]);
+  });
+
+  it("fails only when both searches fail", async () => {
+    fakePeople({
+      item: () => json({ message: "No access" }, 401),
+      identities: () => new Response("Unauthorized", { status: 401 }),
+    });
+
+    await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401): people search");
   });
 
   it("finds the identities host for each kind of organization URL", () => {

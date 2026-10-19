@@ -176,22 +176,34 @@ describe("searching Azure DevOps people", () => {
   const BRUNO = "33333333-3333-3333-3333-333333333333";
 
   /** A reply, or "stall" for a request that answers only when it times out. */
-  type Answer = Response | (() => Response) | "stall";
+  type Answer = Response | ((project?: string) => Response) | "stall";
 
-  /** Answers the item, its comments and the identities search; records the search URLs. */
+  /**
+   * Answers the item, its comments, the project's recent work items and the
+   * identities search; records the identities search URLs and the queries.
+   */
   function fakePeople(answers: {
     item?: Answer;
     comments?: Answer;
     identities?: Answer;
+    projectItems?: Answer;
+    projectPeople?: Answer;
   }) {
     const searches: URL[] = [];
-    const reply = (answer: Answer | undefined, empty: unknown, signal?: AbortSignal | null) =>
+    const projectQueries: Array<{ project: string; query: string }> = [];
+    const commentProjects: string[] = [];
+    const reply = (
+      answer: Answer | undefined,
+      empty: unknown,
+      signal?: AbortSignal | null,
+      project?: string,
+    ) =>
       answer === "stall"
         ? new Promise<Response>((_resolve, reject) => {
             signal?.addEventListener("abort", () => reject(signal.reason));
           })
         : typeof answer === "function"
-          ? answer()
+          ? answer(project)
           : (answer ?? json(empty));
     vi.stubGlobal(
       "fetch",
@@ -202,7 +214,17 @@ describe("searching Azure DevOps people", () => {
           return reply(answers.identities, { value: [] }, init?.signal);
         }
         if (url.pathname.endsWith("/4821/comments")) {
+          commentProjects.push(decodeURIComponent(url.pathname.split("/")[2]!));
           return reply(answers.comments, { comments: [] }, init?.signal);
+        }
+        const wiql = /\/([^/]+)\/_apis\/wit\/wiql$/.exec(url.pathname);
+        if (wiql) {
+          const project = decodeURIComponent(wiql[1]!);
+          projectQueries.push({ project, ...JSON.parse(String(init?.body)) });
+          return reply(answers.projectItems, { workItems: [] }, init?.signal, project);
+        }
+        if (url.pathname.endsWith("/_apis/wit/workitemsbatch")) {
+          return reply(answers.projectPeople, { value: [] }, init?.signal);
         }
         if (url.pathname.endsWith("/_apis/wit/workitems/4821")) {
           return reply(answers.item, {
@@ -213,7 +235,7 @@ describe("searching Azure DevOps people", () => {
         throw new Error(`Unexpected request: ${url}`);
       }),
     );
-    return searches;
+    return Object.assign(searches, { projectQueries, commentProjects });
   }
 
   const itemWithPeople = () =>
@@ -320,11 +342,14 @@ describe("searching Azure DevOps people", () => {
       { id: ME, displayName: "Alex Martin", email: "alex@contoso.com" },
       { id: BRUNO, displayName: "Bruno Côté" },
     ]);
-    expect(searches).toEqual([]);
+    expect(searches).toHaveLength(0);
   });
 
-  it("fails a bare @ when the item can't be read", async () => {
-    fakePeople({ item: () => json({ message: "No access" }, 401) });
+  it("fails a bare @ when neither the item nor its project can be read", async () => {
+    fakePeople({
+      item: () => json({ message: "No access" }, 401),
+      projectItems: () => json({ message: "No access" }, 401),
+    });
 
     await expect(search("")).rejects.toThrow("Azure DevOps request failed (401)");
   });
@@ -353,13 +378,91 @@ describe("searching Azure DevOps people", () => {
     ]);
   });
 
-  it("fails only when both searches fail", async () => {
-    fakePeople({
-      item: () => json({ message: "No access" }, 401),
+  const CARLA = "66666666-6666-6666-6666-666666666666";
+  const projectWithCarla = () => json({ workItems: [{ id: 7 }, { id: 8 }] });
+  const carlaAndAna = () =>
+    json({
+      value: [
+        {
+          id: 7,
+          fields: {
+            "System.AssignedTo": { id: CARLA, displayName: "Carla Diaz", uniqueName: "carla@contoso.com" },
+            "System.CreatedBy": { id: ANA, displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
+          },
+        },
+        { id: 8, fields: { "System.ChangedBy": { id: CARLA, displayName: "Carla Diaz", uniqueName: "carla@contoso.com" } } },
+      ],
+    });
+
+  it("finds people active in the item's project, after the item's own, with only Work Items access", async () => {
+    const searches = fakePeople({
+      item: itemWithPeople,
+      projectItems: projectWithCarla,
+      projectPeople: carlaAndAna,
       identities: () => new Response("Unauthorized", { status: 401 }),
     });
 
-    await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401): people search");
+    expect(await search("diaz")).toEqual([
+      { id: CARLA, displayName: "Carla Diaz", email: "carla@contoso.com" },
+    ]);
+    expect(await search("")).toEqual([
+      ANA_SUGGESTION,
+      { id: ME, displayName: "Alex Martin", email: "alex@contoso.com" },
+      { id: CARLA, displayName: "Carla Diaz", email: "carla@contoso.com" },
+    ]);
+    expect(searches.projectQueries[0]).toEqual({
+      project: "Contoso Portal",
+      query: expect.stringContaining("[System.ChangedDate] >= @today - 180"),
+    });
+  });
+
+  it("asks for the project's people alongside the item, from the project in the source id", async () => {
+    // The item never answers in time, yet the project's people still come.
+    fakePeople({ item: "stall", projectItems: projectWithCarla, projectPeople: carlaAndAna });
+
+    const result = await searchAzureItemPeople(
+      config(),
+      { sourceId: SOURCE_ID, query: "carla", limit: 8 },
+      20,
+    );
+    expect(result.people).toEqual([
+      { id: CARLA, displayName: "Carla Diaz", email: "carla@contoso.com" },
+    ]);
+  });
+
+  it("asks the project the item moved to, not only the one in its source id", async () => {
+    const searches = fakePeople({
+      item: () =>
+        json({
+          id: 4821,
+          fields: {
+            "System.TeamProject": "Contoso Mobile",
+            "System.AssignedTo": { id: ANA, displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
+          },
+        }),
+      projectItems: (project) =>
+        project === "Contoso Mobile" ? projectWithCarla() : json({ workItems: [] }),
+      projectPeople: carlaAndAna,
+    });
+
+    expect(await search("carla")).toEqual([
+      { id: CARLA, displayName: "Carla Diaz", email: "carla@contoso.com" },
+    ]);
+    expect(searches.projectQueries.map((query) => query.project)).toEqual([
+      "Contoso Portal",
+      "Contoso Mobile",
+    ]);
+    expect(searches.commentProjects).toEqual(["Contoso Portal", "Contoso Mobile"]);
+  });
+
+  it("fails only when every search fails", async () => {
+    fakePeople({
+      item: () => json({ message: "No access" }, 401),
+      projectItems: () => json({ message: "No access" }, 401),
+      identities: () => new Response("Unauthorized", { status: 401 }),
+    });
+
+    await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401)");
   });
 
   it("finds the identities host for each kind of organization URL", () => {

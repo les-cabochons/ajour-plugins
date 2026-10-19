@@ -97,16 +97,27 @@ closes. An edit goes as Markdown, like a new comment.
 comment's reactions.
 
 `searchItemPeople` suggests people for Ajour's @ mentions. Azure DevOps has
-no list of the people allowed on one work item, so it suggests the people on
-the item first: who it is assigned to, who created and last changed it, and
-who wrote its newest 100 comments. They match when each word of the query
-starts a word of their name or account, so a last name finds them. Then come
-the organization's active users from the identities service, matched as Azure
-DevOps decides. A bare @ asks with no query and gets only the item's people.
-Each suggestion carries the person's email when Azure DevOps names one, so
-Ajour can show it under the name. Each request gets 4 seconds. Either search may fail or run out
-of time; only both failing fails, and a failed comments request still leaves
-the item's assignee, creator and last editor.
+no list of the people allowed on one work item, so it suggests, in order:
+
+1. The people on the item: who it is assigned to, who created and last
+   changed it, and who wrote its newest 100 comments.
+2. The people active in its project: who the work items changed in the last
+   180 days (up to 200) are assigned to, and who created and last changed
+   them. This needs only Work Items (Read), so it reaches past the item even
+   when the token can't search identities. Ajour runs each call in a fresh
+   worker, so it is asked for on every search, at the same time as the item,
+   from the project named in the item's source id.
+3. The organization's active users from the identities service, matched as
+   Azure DevOps decides. This needs Identity (Read).
+
+The first two match when each word of the query starts a word of the
+person's name or account, ignoring accents, so a last name finds them. A
+bare @ asks with no query and gets the first two, without the organization
+search. Each suggestion carries the person's email when Azure DevOps names
+one, so Ajour can show it under the name. Each request gets 4 seconds. A
+search may fail or run out of time; only all of them failing fails, and a
+failed comments request still leaves the item's assignee, creator and last
+editor.
 
 On each sync, for the items the user settled, the plugin reads the newest 20
 comments and returns those posted since the settle as `commentFacts`: id,

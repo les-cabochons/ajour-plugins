@@ -437,19 +437,17 @@ const COMMENT_FACTS_LIMITS: CommentFactsLimits = {
 };
 
 /**
- * The order a sync reads settled items in: the most recently settled few
- * first, then the others from a random point, so an item the budget skipped
- * gets its turn at a later sync instead of always coming last.
+ * The order a sync reads settled items in: most recently settled first, from
+ * a random point each sync, so no item keeps losing the budget to the same
+ * others. Within a batch, items changed since their settle still go first.
  */
 export function commentFactsOrder<Entry extends { since: number }>(
   entries: readonly Entry[],
   random: () => number = Math.random,
 ): Entry[] {
   const byRecency = [...entries].sort((left, right) => right.since - left.since);
-  const newest = byRecency.slice(0, SETTLED_COMMENT_CONCURRENCY);
-  const older = byRecency.slice(SETTLED_COMMENT_CONCURRENCY);
-  const start = Math.floor(random() * older.length);
-  return [...newest, ...older.slice(start), ...older.slice(0, start)];
+  const start = Math.floor(random() * byRecency.length);
+  return [...byRecency.slice(start), ...byRecency.slice(0, start)];
 }
 
 /** The most work items one batch request names. */

@@ -263,8 +263,8 @@ describe("Azure DevOps comment facts for settled items", () => {
     expect(requests.at(-1)).toContain("/workItems/201/comments?");
   });
 
-  it("reads the newest five first, then the older items from a random point", () => {
-    const entries = Array.from({ length: 9 }, (_, index) => ({
+  it("reads from a random point each sync, most recently settled first from there", () => {
+    const entries = Array.from({ length: 6 }, (_, index) => ({
       name: `item-${index + 1}`,
       since: 100 - index,
     }));
@@ -272,14 +272,8 @@ describe("Azure DevOps comment facts for settled items", () => {
     const names = (random: number) =>
       commentFactsOrder(entries, () => random).map((entry) => entry.name);
 
-    expect(names(0)).toEqual([
-      "item-1", "item-2", "item-3", "item-4", "item-5",
-      "item-6", "item-7", "item-8", "item-9",
-    ]);
-    expect(names(0.75)).toEqual([
-      "item-1", "item-2", "item-3", "item-4", "item-5",
-      "item-9", "item-6", "item-7", "item-8",
-    ]);
+    expect(names(0)).toEqual(["item-1", "item-2", "item-3", "item-4", "item-5", "item-6"]);
+    expect(names(0.5)).toEqual(["item-4", "item-5", "item-6", "item-1", "item-2", "item-3"]);
   });
 
   it("gets to an old item when newer ones stall, at a sync that starts with it", async () => {
@@ -296,7 +290,7 @@ describe("Azure DevOps comment facts for settled items", () => {
         sourceId: sourceId(id),
         commentsSince: new Date(Date.parse("2026-10-18T10:00:00Z") - id * 60_000).toISOString(),
       })),
-      // The older items start at the last one, item 16.
+      // This sync starts at the oldest, item 16.
       { budgetMs: 2_000, requestTimeoutMs: 100, random: () => 0.99 },
     );
 

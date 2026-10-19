@@ -290,8 +290,9 @@ describe("Azure DevOps comment facts for settled items", () => {
         sourceId: sourceId(id),
         commentsSince: new Date(Date.parse("2026-10-18T10:00:00Z") - id * 60_000).toISOString(),
       })),
-      // This sync starts at the oldest, item 16.
-      { budgetMs: 2_000, requestTimeoutMs: 100, random: () => 0.99 },
+      // This sync starts at the oldest, item 16. The budget fits only the
+      // first group of reads, whose stalled requests time out at 100 ms.
+      { budgetMs: 120, requestTimeoutMs: 100, random: () => 0.99 },
     );
 
     expect(result.commentFacts.map((facts) => facts.localWorkItemId)).toEqual([

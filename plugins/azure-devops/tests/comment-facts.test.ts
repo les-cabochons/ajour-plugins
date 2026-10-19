@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AzureDevOpsConnectionInput } from "../src/azure-devops.ts";
-import { findAzureCommentFacts } from "../src/comments.ts";
+import { commentFactsOrder, findAzureCommentFacts } from "../src/comments.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
@@ -250,6 +250,8 @@ describe("Azure DevOps comment facts for settled items", () => {
         // Item 201 was settled first, so it goes in the later batch.
         commentsSince: id === 201 ? "2026-10-17T10:00:00Z" : "2026-10-18T10:00:00Z",
       })),
+      // The older items keep their order.
+      { budgetMs: 10_000, requestTimeoutMs: 4_000, random: () => 0 },
     );
 
     const batches = requests
@@ -259,5 +261,47 @@ describe("Azure DevOps comment facts for settled items", () => {
     expect(batches).toHaveLength(2);
     expect(firstComments).toBeLessThan(batches[1]!.index);
     expect(requests.at(-1)).toContain("/workItems/201/comments?");
+  });
+
+  it("reads the newest five first, then the older items from a random point", () => {
+    const entries = Array.from({ length: 9 }, (_, index) => ({
+      name: `item-${index + 1}`,
+      since: 100 - index,
+    }));
+
+    const names = (random: number) =>
+      commentFactsOrder(entries, () => random).map((entry) => entry.name);
+
+    expect(names(0)).toEqual([
+      "item-1", "item-2", "item-3", "item-4", "item-5",
+      "item-6", "item-7", "item-8", "item-9",
+    ]);
+    expect(names(0.75)).toEqual([
+      "item-1", "item-2", "item-3", "item-4", "item-5",
+      "item-9", "item-6", "item-7", "item-8",
+    ]);
+  });
+
+  it("gets to an old item when newer ones stall, at a sync that starts with it", async () => {
+    const ids = Array.from({ length: 16 }, (_, index) => index + 1);
+    // Item 16 was settled first; the fifteen newer ones never answer.
+    fakeAzure(
+      Object.fromEntries(ids.map((id) => [id, id === 16 ? [fromAna(16)] : "stall"])),
+    );
+
+    const result = await findAzureCommentFacts(
+      config(),
+      ids.map((id) => ({
+        localWorkItemId: `local-${id}`,
+        sourceId: sourceId(id),
+        commentsSince: new Date(Date.parse("2026-10-18T10:00:00Z") - id * 60_000).toISOString(),
+      })),
+      // The older items start at the last one, item 16.
+      { budgetMs: 2_000, requestTimeoutMs: 100, random: () => 0.99 },
+    );
+
+    expect(result.commentFacts.map((facts) => facts.localWorkItemId)).toEqual([
+      "local-16",
+    ]);
   });
 });

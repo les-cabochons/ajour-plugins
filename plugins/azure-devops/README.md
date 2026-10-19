@@ -105,9 +105,10 @@ comments and returns those posted since the settle as `commentFacts`: id,
 author, time and whether they mention the user, never the text. Ajour brings
 the item back when one is from someone else. An item whose comments fail is
 skipped; the sync goes on. It spends at most 10 seconds on comments, 4 per
-request. It goes 200 items at a time, the most recently settled first, and
-in each batch reads the items changed since their settle first; the others
-wait for the next sync.
+request. It goes 200 items at a time: the five most recently settled first,
+then the others from a random point, so an item skipped once gets its turn
+at a later sync. In each batch it reads the items changed since their settle
+first.
 
 Reading comments needs Work Items (Read). Posting, editing, deleting and
 reacting need Work Items (Read & write). People search needs Identity (Read).

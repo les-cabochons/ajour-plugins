@@ -428,11 +428,29 @@ const SETTLED_COMMENT_CONCURRENCY = 5;
 export interface CommentFactsLimits {
   budgetMs: number;
   requestTimeoutMs: number;
+  /** Picks where the older items start; tests pass a fixed one. */
+  random?: () => number;
 }
 const COMMENT_FACTS_LIMITS: CommentFactsLimits = {
   budgetMs: 10_000,
   requestTimeoutMs: 4_000,
 };
+
+/**
+ * The order a sync reads settled items in: the most recently settled few
+ * first, then the others from a random point, so an item the budget skipped
+ * gets its turn at a later sync instead of always coming last.
+ */
+export function commentFactsOrder<Entry extends { since: number }>(
+  entries: readonly Entry[],
+  random: () => number = Math.random,
+): Entry[] {
+  const byRecency = [...entries].sort((left, right) => right.since - left.since);
+  const newest = byRecency.slice(0, SETTLED_COMMENT_CONCURRENCY);
+  const older = byRecency.slice(SETTLED_COMMENT_CONCURRENCY);
+  const start = Math.floor(random() * older.length);
+  return [...newest, ...older.slice(start), ...older.slice(0, start)];
+}
 
 /** The most work items one batch request names. */
 const WORK_ITEM_BATCH_SIZE = 200;
@@ -476,25 +494,26 @@ async function fetchSettledDetails(
  *
  * Best effort, within a time budget: an item whose comments fail or don't fit
  * is skipped, and the sync goes on with what was found. Ajour asks again at
- * the next sync. Items go 200 at a time, the most recently settled first,
- * each batch's projects then its comments, so a large backlog still gets its
- * comments read. A comment changes its work item, so within a batch the items
- * changed since their settle are read first.
+ * the next sync. Items go 200 at a time in `commentFactsOrder`, each batch's
+ * projects then its comments, so a large backlog still gets its comments
+ * read. A comment changes its work item, so within a batch the items changed
+ * since their settle are read first.
  */
 export async function findAzureCommentFacts(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[],
   limits: CommentFactsLimits = COMMENT_FACTS_LIMITS,
 ): Promise<{ viewer?: BacklogPerson; commentFacts: BacklogItemCommentFacts[] }> {
-  const settled = workItems
-    .flatMap((workItem) => {
+  const settled = commentFactsOrder(
+    workItems.flatMap((workItem) => {
       const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
       const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
       return Number.isFinite(since) && id !== null
         ? [{ localWorkItemId: workItem.localWorkItemId, id, since }]
         : [];
-    })
-    .sort((left, right) => right.since - left.since);
+    }),
+    limits.random,
+  );
   if (settled.length === 0) return { commentFacts: [] };
 
   const deadline = Date.now() + limits.budgetMs;

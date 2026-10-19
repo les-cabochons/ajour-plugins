@@ -237,4 +237,27 @@ describe("Azure DevOps comment facts for settled items", () => {
       "local-6",
     ]);
   });
+
+  it("reads the comments of the most recently settled batch before naming the next batch's projects", async () => {
+    const ids = Array.from({ length: 201 }, (_, index) => index + 1);
+    const { requests } = fakeAzure(Object.fromEntries(ids.map((id) => [id, []])));
+
+    await findAzureCommentFacts(
+      config(),
+      ids.map((id) => ({
+        localWorkItemId: `local-${id}`,
+        sourceId: sourceId(id),
+        // Item 201 was settled first, so it goes in the later batch.
+        commentsSince: id === 201 ? "2026-10-17T10:00:00Z" : "2026-10-18T10:00:00Z",
+      })),
+    );
+
+    const batches = requests
+      .map((url, index) => ({ url, index }))
+      .filter(({ url }) => url.includes("/workitemsbatch"));
+    const firstComments = requests.findIndex((url) => url.includes("/comments?"));
+    expect(batches).toHaveLength(2);
+    expect(firstComments).toBeLessThan(batches[1]!.index);
+    expect(requests.at(-1)).toContain("/workItems/201/comments?");
+  });
 });

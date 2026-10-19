@@ -105,7 +105,8 @@ comments and returns those posted since the settle as `commentFacts`: id,
 author, time and whether they mention the user, never the text. Ajour brings
 the item back when one is from someone else. An item whose comments fail is
 skipped; the sync goes on. It spends at most 10 seconds on comments, 4 per
-request, and reads the items changed since their settle first; the others
+request. It goes 200 items at a time, the most recently settled first, and
+in each batch reads the items changed since their settle first; the others
 wait for the next sync.
 
 Reading comments needs Work Items (Read). Posting, editing, deleting and

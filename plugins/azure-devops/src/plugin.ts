@@ -1,4 +1,5 @@
 import type {
+  BacklogReadDescriptionRequest,
   BacklogSearchItemPeopleRequest,
   BacklogDeleteItemCommentRequest,
   BacklogEditItemCommentRequest,
@@ -24,6 +25,7 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
+import { readAzureDescription } from "./description-source.js";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
@@ -308,6 +310,14 @@ export async function setItemCommentReaction(
   request: BacklogSetItemCommentReactionRequest,
 ) {
   return await setAzureItemCommentReaction(buildAzureConfig(connection.config, connection), request);
+}
+
+/** The item's current description, read when the user edits it in Ajour. */
+export async function readDescription(
+  connection: ConnectorPluginConnection,
+  request: BacklogReadDescriptionRequest,
+) {
+  return await readAzureDescription(buildAzureConfig(connection.config, connection), request);
 }
 
 /** People to mention, for Ajour's @ suggestions. */

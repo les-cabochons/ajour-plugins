@@ -32,10 +32,165 @@ const SELF_CLOSING_SIBLINGS: Record<string, string[]> = {
 };
 
 export function htmlToMarkdown(html: string): string | undefined {
-  const markdown = renderFlow(parseHtml(html))
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return markdown.length > 0 ? markdown : undefined;
+  return htmlToMarkdownWithLosses(html).markdown;
+}
+
+/**
+ * The same conversion, naming what Markdown cannot hold and the conversion
+ * dropped, such as "text colour" (Ajour's ADR 0009). Images never count as
+ * lost: they keep their address, which is all Azure DevOps needs.
+ */
+export function htmlToMarkdownWithLosses(html: string): {
+  markdown: string | undefined;
+  lost: string[];
+} {
+  const previous = losses;
+  losses = new Set();
+  try {
+    const markdown = renderFlow(parseHtml(html))
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return { markdown: markdown.length > 0 ? markdown : undefined, lost: [...losses] };
+  } finally {
+    losses = previous;
+  }
+}
+
+/** What the conversion under way dropped. */
+let losses: Set<string> | undefined;
+
+function lose(what: string) {
+  losses?.add(what);
+}
+
+const EMPTY_STYLE_VALUES = new Set(["", "inherit", "initial", "unset", "transparent", "none"]);
+const CODE_TAGS = new Set(["pre", "code", "kbd", "samp", "tt"]);
+
+type Emphasis = "bold" | "italic" | "strike";
+const EMPHASIS_MARKERS: Record<Emphasis, string> = { bold: "**", italic: "_", strike: "~~" };
+
+/**
+ * The emphasis the content being rendered already has, so nested emphasis,
+ * as `<span style="font-style:italic"><i>x</i></span>`, is applied once.
+ */
+const activeEmphasis: Record<Emphasis, number> = { bold: 0, italic: 0, strike: 0 };
+
+/** Renders an element's content with its tag's and its style's emphasis. */
+function renderEmphasized(
+  element: HtmlElement,
+  tagEmphasis: Emphasis | undefined,
+  render: () => string = () => renderInlineChildren(element.children),
+): string {
+  const styled = styledEmphasis(element);
+  const wanted = new Set<Emphasis>(tagEmphasis ? [tagEmphasis] : []);
+  if (styled.bold) wanted.add("bold");
+  if (styled.italic) wanted.add("italic");
+  if (styled.strike) wanted.add("strike");
+  const applied = [...wanted].filter((kind) => activeEmphasis[kind] === 0);
+  for (const kind of applied) activeEmphasis[kind] += 1;
+  let text: string;
+  try {
+    text = render();
+  } finally {
+    for (const kind of applied) activeEmphasis[kind] -= 1;
+  }
+  for (const kind of ["strike", "italic", "bold"] as const) {
+    if (applied.includes(kind)) text = wrap(text, EMPHASIS_MARKERS[kind]);
+  }
+  return text;
+}
+
+/** Whether the character at `index` is escaped: an odd run of backslashes before it. */
+function isEscaped(text: string, index: number) {
+  let backslashes = 0;
+  for (let at = index - 1; at >= 0 && text[at] === "\\"; at -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+/**
+ * Joins two runs of inline Markdown. Where one run's emphasis ends right as
+ * the next run's same emphasis starts, as in two bold spans side by side,
+ * the markers meet and would show; the runs join into one emphasis instead.
+ */
+function joinInline(left: string, right: string): string {
+  let joinedLeft = left;
+  let joinedRight = right;
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (const marker of ["**", "~~", "_"]) {
+      if (
+        joinedLeft.endsWith(marker) &&
+        joinedRight.startsWith(marker) &&
+        joinedLeft.length > marker.length &&
+        !isEscaped(joinedLeft, joinedLeft.length - marker.length)
+      ) {
+        joinedLeft = joinedLeft.slice(0, -marker.length);
+        joinedRight = joinedRight.slice(marker.length);
+        merged = true;
+      }
+    }
+  }
+  return joinedLeft + joinedRight;
+}
+
+/** The bold, italic and strikethrough an element's style asks for, as Markdown can hold them. */
+function styledEmphasis(element: HtmlElement) {
+  const style = (element.attrs.style ?? "").toLowerCase().replace(/\s+/g, "");
+  const weight = /(?:^|;)font-weight:([^;]+)/.exec(style)?.[1] ?? "";
+  return {
+    bold: weight === "bold" || weight === "bolder" || Number(weight) >= 600,
+    italic: /(?:^|;)font-style:(?:italic|oblique)/.test(style),
+    strike: /(?:^|;)text-decoration(?:-line)?:[^;]*line-through/.test(style),
+  };
+}
+
+/** Notes what an element's styling or attributes carry that Markdown cannot. */
+function noteLosses(element: HtmlElement) {
+  const declarations = new Map<string, string>();
+  for (const declaration of (element.attrs.style ?? "").toLowerCase().split(";")) {
+    const colon = declaration.indexOf(":");
+    if (colon > 0) declarations.set(declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim());
+  }
+  const has = (name: string) => {
+    const value = declarations.get(name);
+    return value !== undefined && !EMPTY_STYLE_VALUES.has(value);
+  };
+  if (has("color") || (element.tag === "font" && element.attrs.color)) lose("text colour");
+  if (has("background-color") || has("background")) lose("highlight");
+  // Code keeps its own font as a code span or block, so its font is not lost.
+  if (
+    !CODE_TAGS.has(element.tag) &&
+    (has("font-family") || has("font-size") || (element.tag === "font" && (element.attrs.face || element.attrs.size)))
+  ) {
+    lose("font");
+  }
+  if (isBlock(element.tag)) {
+    // Markdown emphasis cannot span a block's lines, so a block's own is lost.
+    const emphasis = styledEmphasis(element);
+    if (emphasis.bold) lose("bold text");
+    if (emphasis.italic) lose("italic text");
+    if (emphasis.strike) lose("strikethrough text");
+  }
+  if (CODE_TAGS.has(element.tag)) {
+    // Code keeps its text as written, so emphasis set on it is lost.
+    const emphasis = styledEmphasis(element);
+    if (emphasis.bold || emphasis.italic || emphasis.strike) lose("emphasis on code");
+  }
+  if (element.tag === "sup") lose("superscript");
+  if (element.tag === "sub") lose("subscript");
+  if (element.tag === "mark") lose("highlight");
+  const decoration = declarations.get("text-decoration") ?? declarations.get("text-decoration-line") ?? "";
+  if (element.tag === "u" || element.tag === "ins" || decoration.includes("underline")) lose("underline");
+  const alignment = declarations.get("text-align") ?? element.attrs.align?.toLowerCase() ?? "";
+  if (["center", "right", "justify"].includes(alignment)) lose("text alignment");
+  if (element.tag === "input" && (element.attrs.type ?? "").toLowerCase() === "checkbox") lose("checkboxes");
+  if (["iframe", "video", "audio", "object", "embed"].includes(element.tag)) lose("embedded content");
+  if (
+    (element.tag === "td" || element.tag === "th") &&
+    (Number(element.attrs.colspan ?? 1) > 1 || Number(element.attrs.rowspan ?? 1) > 1)
+  ) {
+    lose("merged table cells");
+  }
 }
 
 export function decodeHtmlEntities(value: string) {
@@ -124,6 +279,7 @@ function parseHtml(html: string): HtmlNode[] {
     }
 
     const element: HtmlElement = { kind: "element", tag, attrs: parseAttributes(token), children: [] };
+    noteLosses(element);
     current().children.push(element);
     if (!VOID_TAGS.has(tag) && !token.endsWith("/>")) {
       stack.push(element);
@@ -182,7 +338,7 @@ function renderFlow(nodes: HtmlNode[]): string {
         items.push({ text, paragraph: PARAGRAPH_TAGS.has(node.tag) });
       }
     } else {
-      inline += renderInline(node);
+      inline = joinInline(inline, renderInline(node));
     }
   }
   flush();
@@ -274,7 +430,16 @@ function renderTable(table: HtmlElement): string {
         rows.push(
           elementsOf(child.children)
             .filter((cell) => cell.tag === "td" || cell.tag === "th")
-            .map((cell) => singleLine(renderFlow(cell.children))),
+            .map((cell) => {
+              // A cell holds one line: a list or other block in it is lost, and
+              // the cell's own emphasis goes on its text.
+              if (hasBlockInside(cell)) lose("lists or blocks in table cells");
+              return renderEmphasized(cell, undefined, () => {
+                const text = renderFlow(cell.children);
+                if (text.includes("\n")) lose("line breaks in table cells");
+                return singleLine(text);
+              });
+            }),
         );
       } else if (child.tag === "thead" || child.tag === "tbody" || child.tag === "tfoot") {
         collectRows(child.children);
@@ -294,25 +459,41 @@ function renderTable(table: HtmlElement): string {
   return [line(header), `| ${Array.from({ length: width }, () => "---").join(" | ")} |`, ...body.map(line)].join("\n");
 }
 
+const CELL_BLOCK_TAGS = new Set(["ul", "ol", "li", "blockquote", "pre", "table", "hr", "h1", "h2", "h3", "h4", "h5", "h6"]);
+
+/** Whether a table cell holds a block Markdown cannot put in a cell. */
+function hasBlockInside(element: HtmlElement): boolean {
+  return elementsOf(element.children).some(
+    (child) => CELL_BLOCK_TAGS.has(child.tag) || hasBlockInside(child),
+  );
+}
+
 function renderInline(element: HtmlElement): string {
   switch (element.tag) {
     case "b":
     case "strong":
-      return wrap(renderInlineChildren(element.children), "**");
+      return renderEmphasized(element, "bold");
     case "i":
     case "em":
-      return wrap(renderInlineChildren(element.children), "_");
+      return renderEmphasized(element, "italic");
     case "s":
     case "strike":
     case "del":
-      return wrap(renderInlineChildren(element.children), "~~");
+      return renderEmphasized(element, "strike");
     case "code":
     case "kbd":
     case "samp":
     case "tt":
       return renderCodeSpan(textContent(element));
     case "a": {
-      const text = renderInlineChildren(element.children);
+      // An Azure DevOps mention, as Ajour writes one.
+      const mention = /^version:[\d.]+,([0-9a-f-]{36})$/i.exec(element.attrs["data-vss-mention"] ?? "");
+      if (mention) {
+        const name = textContent(element).trim().replace(/^@/, "").replace(/[[\]\\]/g, "");
+        return `[@${name || "someone"}](mention:${mention[1]!.toLowerCase()})`;
+      }
+      // A link's own style, such as a struck-out old link, goes inside its text.
+      const text = renderEmphasized(element, undefined);
       const href = element.attrs.href?.trim();
       if (!href || text.trim().length === 0) return text;
       return `[${text.trim()}](${encodeUrl(href)})`;
@@ -324,7 +505,8 @@ function renderInline(element: HtmlElement): string {
     case "input":
       return "";
     default:
-      return renderInlineChildren(element.children);
+      // A span's style can carry the emphasis Markdown has, as pasted text does.
+      return renderEmphasized(element, undefined);
   }
 }
 
@@ -336,7 +518,7 @@ function renderInlineChildren(nodes: HtmlNode[]): string {
       if (isBlock(node.tag)) return `\n${renderBlock(node)}\n`;
       return renderInline(node);
     })
-    .join("");
+    .reduce(joinInline, "");
 }
 
 function renderCodeSpan(code: string): string {

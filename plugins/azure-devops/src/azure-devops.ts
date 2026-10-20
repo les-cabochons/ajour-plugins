@@ -8,6 +8,7 @@ import type {
 } from "./contract.js";
 import { resolveEstimateSyncAction } from "./estimate-sync.js";
 import { htmlToMarkdown } from "./html-markdown.js";
+import { describeWorkItem } from "./description.js";
 import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.js";
 import {
   createStateCategoryResolver,
@@ -647,6 +648,7 @@ function mapWorkItemToCandidate(
       sourceUrl,
       title,
       note: buildCandidateNote(workItem),
+      description: describeWorkItem(workItem),
       projectName,
       workItemType,
       state,
@@ -694,6 +696,7 @@ function mapWorkItemToCandidate(
     sourceUrl,
     title,
     note: buildCandidateNote(workItem),
+    description: describeWorkItem(workItem),
     projectName,
     workItemType,
     state,

@@ -70,6 +70,31 @@ Removed categories count as done. Resolved remains open. Sync reports items
 Ajour already tracks that reached a done category, even when the query no
 longer returns them.
 
+## Descriptions
+
+Each sync sends a work item's full description as `description`, beside the
+old 4,000-character `note` that Ajour versions before synced descriptions
+read (Ajour's ADR 0009):
+
+- An HTML description is converted to Markdown. The converter names what
+  Markdown cannot hold and it dropped, in `lost`: text colour, highlight,
+  font (except on code), underline, text alignment, superscript, subscript,
+  checkboxes, embedded content, merged table cells and line breaks in table
+  cells. Bold, italic and strikethrough set by a style become Markdown
+  emphasis. Images are kept as Markdown images with their attachment address
+  and never count as lost.
+- A description stored as Markdown is kept as written, with nothing lost.
+- Mentions become `[@Name](mention:<identity id>)`, as in comments. A
+  Markdown description names people only by id, so its mentions show the
+  assignee's name, or "someone" for anyone else.
+- A description longer than the 64,000 characters Ajour stores is cut, with
+  `cut: true`, so Ajour shows it read-only.
+
+`readDescription` returns a work item's current description the same way.
+Ajour reads it when the user starts editing and before it saves. Reading needs
+Work Items (Read). The manifest declares `description` with Azure DevOps'
+limit of 1,000,000 characters. Writing descriptions back comes later.
+
 ## Comments
 
 `listItemComments` returns a work item's comments for Ajour's item page,

@@ -49,6 +49,16 @@ export interface ConnectorPluginConnection {
   config: ConnectorFieldValues;
 }
 
+/** A synced description, as the plugin converted it from Azure DevOps. */
+export interface ConnectorSyncedDescription {
+  /** Markdown, up to 64,000 characters. Mentions are `[@Name](mention:<id>)`. */
+  text: string;
+  /** What the conversion to Markdown dropped, such as "text colour". */
+  lost?: string[];
+  /** The source's text was longer, and it was cut. */
+  cut?: boolean;
+}
+
 export interface ConnectorImportCandidateInput {
   source: string;
   connectionId: string;
@@ -58,7 +68,10 @@ export interface ConnectorImportCandidateInput {
   externalId: string;
   sourceUrl?: string;
   title: string;
+  /** The description cut to 4,000 characters, for Ajour before descriptions synced. */
   note?: string;
+  /** The full description, synced both ways. */
+  description?: ConnectorSyncedDescription;
   projectName?: string;
   workItemType: string;
   state?: string;
@@ -353,4 +366,13 @@ export interface BacklogSearchItemPeopleRequest {
 export interface BacklogSearchItemPeopleResult {
   /** In the id space of `mention:<id>`. */
   people: BacklogPerson[];
+}
+
+export interface BacklogReadDescriptionRequest {
+  sourceId: string;
+}
+
+export interface BacklogReadDescriptionResult {
+  /** The work item's current description. */
+  description: ConnectorSyncedDescription;
 }

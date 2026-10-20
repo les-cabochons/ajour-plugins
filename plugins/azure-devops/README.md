@@ -112,8 +112,12 @@ write):
 - It reads the item with its revision. If its description, converted as a
   sync converts it, is no longer Ajour's `expected` text, it writes nothing
   and answers `conflict` with the current description. If the text is the
-  same but now cut or lossy, as after a colleague added formatting, it writes
-  nothing and says why.
+  same but now cut, it writes nothing and says why. If it is lossy, as after
+  a colleague added formatting, it writes only when each loss is in the
+  request's `allowedLoss`: the names Ajour sends once the user, on a
+  connection with **Allow lossy conversion** on, saw each loss and saved
+  anyway. Even then, the blocks the user did not change keep their HTML,
+  formatting included.
 - An HTML description keeps the HTML of every block the edit leaves alone,
   and of every space between blocks whose blank lines stayed, exactly as it
   was: its empty editor lines, spacing and markup stay. Only changed or new

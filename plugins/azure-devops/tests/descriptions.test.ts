@@ -102,6 +102,12 @@ describe("descriptions a sync sends", () => {
     expect(candidate.description).toEqual({ text: "    - Literal command" });
   });
 
+  it("keeps a Markdown description's indented list as written", async () => {
+    const candidate = await candidateFor("  - First\r\n  - Second", "Markdown");
+
+    expect(candidate.description).toEqual({ text: "  - First\n  - Second" });
+  });
+
   it("cuts a description longer than Ajour stores, and says so", async () => {
     const candidate = await candidateFor("x".repeat(70_000), "Markdown");
 

@@ -24,15 +24,14 @@ function markdownMentionsToAjour(text: string, workItem: AzureWorkItem) {
 
 /**
  * Markdown as Ajour stores it: Unix line endings, without blank lines or
- * spaces around it, but with a first line's indentation of four spaces or
- * more, which Markdown reads as an indented code block. One to three leading
- * spaces mean nothing in Markdown and go.
+ * trailing spaces, but with its first line's indentation as written: an
+ * indented code block needs it, and indented list items or code fences read
+ * differently without it.
  */
 function normalizeMarkdown(text: string) {
   return text
     .replace(/\r\n?/g, "\n")
     .replace(/^(?:[ \t]*\n)+/, "")
-    .replace(/^ {1,3}(?=\S)/, "")
     .trimEnd();
 }
 

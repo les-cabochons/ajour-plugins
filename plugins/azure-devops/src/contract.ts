@@ -376,3 +376,18 @@ export interface BacklogReadDescriptionResult {
   /** The work item's current description. */
   description: ConnectorSyncedDescription;
 }
+
+export interface BacklogWriteDescriptionRequest {
+  sourceId: string;
+  /** The Markdown to write. */
+  text: string;
+  /** The text `readDescription` returned just before. */
+  expected: string;
+}
+
+export interface BacklogWriteDescriptionResult {
+  /** `conflict` when the item no longer held `expected`, and nothing was written. */
+  outcome: "written" | "conflict";
+  /** The description after the write, or as it is in a conflict. */
+  description: ConnectorSyncedDescription;
+}

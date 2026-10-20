@@ -1,6 +1,9 @@
 import type { AzureWorkItem } from "./azure-devops.js";
 import type { ConnectorSyncedDescription } from "./contract.js";
-import { htmlToMarkdownWithLosses } from "./html-markdown.js";
+import { htmlToMarkdown, htmlToMarkdownWithLosses } from "./html-markdown.js";
+import { toAzureMarkdown } from "./comments.js";
+import { replaceOutsideCode } from "./markdown-code.js";
+import { markdownToHtml } from "./markdown-html.js";
 
 /** A Markdown description's mention, as Azure DevOps writes it. */
 const MARKDOWN_MENTION = /@<([0-9a-fA-F-]{36})>/g;
@@ -13,12 +16,13 @@ function markdownMentionsToAjour(text: string, workItem: AzureWorkItem) {
   const assignee = workItem.fields?.["System.AssignedTo"] as
     | { id?: string; displayName?: string }
     | undefined;
-  return text.replace(MARKDOWN_MENTION, (_match, id: string) => {
+  return replaceOutsideCode(text, MARKDOWN_MENTION, (_match, id: string) => {
     const name =
       assignee?.id?.toLowerCase() === id.toLowerCase() && assignee.displayName
         ? assignee.displayName.replace(/[[\]\\]/g, "")
         : "someone";
-    return `[@${name}](mention:${id.toLowerCase()})`;
+    // The id keeps its case, so the write gives back `@<id>` as it was.
+    return `[@${name}](mention:${id})`;
   });
 }
 
@@ -33,6 +37,18 @@ function normalizeMarkdown(text: string) {
     .replace(/\r\n?/g, "\n")
     .replace(/^(?:[ \t]*\n)+/, "")
     .trimEnd();
+}
+
+/**
+ * What `lost` names for an HTML description whose Markdown would not write
+ * back as itself: an edit in Ajour would change parts the user never touched,
+ * so Ajour keeps it read-only.
+ */
+export const NOT_WRITABLE_EXACTLY = "formatting Ajour cannot write back";
+
+/** Whether Markdown read from HTML writes back as HTML that reads as itself. */
+function writesBackExactly(markdown: string) {
+  return (htmlToMarkdown(markdownToHtml(markdown)) ?? "") === markdown;
 }
 
 /** The most of a description Ajour stores (Ajour's ADR 0009). */
@@ -55,11 +71,24 @@ export function describeWorkItem(workItem: AzureWorkItem): ConnectorSyncedDescri
   let lost: string[] = [];
   if (typeof value === "string") {
     if (isMarkdownField(workItem, "System.Description")) {
-      text = markdownMentionsToAjour(normalizeMarkdown(value), workItem);
+      const source = normalizeMarkdown(value);
+      text = markdownMentionsToAjour(source, workItem);
+      // Mentions read and written in different places, such as in code,
+      // would write back changed: keep such a description read-only. Ids
+      // keep their case both ways, so the write gives back the source.
+      if (toAzureMarkdown(text) !== source) lost = [NOT_WRITABLE_EXACTLY];
+      // A write gives every line the source's one line ending, so a mix, or
+      // old Mac endings, would change.
+      if (/\r(?!\n)/.test(value) || (value.includes("\r\n") && /(?:^|[^\r])\n/.test(value))) {
+        lost = [...lost, "line endings Ajour cannot keep"];
+      }
     } else {
       const converted = htmlToMarkdownWithLosses(value);
       text = converted.markdown ?? "";
       lost = converted.lost;
+      if (text.length <= MAX_DESCRIPTION_LENGTH && !writesBackExactly(text)) {
+        lost = [...lost, NOT_WRITABLE_EXACTLY];
+      }
     }
   }
   const cut = text.length > MAX_DESCRIPTION_LENGTH;

@@ -10,7 +10,7 @@
     "connector": {
       "settle": true,
       "comments": { "edit": true, "delete": true, "reactions": ["like", "dislike", "heart", "hooray", "laugh", "confused"], "mentions": true },
-      "description": { "maxLength": 1000000 }
+      "description": { "write": true, "maxLength": 1000000 }
     },
     "codeHost": {}
   },

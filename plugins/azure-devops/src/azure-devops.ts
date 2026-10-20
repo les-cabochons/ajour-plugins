@@ -57,6 +57,8 @@ interface AzureWorkItemRelation {
 
 export interface AzureWorkItem {
   id: number;
+  /** The item's revision, which a write can test. */
+  rev?: number;
   fields?: Record<string, unknown>;
   relations?: AzureWorkItemRelation[];
   /** The format of each multiline field, such as "Markdown" or "Html". */

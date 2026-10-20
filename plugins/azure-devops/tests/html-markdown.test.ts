@@ -20,7 +20,7 @@ describe("htmlToMarkdown", () => {
       htmlToMarkdown(
         '<div><b>bold </b><i>italic</i> <s>gone</s> <code>a()</code> <a href="https://example.com/a b">the spec</a> <u>under</u></div>',
       ),
-    ).toBe("**bold** _italic_ ~~gone~~ `a()` [the spec](https://example.com/a%20b) under");
+    ).toBe("**bold** *italic* ~~gone~~ `a()` [the spec](https://example.com/a%20b) under");
   });
 
   it("escapes characters markdown would read as syntax", () => {
@@ -29,8 +29,8 @@ describe("htmlToMarkdown", () => {
     );
   });
 
-  it("decodes entities and collapses whitespace", () => {
-    expect(htmlToMarkdown("<div>a &amp; b&nbsp;&lt;c&gt;\n   d&#39;e</div>")).toBe("a & b <c> d'e");
+  it("decodes entities and collapses whitespace, but keeps non-breaking spaces", () => {
+    expect(htmlToMarkdown("<div>a &amp; b&nbsp;&lt;c&gt;\n   d&#39;e</div>")).toBe("a & b <c> d'e");
   });
 
   it("drops scripts and styles", () => {

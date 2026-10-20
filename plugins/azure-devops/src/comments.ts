@@ -25,6 +25,7 @@ import type {
   ConnectorSyncWorkItem,
 } from "./contract.js";
 import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.js";
+import { replaceOutsideCode } from "./markdown-code.js";
 
 /**
  * An item's comments for Ajour's item page (Ajour's ADR 0008). Ajour asks for
@@ -204,7 +205,7 @@ const AJOUR_MENTION = /\[@[^\]]*\]\(mention:([0-9a-fA-F-]{36})\)/g;
 
 /** Ajour's Markdown as an Azure DevOps Markdown comment. */
 export function toAzureMarkdown(body: string) {
-  return body.replace(AJOUR_MENTION, (_match, id: string) => `@<${id}>`);
+  return replaceOutsideCode(body, AJOUR_MENTION, (_match, id: string) => `@<${id}>`);
 }
 
 /** A page of the item's comments: the newest `limit` before the cursor, oldest first. */

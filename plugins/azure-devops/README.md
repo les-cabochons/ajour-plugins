@@ -82,7 +82,18 @@ read (Ajour's ADR 0009):
   checkboxes, embedded content, merged table cells and line breaks in table
   cells. Bold, italic and strikethrough set by a style become Markdown
   emphasis. Images are kept as Markdown images with their attachment address
-  and never count as lost.
+  and never count as lost; an image's width, height and size styling travel
+  in its address as `#ajour-image?width=…`, so a write gives them back. Other
+  image styling or attributes, table header cells (a write gives tables none,
+  as Azure DevOps' editor does), list numbering styles, runs of blank lines
+  in code, formatting inside code and plain text set inside emphasis are
+  named in `lost`. Any other tag, attribute or style the reader does not
+  know, a style set twice or `!important`, is named "other formatting": only
+  what is known to come back on write leaves a description editable.
+- An HTML description whose Markdown would not write back as itself, through
+  the converter `writeDescription` uses, also names "formatting Ajour cannot
+  write back" in `lost`, so Ajour keeps it read-only: an edit there would
+  change parts the user never touched.
 - A description stored as Markdown is kept as written, with nothing lost.
 - Mentions become `[@Name](mention:<identity id>)`, as in comments. A
   Markdown description names people only by id, so its mentions show the
@@ -92,8 +103,40 @@ read (Ajour's ADR 0009):
 
 `readDescription` returns a work item's current description the same way.
 Ajour reads it when the user starts editing and before it saves. Reading needs
-Work Items (Read). The manifest declares `description` with Azure DevOps'
-limit of 1,000,000 characters. Writing descriptions back comes later.
+Work Items (Read). The manifest declares `description` with `write: true` and
+Azure DevOps' limit of 1,000,000 characters.
+
+`writeDescription` writes the user's edit back, which needs Work Items (Read &
+write):
+
+- It reads the item with its revision. If its description, converted as a
+  sync converts it, is no longer Ajour's `expected` text, it writes nothing
+  and answers `conflict` with the current description. If the text is the
+  same but now cut or lossy, as after a colleague added formatting, it writes
+  nothing and says why.
+- An HTML description keeps the HTML of every block the edit leaves alone,
+  and of every space between blocks whose blank lines stayed, exactly as it
+  was: its empty editor lines, spacing and markup stay. Only changed or new
+  blocks are written from the Markdown, as editor lines (one `<div>` per
+  paragraph, an empty `<div><br></div>` between paragraphs). A kept block that
+  cannot sit beside the changed text, as a line right below a new list item,
+  joins the change. The reader shows an empty editor line between lines as a
+  blank line, and keeps non-breaking spaces, so the Markdown and the editor
+  agree. If the result would not read back as the whole Markdown written
+  would, nothing is written, and the error says to edit it in Azure DevOps. A
+  description with no text yet takes the whole Markdown.
+- An item that stores its description as Markdown gets Markdown, with
+  mentions outside code as `@<identity id>`. Any other gets HTML from a dependency-free
+  converter for the Markdown above and the CommonMark people type: headings,
+  paragraphs whose line breaks stay line breaks, lists, quotes, code, rules,
+  tables, links, images, emphasis, strikethrough and mentions as
+  `data-vss-mention` links. Raw HTML stays text, and only web, mail and
+  relative addresses become links or images. HTML → Markdown → HTML →
+  Markdown returns the same Markdown.
+- Converted text over 1,000,000 characters is refused with the count.
+- The patch tests the revision it read, so a change made in between answers
+  `conflict` rather than being written over. Any other refusal, such as a
+  missing permission, is passed on as it is.
 
 ## Comments
 

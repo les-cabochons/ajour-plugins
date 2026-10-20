@@ -1,5 +1,6 @@
 import type {
   BacklogReadDescriptionRequest,
+  BacklogWriteDescriptionRequest,
   BacklogSearchItemPeopleRequest,
   BacklogDeleteItemCommentRequest,
   BacklogEditItemCommentRequest,
@@ -26,6 +27,7 @@ import {
 } from "./azure-devops.js";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
 import { readAzureDescription } from "./description-source.js";
+import { writeAzureDescription } from "./description-write.js";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
@@ -318,6 +320,14 @@ export async function readDescription(
   request: BacklogReadDescriptionRequest,
 ) {
   return await readAzureDescription(buildAzureConfig(connection.config, connection), request);
+}
+
+/** Writes the user's edit, unless the item's description changed since it was read. */
+export async function writeDescription(
+  connection: ConnectorPluginConnection,
+  request: BacklogWriteDescriptionRequest,
+) {
+  return await writeAzureDescription(buildAzureConfig(connection.config, connection), request);
 }
 
 /** People to mention, for Ajour's @ suggestions. */

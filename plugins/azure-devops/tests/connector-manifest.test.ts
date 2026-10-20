@@ -88,8 +88,8 @@ describe("connector manifest packaging contract", () => {
     expect(() => assertConnectorPluginManifest(manifest)).toThrow(/settle/);
   });
 
-  it("declares descriptions with Azure DevOps' length limit and rejects a bad one", () => {
-    expect(validManifest.capabilities.connector.description).toEqual({ maxLength: 1_000_000 });
+  it("declares that it writes descriptions, with Azure DevOps' length limit, and rejects a bad one", () => {
+    expect(validManifest.capabilities.connector.description).toEqual({ write: true, maxLength: 1_000_000 });
 
     const notWhole = cloneManifest();
     notWhole.capabilities.connector.description = { maxLength: 1.5 };

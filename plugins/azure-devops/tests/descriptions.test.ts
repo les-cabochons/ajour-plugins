@@ -45,7 +45,18 @@ async function candidateFor(description: string, format?: string) {
     if (url.includes("/_apis/wit/wiql")) return json({ workItems: [{ id: 123 }] });
     if (url.includes("/_apis/wit/workitemsbatch")) {
       const body = JSON.parse(String(init?.body));
-      if (body.$expand) return json({ value: [{ id: 123, relations: [] }] });
+      // As Azure DevOps answers: the formats come with $expand, not with fields.
+      if (body.$expand) {
+        return json({
+          value: [
+            {
+              id: 123,
+              relations: [],
+              multilineFieldsFormat: format ? { "System.Description": format } : {},
+            },
+          ],
+        });
+      }
       return json({
         value: [
           {
@@ -57,7 +68,7 @@ async function candidateFor(description: string, format?: string) {
               "System.WorkItemType": "Task",
               "System.Description": description,
             },
-            ...(format ? { multilineFieldsFormat: { "System.Description": format } } : {}),
+            multilineFieldsFormat: {},
           },
         ],
       });
@@ -222,8 +233,32 @@ describe("readDescription", () => {
       ),
     ).resolves.toEqual({ description: { text: "~~Old~~ plan" } });
     expect(urls[0]).toBe(
-      "https://dev.azure.com/contoso/_apis/wit/workitems/4821?fields=System.Description,System.AssignedTo&api-version=7.1",
+      "https://dev.azure.com/contoso/_apis/wit/workitems/4821?api-version=7.1",
     );
+  });
+
+  it("keeps a Markdown description as written, though a request naming fields omits its format", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) =>
+        json({
+          id: 4821,
+          rev: 7,
+          fields: { "System.Description": "Hello **world**\n\n- one\n- two" },
+          // As Azure DevOps answers: the format only without `fields=`.
+          multilineFieldsFormat: String(input).includes("fields=")
+            ? {}
+            : { "System.Description": "markdown" },
+        }),
+      ),
+    );
+
+    await expect(
+      readDescription(
+        connection,
+        { sourceId: "https://dev.azure.com/contoso/Portal/_workitems/edit/4821" },
+      ),
+    ).resolves.toEqual({ description: { text: "Hello **world**\n\n- one\n- two" } });
   });
 
   it("refuses a source id that is not one of this organization's work items", async () => {

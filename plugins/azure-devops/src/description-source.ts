@@ -10,6 +10,16 @@ import type {
 } from "./contract.js";
 import { describeWorkItem } from "./description.js";
 
+/**
+ * The work item with every field and the format of each multiline field.
+ * Azure DevOps leaves the formats out of an answer to a request that names
+ * its `fields`, so a description stored as Markdown would read as HTML, and
+ * be written back as HTML.
+ */
+export async function fetchWorkItemWithFormats(config: AzureDevOpsConnectionInput, id: number) {
+  return await requestAzureDevOps<AzureWorkItem>(config, `/_apis/wit/workitems/${id}?api-version=7.1`);
+}
+
 function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {
   const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
   if (id === null) {
@@ -27,9 +37,5 @@ export async function readAzureDescription(
   request: BacklogReadDescriptionRequest,
 ): Promise<BacklogReadDescriptionResult> {
   const id = requireWorkItemId(config, request.sourceId);
-  const workItem = await requestAzureDevOps<AzureWorkItem>(
-    config,
-    `/_apis/wit/workitems/${id}?fields=System.Description,System.AssignedTo&api-version=7.1`,
-  );
-  return { description: describeWorkItem(workItem) };
+  return { description: describeWorkItem(await fetchWorkItemWithFormats(config, id)) };
 }

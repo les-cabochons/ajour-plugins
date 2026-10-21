@@ -10,13 +10,13 @@ import type {
   BacklogWriteDescriptionResult,
 } from "./contract.js";
 import { describeWorkItem, isMarkdownField } from "./description.js";
+import { fetchWorkItemWithFormats } from "./description-source.js";
 import { patchDescriptionHtml } from "./description-patch.js";
 import { markdownToHtml } from "./markdown-html.js";
 
 /** The longest description Azure DevOps takes, as it measures: the stored HTML or Markdown. */
 export const AZURE_DESCRIPTION_MAX_LENGTH = 1_000_000;
 
-const DESCRIPTION_FIELDS = "System.Description,System.AssignedTo";
 
 /**
  * The HTML to write: the description's own, with only what the user changed
@@ -65,13 +65,6 @@ function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string)
   return id;
 }
 
-async function fetchDescription(config: AzureDevOpsConnectionInput, id: number) {
-  return await requestAzureDevOps<AzureWorkItem>(
-    config,
-    `/_apis/wit/workitems/${id}?fields=${DESCRIPTION_FIELDS}&api-version=7.1`,
-  );
-}
-
 /**
  * Writes the user's description, unless the item's description changed since
  * Ajour read it: the current one, converted as a sync converts it, must still
@@ -84,7 +77,7 @@ export async function writeAzureDescription(
   request: BacklogWriteDescriptionRequest,
 ): Promise<BacklogWriteDescriptionResult> {
   const id = requireWorkItemId(config, request.sourceId);
-  const workItem = await fetchDescription(config, id);
+  const workItem = await fetchWorkItemWithFormats(config, id);
   const current = describeWorkItem(workItem);
   if (current.text !== request.expected) {
     return { outcome: "conflict", description: current };
@@ -132,7 +125,7 @@ export async function writeAzureDescription(
     // A failed revision test, as Azure DevOps answers one: someone changed the
     // item in between. Any other refusal, such as a missing permission, stays.
     if (!isRevisionTestFailure(error)) throw error;
-    const now = await fetchDescription(config, id).catch(() => undefined);
+    const now = await fetchWorkItemWithFormats(config, id).catch(() => undefined);
     if (now && typeof now.rev === "number" && now.rev !== workItem.rev) {
       return { outcome: "conflict", description: describeWorkItem(now) };
     }
@@ -140,6 +133,6 @@ export async function writeAzureDescription(
   }
   // The answer holds the item's fields; without them, read it again.
   const answered =
-    written?.fields?.["System.Description"] !== undefined ? written : await fetchDescription(config, id);
+    written?.fields?.["System.Description"] !== undefined ? written : await fetchWorkItemWithFormats(config, id);
   return { outcome: "written", description: describeWorkItem(answered) };
 }

@@ -30,7 +30,11 @@ interface Item {
   markdown?: boolean;
 }
 
-function asWorkItem(item: Item) {
+/**
+ * The work item as Azure DevOps answers for `url`. Like the real service, it
+ * leaves out the description's format when the request names its `fields`.
+ */
+function asWorkItem(item: Item, url = ITEM_URL) {
   return {
     id: 4821,
     rev: item.rev,
@@ -38,7 +42,8 @@ function asWorkItem(item: Item) {
       "System.Description": item.description,
       "System.AssignedTo": { id: ANA, displayName: "Ana Silva" },
     },
-    multilineFieldsFormat: item.markdown ? { "System.Description": "Markdown" } : {},
+    multilineFieldsFormat:
+      item.markdown && !url.includes("fields=") ? { "System.Description": "markdown" } : {},
   };
 }
 
@@ -53,7 +58,7 @@ function stubAzure(item: Item, options: { refuse?: Response; changeBeforePatch?:
     vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       expect(url.startsWith(ITEM_URL)).toBe(true);
-      if (init?.method !== "PATCH") return json(asWorkItem(item));
+      if (init?.method !== "PATCH") return json(asWorkItem(item, url));
       const operations = JSON.parse(String(init.body)) as { op: string; path: string; value: unknown }[];
       patches.push(operations);
       if (options.changeBeforePatch !== undefined) {

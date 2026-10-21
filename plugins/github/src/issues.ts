@@ -8,6 +8,7 @@ import type {
   ConnectorSettleWriteResult,
   ConnectorSyncWorkItem,
 } from "./contract.js";
+import { describeIssueBody } from "./description.js";
 import { GitHubClient, nextCursor, splitRepository, type PageInfo } from "./github.js";
 
 const SEARCH_PAGE_SIZE = 50;
@@ -116,6 +117,7 @@ export function toCandidate(
     sourceUrl: issue.url,
     title: clamp(issue.title, 240) || `#${issue.number}`,
     ...(note ? { note } : {}),
+    description: describeIssueBody(issue.body),
     projectName: clamp(repository, 120),
     workItemType: "Issue",
     state,
@@ -211,7 +213,7 @@ export async function syncIssues(
   };
 }
 
-function requireIssueRef(config: GitHubConfig, sourceId: string) {
+export function requireIssueRef(config: GitHubConfig, sourceId: string) {
   const ref = parseIssueUrl(config, sourceId);
   if (!ref) {
     throw new Error("This item is not an issue of the connection's GitHub instance.");

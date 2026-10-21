@@ -1,6 +1,10 @@
 import { buildGitHubConfig } from "./config.js";
 import {
   parseConnectorFieldValues,
+  type BacklogReadDescriptionRequest,
+  type BacklogReadDescriptionResult,
+  type BacklogWriteDescriptionRequest,
+  type BacklogWriteDescriptionResult,
   type CodeHostSyncRequest,
   type CodeHostSyncResult,
   type ConnectorFieldValues,
@@ -13,6 +17,7 @@ import {
   type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
 } from "./contract.js";
+import { readIssueDescription, writeIssueDescription } from "./description-source.js";
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.js";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.js";
 
@@ -72,4 +77,20 @@ export async function writeSettle(
   request: ConnectorSettleWriteRequest,
 ): Promise<ConnectorSettleWriteResult> {
   return await writeIssueSettle(buildGitHubConfig(connection.config), request);
+}
+
+/** The issue's current body, read when the user edits its description in Ajour. */
+export async function readDescription(
+  connection: ConnectorPluginConnection,
+  request: BacklogReadDescriptionRequest,
+): Promise<BacklogReadDescriptionResult> {
+  return await readIssueDescription(buildGitHubConfig(connection.config), request);
+}
+
+/** Writes the user's edit, unless the issue's body changed since it was read. */
+export async function writeDescription(
+  connection: ConnectorPluginConnection,
+  request: BacklogWriteDescriptionRequest,
+): Promise<BacklogWriteDescriptionResult> {
+  return await writeIssueDescription(buildGitHubConfig(connection.config), request);
 }

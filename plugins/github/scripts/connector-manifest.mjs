@@ -142,6 +142,20 @@ export function assertConnectorPluginManifest(manifest) {
   for (const name of capabilityNames) {
     assertRecord(manifest.capabilities[name], "Connector manifest capabilities." + name);
   }
+  // Issue descriptions Ajour syncs, and with `write`, writes back.
+  const description = manifest.capabilities.connector?.description;
+  if (description !== undefined) {
+    assertRecord(description, "Connector manifest capabilities.connector.description");
+    assertOptionalBoolean(description.write, "Connector manifest capabilities.connector.description.write");
+    if (
+      description.maxLength !== undefined &&
+      (!Number.isInteger(description.maxLength) || description.maxLength < 1 || description.maxLength > 10_000_000)
+    ) {
+      throw new Error(
+        "Connector manifest capabilities.connector.description.maxLength must be a whole number from 1 to 10,000,000.",
+      );
+    }
+  }
 
   assertString(manifest.displayName, "Connector manifest displayName", {
     min: 1,

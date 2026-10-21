@@ -56,9 +56,27 @@ describe("connector manifest packaging contract", () => {
     },
   );
 
-  it("declares issues as a connector with settle, and pull requests as a code host", () => {
-    expect(cloneManifest().capabilities).toEqual({ connector: { settle: true }, codeHost: {} });
+  it("declares issues as a connector with settle and written descriptions, and pull requests as a code host", () => {
+    expect(cloneManifest().capabilities).toEqual({
+      connector: { settle: true, description: { write: true, maxLength: 65536 } },
+      codeHost: {},
+    });
   });
+
+  it("names the token permission writing issues needs", () => {
+    const token = validManifest.connectionFields.find((field: { id: string }) => field.id === "token");
+    expect(token.helpText).toContain("Issues permission set to Read and write");
+  });
+
+  it.each([[{ write: "yes" }], [{ maxLength: 0 }], [{ maxLength: 1.5 }], [true]])(
+    "rejects the description capability %j",
+    (description) => {
+      const manifest = cloneManifest();
+      manifest.capabilities.connector.description = description;
+
+      expect(() => assertConnectorPluginManifest(manifest)).toThrow(/description/);
+    },
+  );
 
   it("tags the fields only one capability uses", () => {
     const capabilityOf = (id: string) =>

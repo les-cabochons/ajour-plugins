@@ -96,6 +96,7 @@ describe("syncIssues", () => {
         sourceUrl: "https://github.com/acme/api/issues/1",
         title: "Issue 1",
         note: "Steps to reproduce",
+        description: { text: "  Steps to reproduce" },
         projectName: "acme/api",
         workItemType: "Issue",
         state: "Open",

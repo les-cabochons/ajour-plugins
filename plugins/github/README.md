@@ -32,7 +32,36 @@ The plugin also declares Ajour's connector capability, with settle:
   `writeSettle` closes or reopens the issue. A priority alone writes nothing:
   GitHub issues have no priority.
 
-Issues need read and write access to issues. Ajour lets the user turn issues
+### Descriptions
+
+The plugin declares `connector.description` with `write` and a `maxLength` of
+65,536, GitHub's limit for an issue body:
+
+- Each issue comes with its body as `description`. A body is Markdown already,
+  so it is sent as written: `@login` mentions, task lists, alerts and HTML
+  included. Only its line endings become Unix ones, without the blank lines
+  before it or the spaces after it, as Ajour stores a description. A body
+  longer than Ajour's 64,000 characters is cut there and marked `cut`. The
+  old 4,000-character `note` stays beside it for older versions of Ajour.
+- Nothing is converted, so nothing is lost, except line endings: a body whose
+  lines end in more than one way names `line endings Ajour cannot keep` in
+  `lost`, since a write gives every line the same ending.
+- `readDescription` reads the issue's current body the same way.
+- `writeDescription` reads the issue again and writes nothing when its body is
+  no longer the text Ajour expects: it answers with a conflict. Otherwise it
+  writes Ajour's text as it is, with the body's own line endings and the
+  whitespace the read trimmed put back where it was: blank lines at the body's
+  start and end, and the last line's trailing spaces, tabs or non-breaking
+  spaces on that line, wherever a line diff finds it. They go with a last line
+  the user edited, deleted or moved. When the diff cannot tell which line is
+  the last one, as when the user repeats it, the write is refused, and the
+  user edits the description in GitHub. GitHub has no conditional update on an
+  issue, so a change made between that read and the write is overwritten; it
+  stays in the issue's edit history.
+- Pull requests are not backlog items: their bodies are never read or written.
+
+Issues need the Issues permission set to Read and write, to close and reopen
+them and to write their descriptions back. Ajour lets the user turn issues
 and pull requests on and off separately. The fields only one capability uses
 declare it, so Ajour hides them while it is off.
 
@@ -85,10 +114,10 @@ installable archive, and publishes it as a GitHub prerelease.
 In a production desktop build, open **Settings → Plugins**, choose **Install
 plugin**, and select the generated `.ajour-connector` archive.
 
-The connection needs a personal access token. A fine-grained token needs read
-and write access to pull requests and read access to contents on the
-repositories you want, plus organization members read access for team review
-requests. A classic token needs `repo` and `read:org`. If team membership cannot
+The connection needs a personal access token. A fine-grained token needs the
+Issues permission set to Read and write for issues, and read and write access
+to pull requests and read access to contents on the repositories you want,
+plus organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
 be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs
 without organization access. The plugin does not guess membership. For GitHub

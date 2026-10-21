@@ -128,6 +128,16 @@ export interface CodeHostSyncResult {
 /** Ajour's priority levels. A source value that maps to no level has no priority. */
 export type ConnectorPriorityLevel = "urgent" | "high" | "medium" | "low";
 
+/** A synced description, as GitHub holds it. */
+export interface ConnectorSyncedDescription {
+  /** Markdown, up to 64,000 characters. */
+  text: string;
+  /** What Ajour's copy cannot keep, such as "line endings Ajour cannot keep". */
+  lost?: string[];
+  /** The source's text was longer, and it was cut. */
+  cut?: boolean;
+}
+
 export interface ConnectorImportCandidateInput {
   source: string;
   connectionId: string;
@@ -137,7 +147,10 @@ export interface ConnectorImportCandidateInput {
   externalId: string;
   sourceUrl?: string;
   title: string;
+  /** The description cut to 4,000 characters, for Ajour before descriptions synced. */
   note?: string;
+  /** The full description, synced both ways. */
+  description?: ConnectorSyncedDescription;
   projectName?: string;
   workItemType: string;
   state?: string;
@@ -232,3 +245,28 @@ export interface ConnectorPluginSyncResult {
   workItemUpdates?: ConnectorSyncWorkItemUpdate[];
 }
 
+export interface BacklogReadDescriptionRequest {
+  sourceId: string;
+}
+
+export interface BacklogReadDescriptionResult {
+  /** The issue's current description. */
+  description: ConnectorSyncedDescription;
+}
+
+export interface BacklogWriteDescriptionRequest {
+  sourceId: string;
+  /** The Markdown to write. */
+  text: string;
+  /** The text `readDescription` returned just before. */
+  expected: string;
+  /** The `lost` names the user saw and saved anyway. */
+  allowedLoss?: string[];
+}
+
+export interface BacklogWriteDescriptionResult {
+  /** `conflict` when the issue no longer held `expected`, and nothing was written. */
+  outcome: "written" | "conflict";
+  /** The description after the write, or as it is in a conflict. */
+  description: ConnectorSyncedDescription;
+}

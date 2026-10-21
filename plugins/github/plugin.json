@@ -8,7 +8,8 @@
   "entrypoint": "dist/plugin.js",
   "capabilities": {
     "connector": {
-      "settle": true
+      "settle": true,
+      "description": { "write": true, "maxLength": 65536 }
     },
     "codeHost": {}
   },
@@ -42,7 +43,7 @@
       "required": true,
       "secret": true,
       "placeholder": "github_pat_…",
-      "helpText": "Issues need read and write access to issues. Pull requests need read and write access to pull requests and read access to the repositories, and read:org for team review requests."
+      "helpText": "Issues need the Issues permission set to Read and write, to close and reopen them and to write their descriptions back. Pull requests need read and write access to pull requests and read access to the repositories, and read:org for team review requests."
     },
     {
       "id": "include",

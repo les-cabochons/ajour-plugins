@@ -26,10 +26,14 @@ export class GitHubClient {
     private readonly token: string,
   ) {}
 
-  async latestPush(repository: string, ref: string, headSha: string): Promise<{ at: number; actor: CodeHostUser } | undefined> {
+  /** A REST URL: GitHub.com serves REST from api.github.com, GitHub Enterprise Server from /api/v3. */
+  private restUrl(path: string) {
     const base = new URL(this.apiUrl);
-    const prefix = base.pathname === "/graphql" ? "" : "/api/v3";
-    const url = new URL(`${prefix}/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`, base);
+    return new URL(`${base.pathname === "/graphql" ? "" : "/api/v3"}${path}`, base);
+  }
+
+  async latestPush(repository: string, ref: string, headSha: string): Promise<{ at: number; actor: CodeHostUser } | undefined> {
+    const url = this.restUrl(`/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`);
     url.searchParams.set("ref", `refs/heads/${ref}`);
     url.searchParams.set("per_page", "100");
     url.searchParams.set("direction", "desc");
@@ -52,6 +56,31 @@ export class GitHubClient {
       // Missing Contents permission and older Enterprise versions leave the actor unknown.
     }
     return undefined;
+  }
+
+  /** A REST call. A refusal throws with GitHub's status and message. */
+  async rest<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+    const response = await fetch(this.restUrl(path), {
+      method: init.method ?? "GET",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${this.token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ajour-github-plugin",
+        ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    });
+
+    if (response.status === 401) {
+      throw new Error("GitHub rejected the token. Check that it is valid and not expired.");
+    }
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+      const message = typeof payload?.message === "string" ? `: ${payload.message}` : "";
+      throw new Error(`GitHub request failed (${response.status})${message}.`);
+    }
+    return (await response.json()) as T;
   }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {

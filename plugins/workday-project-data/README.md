@@ -10,7 +10,7 @@ data.
 
 ## Development
 
-Requirements: Node.js 22, Corepack with pnpm 10.7.0, and optionally `just`.
+Requirements: Node.js 24, Corepack with pnpm 10.7.0, and optionally `just`.
 
 ```sh
 just verify

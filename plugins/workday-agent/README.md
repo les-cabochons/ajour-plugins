@@ -40,7 +40,7 @@ Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.1 needs an A
 
 ## Development
 
-Requirements: Node.js 22, Corepack with pnpm 10.7.0, and `just`.
+Requirements: Node.js 24, Corepack with pnpm 10.7.0, and `just`.
 
 ```sh
 just install

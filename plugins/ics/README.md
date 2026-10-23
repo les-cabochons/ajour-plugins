@@ -51,7 +51,7 @@ Attendees, descriptions, locations and meeting links stay in the plugin.
 
 ## Development
 
-Requirements: Node.js 22, Corepack with pnpm 10.7.0, and `just` (optional).
+Requirements: Node.js 24, Corepack with pnpm 10.7.0, and `just` (optional).
 
 ```sh
 just install

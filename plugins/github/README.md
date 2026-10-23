@@ -67,7 +67,7 @@ declare it, so Ajour hides them while it is off.
 
 ## Requirements
 
-- Node.js 22
+- Node.js 24
 - Corepack with pnpm 10.7.0
 - `just` (optional, but recommended)
 

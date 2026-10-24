@@ -43,11 +43,13 @@ The archive is written to
 `plugin.json`; keep that value aligned with `package.json` when preparing a new
 release.
 
-Every push to `main` runs tests and type checks, stamps a unique prerelease
-version such as `1.0.0-main.3.9aac30e` into the build, packages the installable
-archive, retains it as a GitHub Actions artifact for 30 days, and publishes it
-as a GitHub prerelease. The base version remains the matching version declared
-in `plugin.json` and `package.json` on the branch.
+Every push to `main` that changes this folder runs tests and type checks,
+stamps a unique prerelease version such as `1.1.0-main.130.9aac30e` into the
+build, packages the installable archive, retains it as a GitHub Actions
+artifact for 30 days, and publishes it as a prerelease of this repository
+tagged `v1.1.0-azure-devops.main.130.9aac30e`. The base version remains the
+matching version declared in `plugin.json` and `package.json` on the branch.
+See [Releases](../../README.md#releases).
 
 ## Install in Ajour
 

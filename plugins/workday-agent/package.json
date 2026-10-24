@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
+  "ajourRelease": {
+    "title": "Ajour Workday (agent)"
+  },
   "scripts": {
     "package": "node scripts/package-connector.mjs",
     "test": "node --test",

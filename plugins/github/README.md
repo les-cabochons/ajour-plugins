@@ -105,9 +105,11 @@ The archive is written to `package/github-<version>.ajour-connector`. Its
 version comes from `plugin.json`; keep that value aligned with `package.json`
 when preparing a new release.
 
-Every push to `main` runs tests and type checks, stamps a unique prerelease
-version such as `0.1.0-main.3.9aac30e` into the build, packages the
-installable archive, and publishes it as a GitHub prerelease.
+Every push to `main` that changes this folder runs tests and type checks,
+stamps a unique prerelease version such as `0.2.0-main.130.9aac30e` into the
+build, packages the installable archive, and publishes it as a prerelease of
+this repository tagged `v0.2.0-github.main.130.9aac30e`. See
+[Releases](../../README.md#releases).
 
 ## Install in Ajour
 

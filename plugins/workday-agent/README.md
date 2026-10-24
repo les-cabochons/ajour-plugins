@@ -47,7 +47,7 @@ just install
 just verify
 ```
 
-`just package` writes `package/workday-agent-<version>.ajour-connector`. Each push to `main` publishes a prerelease with that file.
+`just package` writes `package/workday-agent-<version>.ajour-connector`. Each push to `main` that changes this folder publishes a prerelease of this repository with that file. See [Releases](../../README.md#releases).
 
 ## License
 

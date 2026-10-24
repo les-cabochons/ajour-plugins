@@ -13,7 +13,7 @@ const options = {
   legalComments: "eof",
   // ical.js is MPL-2.0: name it and its source in the bundle.
   banner: {
-    js: "/*! ajc-ics, MIT, https://github.com/les-cabochons/ajc-ics. Bundles ical.js 2.2.1, MPL-2.0 (https://mozilla.org/MPL/2.0/), source at https://github.com/kewisch/ical.js. */",
+    js: "/*! ajc-ics, MIT, https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics. Bundles ical.js 2.2.1, MPL-2.0 (https://mozilla.org/MPL/2.0/), source at https://github.com/kewisch/ical.js. */",
   },
   logLevel: "info",
 };

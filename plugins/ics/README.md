@@ -76,9 +76,11 @@ just package
 The archive is written to `package/ics-<version>.ajour-connector`. Its version
 comes from `plugin.json`; keep it aligned with `package.json`.
 
-Every push to `main` runs the tests and type checks, stamps a prerelease
-version such as `0.1.0-main.3.9aac30e`, packages the archive, keeps it as a
-GitHub Actions artifact for 30 days and publishes it as a GitHub prerelease.
+Every push to `main` that changes this folder runs the tests and type
+checks, stamps a prerelease version such as `0.1.0-main.130.9aac30e`, packages
+the archive, keeps it as a GitHub Actions artifact for 30 days and publishes it
+as a prerelease of this repository tagged `v0.1.0-ics.main.130.9aac30e`. See
+[Releases](../../README.md#releases).
 
 ## Install in Ajour
 

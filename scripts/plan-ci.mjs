@@ -65,8 +65,11 @@ function requestedSlugs(value) {
   return names;
 }
 
+// A first push has no base: GitHub sends a base of zeros.
+const hasBase = Boolean(options.base) && !/^0+$/.test(options.base);
+
 function changedFiles(base, head) {
-  if (!base || /^0+$/.test(base)) {
+  if (!hasBase) {
     return null;
   }
   try {
@@ -98,7 +101,7 @@ if (requested.length > 0) {
   if (files === null) {
     built = allSlugs;
     changed = allSlugs;
-    reason = options.base
+    reason = hasBase
       ? `${options.base} is not in the history, so every plugin`
       : "no base to compare, so every plugin";
   } else {

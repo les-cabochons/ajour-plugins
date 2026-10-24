@@ -1,0 +1,1191 @@
+import type {
+  AzureDevOpsQueryScope,
+  ConnectorImportCandidateInput,
+  ConnectorPluginSyncResult,
+  ConnectorSyncFieldUpdate,
+  ConnectorSyncWorkItem,
+  ConnectorSyncWorkItemUpdate,
+} from "./contract.js";
+import { resolveEstimateSyncAction } from "./estimate-sync.js";
+import { htmlToMarkdown } from "./html-markdown.js";
+import { describeWorkItem } from "./description.js";
+import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.js";
+import {
+  createStateCategoryResolver,
+  type AzureStateInfo,
+} from "./state-categories.js";
+
+export interface AzureDevOpsConnectionInput {
+  id?: string;
+  label: string;
+  tenantLabel: string;
+  organizationUrl: string;
+  project?: string;
+  personalAccessToken: string;
+  queryScope: AzureDevOpsQueryScope;
+  priorityFieldName?: string;
+  /** Which values of the priority field map to each Ajour level. */
+  priorityLevels: PriorityLevelRanges;
+  originalEstimateFieldName?: string;
+  remainingEstimateFieldName?: string;
+  completedEstimateFieldName?: string;
+  autoSync?: boolean;
+  autoSyncIntervalMinutes?: number;
+}
+
+const TASK_WORK_ITEM_TYPE = "Task";
+const BACKLOG_PARENT_WORK_ITEM_TYPES = [
+  "Product Backlog Item",
+  "User Story",
+  "Requirement",
+  "Issue",
+  "Bug",
+] as const;
+const RELEVANT_WORK_ITEM_TYPES = [TASK_WORK_ITEM_TYPE, ...BACKLOG_PARENT_WORK_ITEM_TYPES];
+const MAX_CANDIDATE_NOTE_LENGTH = 4000;
+
+interface AzureWiqlResponse {
+  workItems?: Array<{
+    id: number;
+  }>;
+}
+
+interface AzureWorkItemRelation {
+  rel?: string;
+  url?: string;
+}
+
+export interface AzureWorkItem {
+  id: number;
+  /** The item's revision, which a write can test. */
+  rev?: number;
+  fields?: Record<string, unknown>;
+  relations?: AzureWorkItemRelation[];
+  /** The format of each multiline field, such as "Markdown" or "Html". */
+  multilineFieldsFormat?: Record<string, unknown>;
+}
+
+interface AzureWorkItemBatchResponse {
+  value?: AzureWorkItem[];
+}
+
+interface AzureFieldDefinition {
+  name?: string;
+  referenceName?: string;
+  type?: string;
+  isQueryable?: boolean;
+}
+
+interface AzureFieldListResponse {
+  value?: AzureFieldDefinition[];
+}
+
+interface AzureDevOpsImportFetchResult {
+  items: ConnectorImportCandidateInput[];
+}
+
+interface AzureDevOpsSyncContext {
+  items: ConnectorImportCandidateInput[];
+  itemsBySourceId: Map<string, ConnectorImportCandidateInput>;
+  /** Every fetched work item, open or not, with its state category. */
+  allItems: Map<number, AzureWorkItem>;
+  stateInfo: Map<number, AzureStateInfo>;
+  resolver: ReturnType<typeof createStateCategoryResolver>;
+  fields: {
+    priorityField?: AzureResolvedFieldMetadata;
+    originalEstimateField?: AzureResolvedFieldMetadata;
+    remainingEstimateField?: AzureResolvedFieldMetadata;
+    completedEstimateField?: AzureResolvedFieldMetadata;
+  };
+}
+
+export interface AzureResolvedFieldMetadata {
+  configuredName: string;
+  resolvedName: string;
+  resolvedReferenceName: string;
+  type?: string;
+  isQueryable?: boolean;
+}
+
+export interface AzureDevOpsConnectionValidationResult {
+  priorityField?: AzureResolvedFieldMetadata;
+  originalEstimateField?: AzureResolvedFieldMetadata;
+  remainingEstimateField?: AzureResolvedFieldMetadata;
+  completedEstimateField?: AzureResolvedFieldMetadata;
+}
+
+const BASE_REQUESTED_WORK_ITEM_FIELDS = [
+  "System.Id",
+  "System.Title",
+  "System.Description",
+  "System.State",
+  "System.AssignedTo",
+  "System.IterationPath",
+  "System.TeamProject",
+  "System.WorkItemType",
+] as const;
+
+function normalizeOrganizationUrl(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+export function createAuthHeader(personalAccessToken: string) {
+  return `Basic ${Buffer.from(`:${personalAccessToken}`, "utf8").toString("base64")}`;
+}
+
+export function normalizeDisplayValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (value && typeof value === "object") {
+    const displayName =
+      "displayName" in value ? normalizeDisplayValue(value.displayName) : undefined;
+    const uniqueName =
+      "uniqueName" in value ? normalizeDisplayValue(value.uniqueName) : undefined;
+    return displayName ?? uniqueName;
+  }
+
+  return undefined;
+}
+
+function normalizeDescriptionValue(value: unknown, format: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  // Since 2025 a work item can store its description as Markdown instead of
+  // HTML; the format is the last editor's choice, per field.
+  if (typeof format === "string" && format.toLowerCase() === "markdown") {
+    const markdown = value.replace(/\r\n?/g, "\n").trim();
+    return markdown.length > 0 ? markdown : undefined;
+  }
+
+  return htmlToMarkdown(value);
+}
+
+function normalizeConfiguredFieldName(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeLookupValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.toLowerCase() : undefined;
+}
+
+/**
+ * The priority field's value when it is a whole number. Picklist fields hold
+ * it as text. A fractional value falls outside every range, so it has no level.
+ */
+export function parsePriorityValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const parsed = Number(trimmed);
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}
+
+function parseEstimateValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value * 10_000) / 10_000);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.round(parsed * 10_000) / 10_000);
+    }
+  }
+
+  return undefined;
+}
+
+function clampNote(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length <= MAX_CANDIDATE_NOTE_LENGTH) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_CANDIDATE_NOTE_LENGTH - 3).trimEnd()}...`;
+}
+
+export function getProjectName(workItem: AzureWorkItem) {
+  return normalizeDisplayValue(workItem.fields?.["System.TeamProject"]);
+}
+
+function parseRelatedWorkItemId(relation: AzureWorkItemRelation | undefined): number | null {
+  const url = relation?.url;
+  if (!url) {
+    return null;
+  }
+
+  const match = url.match(/\/workItems\/(\d+)(?:$|[/?#])/i);
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]);
+}
+
+function isTask(workItemType: string | undefined) {
+  return workItemType === TASK_WORK_ITEM_TYPE;
+}
+
+function isBacklogParentType(workItemType: string | undefined) {
+  return Boolean(workItemType && BACKLOG_PARENT_WORK_ITEM_TYPES.includes(workItemType as (typeof BACKLOG_PARENT_WORK_ITEM_TYPES)[number]));
+}
+
+function buildWorkItemTypeFilter() {
+  return RELEVANT_WORK_ITEM_TYPES.map(
+    (type) => `[System.WorkItemType] = '${type.replace(/'/g, "''")}'`,
+  ).join("\n      OR ");
+}
+
+function buildBaseWiqlQuery(queryScope: AzureDevOpsConnectionInput["queryScope"]) {
+  const assignedClause =
+    queryScope === "assigned_to_me" ? "\n  AND [System.AssignedTo] = @Me" : "";
+
+  return `SELECT [System.Id]
+FROM WorkItems
+WHERE (
+      ${buildWorkItemTypeFilter()}
+  )${assignedClause}
+ORDER BY [System.ChangedDate] DESC`;
+}
+
+export async function requestAzureDevOps<T>(
+  config: AzureDevOpsConnectionInput,
+  pathname: string,
+  init?: RequestInit,
+): Promise<T> {
+  const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
+  const url = `${organizationUrl}${pathname}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        Authorization: createAuthHeader(config.personalAccessToken),
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch (error) {
+    throw new Error(
+      `Azure DevOps request failed: ${error instanceof Error ? error.message : "Network error"}`,
+    );
+  }
+
+  if (!response.ok) {
+    let detail = response.statusText || "Request failed";
+    try {
+      const payload = (await response.json()) as { message?: string };
+      if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+        detail = payload.message.trim();
+      }
+    } catch {
+      // Ignore non-JSON error responses.
+    }
+
+    throw new Error(`Azure DevOps request failed (${response.status}): ${detail}`);
+  }
+
+  // A delete answers 204 with no body.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+async function executeWiqlQuery(
+  config: AzureDevOpsConnectionInput,
+  query: string,
+): Promise<number[]> {
+  const response = await requestAzureDevOps<AzureWiqlResponse>(
+    config,
+    "/_apis/wit/wiql?$top=200&api-version=7.1",
+    {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    },
+  );
+
+  return (response.workItems ?? []).map((item) => item.id);
+}
+
+function chunkValues(values: number[], chunkSize: number) {
+  const chunks: number[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function requireSingleFieldMatch(
+  configuredFieldName: string,
+  matches: AzureFieldDefinition[],
+  matchKind: "display name" | "reference name",
+) {
+  if (matches.length === 1) {
+    return matches[0];
+  }
+
+  if (matches.length > 1) {
+    const references = matches
+      .map((field) => field.referenceName)
+      .filter((value): value is string => Boolean(value))
+      .sort((left, right) => left.localeCompare(right));
+    throw new Error(
+      `Azure DevOps field "${configuredFieldName}" matched multiple fields by ${matchKind}. Use the exact reference name instead${references.length > 0 ? `: ${references.join(", ")}` : "."}`,
+    );
+  }
+
+  return undefined;
+}
+
+export async function resolveAzureFieldMetadata(
+  config: AzureDevOpsConnectionInput,
+  configuredFieldName: string | undefined,
+): Promise<AzureResolvedFieldMetadata | undefined> {
+  const normalizedConfiguredFieldName = normalizeConfiguredFieldName(configuredFieldName);
+  if (!normalizedConfiguredFieldName) {
+    return undefined;
+  }
+
+  const normalizedLookupValue = normalizeLookupValue(normalizedConfiguredFieldName);
+  const response = await requestAzureDevOps<AzureFieldListResponse>(
+    config,
+    "/_apis/wit/fields?api-version=7.1",
+  );
+  const fields = response.value ?? [];
+
+  const referenceNameMatch = requireSingleFieldMatch(
+    normalizedConfiguredFieldName,
+    fields.filter(
+      (field) => normalizeLookupValue(field.referenceName) === normalizedLookupValue,
+    ),
+    "reference name",
+  );
+  if (referenceNameMatch?.referenceName) {
+    return {
+      configuredName: normalizedConfiguredFieldName,
+      resolvedName: referenceNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedReferenceName: referenceNameMatch.referenceName,
+      type: referenceNameMatch.type?.trim() || undefined,
+      isQueryable: referenceNameMatch.isQueryable,
+    };
+  }
+
+  const displayNameMatch = requireSingleFieldMatch(
+    normalizedConfiguredFieldName,
+    fields.filter((field) => normalizeLookupValue(field.name) === normalizedLookupValue),
+    "display name",
+  );
+  if (displayNameMatch?.referenceName) {
+    return {
+      configuredName: normalizedConfiguredFieldName,
+      resolvedName: displayNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedReferenceName: displayNameMatch.referenceName,
+      type: displayNameMatch.type?.trim() || undefined,
+      isQueryable: displayNameMatch.isQueryable,
+    };
+  }
+
+  throw new Error(
+    `Azure DevOps field "${normalizedConfiguredFieldName}" was not found. Enter the display name shown in Azure DevOps or the exact reference name.`,
+  );
+}
+
+function mergeWorkItemBatchResponses(
+  ids: number[],
+  fieldItems: AzureWorkItem[],
+  relationItems: AzureWorkItem[],
+): AzureWorkItem[] {
+  const fieldItemsById = new Map(fieldItems.map((item) => [item.id, item]));
+  const relationItemsById = new Map(relationItems.map((item) => [item.id, item]));
+
+  return ids.flatMap((id) => {
+    const fieldItem = fieldItemsById.get(id);
+    const relationItem = relationItemsById.get(id);
+    if (!fieldItem && !relationItem) {
+      return [];
+    }
+
+    return [
+      {
+        ...relationItem,
+        ...fieldItem,
+        id,
+        fields: fieldItem?.fields ?? relationItem?.fields,
+        relations: relationItem?.relations ?? fieldItem?.relations,
+        // Either response may carry the formats, so keep both.
+        multilineFieldsFormat: {
+          ...relationItem?.multilineFieldsFormat,
+          ...fieldItem?.multilineFieldsFormat,
+        },
+      },
+    ];
+  });
+}
+
+async function fetchWorkItems(
+  config: AzureDevOpsConnectionInput,
+  ids: number[],
+  additionalFields: string[] = [],
+): Promise<AzureWorkItem[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const requestedFields = Array.from(
+    new Set([
+      ...BASE_REQUESTED_WORK_ITEM_FIELDS,
+      ...additionalFields,
+    ]),
+  );
+
+  const results = await Promise.all(
+    chunkValues(ids, 200).map(async (chunk) => {
+      // Azure DevOps rejects combining `fields` with `$expand: "Relations"` for workitemsbatch.
+      const [fieldResponse, relationResponse] = await Promise.all([
+        requestAzureDevOps<AzureWorkItemBatchResponse>(
+          config,
+          "/_apis/wit/workitemsbatch?api-version=7.1",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              ids: chunk,
+              fields: requestedFields,
+              errorPolicy: "omit",
+            }),
+          },
+        ),
+        requestAzureDevOps<AzureWorkItemBatchResponse>(
+          config,
+          "/_apis/wit/workitemsbatch?api-version=7.1",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              ids: chunk,
+              errorPolicy: "omit",
+              $expand: "Relations",
+            }),
+          },
+        ),
+      ]);
+
+      return mergeWorkItemBatchResponses(
+        chunk,
+        fieldResponse.value ?? [],
+        relationResponse.value ?? [],
+      );
+    }),
+  );
+
+  return results.flat();
+}
+
+/** Returns the updated work item, or undefined when there was nothing to write. */
+export async function updateAzureWorkItemFields(
+  config: AzureDevOpsConnectionInput,
+  workItemId: string,
+  fields: Record<string, number | string>,
+): Promise<AzureWorkItem | undefined> {
+  const operations = Object.entries(fields).map(([fieldName, value]) => ({
+    op: "add",
+    path: `/fields/${fieldName}`,
+    value,
+  }));
+  if (operations.length === 0) {
+    return undefined;
+  }
+
+  return await requestAzureDevOps<AzureWorkItem>(
+    config,
+    `/_apis/wit/workitems/${encodeURIComponent(workItemId)}?api-version=7.1`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json-patch+json",
+      },
+      body: JSON.stringify(operations),
+    },
+  );
+}
+
+async function fetchWorkItemTypeFieldReferences(
+  config: AzureDevOpsConnectionInput,
+  projectName: string,
+  workItemType: string,
+) {
+  const response = await requestAzureDevOps<AzureFieldListResponse>(
+    config,
+    `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields?api-version=7.1`,
+  );
+
+  if (!Array.isArray(response.value)) {
+    throw new Error("Azure DevOps returned invalid work item type field metadata.");
+  }
+
+  const fields = response.value;
+  return new Set(fields.flatMap((field) => {
+    if (!field || typeof field.referenceName !== "string") {
+      return [];
+    }
+
+    const normalizedReferenceName = normalizeLookupValue(field.referenceName);
+    return normalizedReferenceName ? [normalizedReferenceName] : [];
+  }));
+}
+
+function workItemTypeFieldCacheKey(projectName: string, workItemType: string) {
+  return `${normalizeLookupValue(projectName)}\u0000${normalizeLookupValue(workItemType)}`;
+}
+
+function buildSourceUrl(config: AzureDevOpsConnectionInput, workItem: AzureWorkItem) {
+  const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
+  const projectName = getProjectName(workItem) ?? config.project;
+  const projectSegment = projectName ? `/${encodeURIComponent(projectName)}` : "";
+  return `${organizationUrl}${projectSegment}/_workitems/edit/${workItem.id}`;
+}
+
+function buildCandidateNote(workItem: AzureWorkItem) {
+  const description = normalizeDescriptionValue(
+    workItem.fields?.["System.Description"],
+    workItem.multilineFieldsFormat?.["System.Description"],
+  );
+  return description ? clampNote(description) : undefined;
+}
+
+function getParentId(workItem: AzureWorkItem): number | null {
+  const relation = workItem.relations?.find(
+    (candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Reverse",
+  );
+  return parseRelatedWorkItemId(relation);
+}
+
+function getChildIds(workItem: AzureWorkItem): number[] {
+  return (workItem.relations ?? [])
+    .filter((candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Forward")
+    .map((candidate) => parseRelatedWorkItemId(candidate))
+    .filter((candidate): candidate is number => candidate !== null);
+}
+
+function mapWorkItemToCandidate(
+  config: AzureDevOpsConnectionInput,
+  workItem: AzureWorkItem,
+  allItems: Map<number, AzureWorkItem>,
+  baseCandidateIds: Set<number>,
+  stateInfo: Map<number, AzureStateInfo>,
+  fieldReferences?: {
+    priorityFieldReferenceName?: string;
+    originalEstimateFieldReferenceName?: string;
+    remainingEstimateFieldReferenceName?: string;
+    completedEstimateFieldReferenceName?: string;
+  },
+): ConnectorImportCandidateInput | null {
+  const title = normalizeDisplayValue(workItem.fields?.["System.Title"]);
+  const state = normalizeDisplayValue(workItem.fields?.["System.State"]);
+  const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
+  const assignedTo = normalizeDisplayValue(workItem.fields?.["System.AssignedTo"]);
+  const projectName = getProjectName(workItem);
+  const priority = fieldReferences?.priorityFieldReferenceName
+    ? priorityLevelForValue(
+        config.priorityLevels,
+        parsePriorityValue(workItem.fields?.[fieldReferences.priorityFieldReferenceName]),
+      )
+    : undefined;
+  const originalEstimateHours = fieldReferences?.originalEstimateFieldReferenceName
+    ? parseEstimateValue(workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName])
+    : undefined;
+  const remainingEstimateHours = fieldReferences?.remainingEstimateFieldReferenceName
+    ? parseEstimateValue(workItem.fields?.[fieldReferences.remainingEstimateFieldReferenceName])
+    : undefined;
+  const completedEstimateHours = fieldReferences?.completedEstimateFieldReferenceName
+    ? parseEstimateValue(workItem.fields?.[fieldReferences.completedEstimateFieldReferenceName])
+    : undefined;
+
+  const isOpen = (item: AzureWorkItem) => !stateInfo.get(item.id)?.done;
+  if (!title || !workItemType || !isOpen(workItem)) {
+    return null;
+  }
+  const stateCategory = stateInfo.get(workItem.id)?.category;
+
+  const isBaseCandidate = baseCandidateIds.has(workItem.id);
+  const selectable = isBaseCandidate;
+  const sourceUrl = buildSourceUrl(config, workItem);
+
+  if (isTask(workItemType)) {
+    const parentId = getParentId(workItem);
+    const parent = parentId ? allItems.get(parentId) : undefined;
+    const parentTitle = normalizeDisplayValue(parent?.fields?.["System.Title"]);
+    const hasImportableParent = Boolean(parent && parentTitle && isOpen(parent));
+
+    return {
+      source: "azure_devops",
+      connectionId: config.id ?? "unknown_connection",
+      connectionLabel: config.label,
+      tenantLabel: config.tenantLabel,
+      sourceId: sourceUrl,
+      externalId: String(workItem.id),
+      sourceUrl,
+      title,
+      note: buildCandidateNote(workItem),
+      description: describeWorkItem(workItem),
+      projectName,
+      workItemType,
+      state,
+      stateCategory,
+      stateDone: false,
+      assignedTo,
+      priority,
+      originalEstimateHours,
+      remainingEstimateHours,
+      completedEstimateHours,
+      parentSourceId: hasImportableParent && parent ? buildSourceUrl(config, parent) : undefined,
+      parentTitle: hasImportableParent ? parentTitle : undefined,
+      depth: hasImportableParent ? 1 : 0,
+      selectable,
+      selected: selectable,
+      childCount: 0,
+    };
+  }
+
+  if (!isBacklogParentType(workItemType)) {
+    return null;
+  }
+
+  const includedChildCount = getChildIds(workItem).filter((childId) => {
+    if (!baseCandidateIds.has(childId)) {
+      return false;
+    }
+
+    const child = allItems.get(childId);
+    const childType = normalizeDisplayValue(child?.fields?.["System.WorkItemType"]);
+    return Boolean(child && isTask(childType) && isOpen(child));
+  }).length;
+
+  if (!selectable && includedChildCount === 0) {
+    return null;
+  }
+
+  return {
+    source: "azure_devops",
+    connectionId: config.id ?? "unknown_connection",
+    connectionLabel: config.label,
+    tenantLabel: config.tenantLabel,
+    sourceId: sourceUrl,
+    externalId: String(workItem.id),
+    sourceUrl,
+    title,
+    note: buildCandidateNote(workItem),
+    description: describeWorkItem(workItem),
+    projectName,
+    workItemType,
+    state,
+    stateCategory,
+    stateDone: false,
+    assignedTo,
+    priority,
+    originalEstimateHours,
+    remainingEstimateHours,
+    completedEstimateHours,
+    depth: 0,
+    selectable,
+    selected: selectable,
+    childCount: includedChildCount,
+  };
+}
+
+/** The state category of each work item, loading each type's states once. */
+async function describeWorkItemStates(
+  resolver: ReturnType<typeof createStateCategoryResolver>,
+  workItems: Iterable<AzureWorkItem>,
+) {
+  const entries = await Promise.all(
+    Array.from(workItems, async (workItem) => {
+      const info = await resolver.describeState(
+        getProjectName(workItem),
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]),
+        normalizeDisplayValue(workItem.fields?.["System.State"]),
+      );
+      return [workItem.id, info] as const;
+    }),
+  );
+  return new Map(entries);
+}
+
+async function fetchAzureDevOpsSyncContext(
+  config: AzureDevOpsConnectionInput,
+): Promise<AzureDevOpsSyncContext> {
+  const resolver = createStateCategoryResolver(config, requestAzureDevOps);
+  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
+  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
+  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
+  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
+  const baseIds = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+  if (baseIds.length === 0) {
+    return {
+      items: [],
+      itemsBySourceId: new Map(),
+      allItems: new Map(),
+      stateInfo: new Map(),
+      resolver,
+      fields: {
+        priorityField,
+        originalEstimateField,
+        remainingEstimateField,
+        completedEstimateField,
+      },
+    };
+  }
+
+  const additionalFields = [
+    priorityField?.resolvedReferenceName,
+    originalEstimateField?.resolvedReferenceName,
+    remainingEstimateField?.resolvedReferenceName,
+    completedEstimateField?.resolvedReferenceName,
+  ].filter((value): value is string => Boolean(value));
+  const baseItems = await fetchWorkItems(config, baseIds, additionalFields);
+  const baseCandidateIds = new Set(baseItems.map((item) => item.id));
+
+  const parentContextIds = new Set<number>();
+  for (const workItem of baseItems) {
+    const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
+    if (!isTask(workItemType)) {
+      continue;
+    }
+
+    const parentId = getParentId(workItem);
+    if (parentId && !baseCandidateIds.has(parentId)) {
+      parentContextIds.add(parentId);
+    }
+  }
+
+  const parentContextItems = await fetchWorkItems(config, Array.from(parentContextIds), additionalFields);
+  const allItems = new Map<number, AzureWorkItem>(
+    [...baseItems, ...parentContextItems].map((item) => [item.id, item] as const),
+  );
+
+  const stateInfo = await describeWorkItemStates(resolver, allItems.values());
+  const candidatesBySourceId = new Map<string, ConnectorImportCandidateInput>();
+  for (const workItem of allItems.values()) {
+    const candidate = mapWorkItemToCandidate(
+      config,
+      workItem,
+      allItems,
+      baseCandidateIds,
+      stateInfo,
+      {
+        priorityFieldReferenceName: priorityField?.resolvedReferenceName,
+        originalEstimateFieldReferenceName: originalEstimateField?.resolvedReferenceName,
+        remainingEstimateFieldReferenceName: remainingEstimateField?.resolvedReferenceName,
+        completedEstimateFieldReferenceName: completedEstimateField?.resolvedReferenceName,
+      },
+    );
+    if (!candidate) {
+      continue;
+    }
+
+    candidatesBySourceId.set(candidate.sourceId, candidate);
+  }
+
+  const items = Array.from(candidatesBySourceId.values()).sort((left, right) => {
+    if (left.connectionId !== right.connectionId) {
+      return left.connectionId.localeCompare(right.connectionId);
+    }
+
+    if (left.depth !== right.depth) {
+      return left.depth - right.depth;
+    }
+
+    if ((left.parentSourceId ?? "") !== (right.parentSourceId ?? "")) {
+      return (left.parentSourceId ?? "").localeCompare(right.parentSourceId ?? "");
+    }
+
+    return left.title.localeCompare(right.title);
+  });
+
+  return {
+    items,
+    itemsBySourceId: new Map(items.map((item) => [item.sourceId, item] as const)),
+    allItems,
+    stateInfo,
+    resolver,
+    fields: {
+      priorityField,
+      originalEstimateField,
+      remainingEstimateField,
+      completedEstimateField,
+    },
+  };
+}
+
+function buildAzureEstimateFieldUpdate(
+  localWorkItem: ConnectorSyncWorkItem,
+  remoteItem: ConnectorImportCandidateInput,
+  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  allowMissingRemoteValue = false,
+): ConnectorSyncFieldUpdate | null {
+  const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
+  if (
+    !allowMissingRemoteValue &&
+    remoteItem[fieldKey] === undefined &&
+    fieldSyncState?.remoteValue === undefined &&
+    fieldSyncState?.baselineValue === undefined
+  ) {
+    return null;
+  }
+
+  const action = resolveEstimateSyncAction({
+    localValue: localWorkItem[fieldKey],
+    remoteValue: remoteItem[fieldKey],
+    baselineValue: fieldSyncState?.baselineValue,
+    resolution: fieldSyncState?.resolution,
+  });
+
+  return {
+    status:
+      action.status === "push"
+        ? "pushed"
+        : action.status === "pull"
+          ? "pulled"
+          : action.status,
+    localValue: action.localValue,
+    remoteValue: action.remoteValue,
+    baselineValue: action.baselineValue,
+    nextBaselineValue: "nextBaselineValue" in action ? action.nextBaselineValue : undefined,
+  };
+}
+
+function needsWorkItemTypeFieldSupportCheck(
+  localWorkItem: ConnectorSyncWorkItem,
+  remoteItem: ConnectorImportCandidateInput,
+  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+) {
+  if (remoteItem[fieldKey] !== undefined) {
+    return false;
+  }
+
+  const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
+  return (
+    typeof localWorkItem[fieldKey] === "number" ||
+    fieldSyncState?.remoteValue !== undefined ||
+    fieldSyncState?.baselineValue !== undefined ||
+    fieldSyncState?.resolution !== undefined
+  );
+}
+
+async function buildAzureWorkItemUpdates(
+  config: AzureDevOpsConnectionInput,
+  syncContext: AzureDevOpsSyncContext,
+  workItems: ConnectorSyncWorkItem[],
+): Promise<ConnectorSyncWorkItemUpdate[]> {
+  const updates: ConnectorSyncWorkItemUpdate[] = [];
+  const mappedFieldNames = {
+    originalEstimateHours: syncContext.fields.originalEstimateField?.resolvedReferenceName,
+    remainingEstimateHours: syncContext.fields.remainingEstimateField?.resolvedReferenceName,
+    completedEstimateHours: syncContext.fields.completedEstimateField?.resolvedReferenceName,
+  } as const;
+
+  const fieldSupportRequests = new Map<
+    string,
+    { projectName: string; workItemType: string }
+  >();
+  for (const workItem of workItems) {
+    const remoteItem = syncContext.itemsBySourceId.get(workItem.sourceId);
+    if (!remoteItem) {
+      continue;
+    }
+
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+      if (
+        !mappedFieldNames[fieldKey] ||
+        !needsWorkItemTypeFieldSupportCheck(workItem, remoteItem, fieldKey)
+      ) {
+        continue;
+      }
+
+      const projectName = remoteItem.projectName ?? config.project;
+      const workItemType = remoteItem.workItemType;
+      if (projectName && workItemType) {
+        fieldSupportRequests.set(workItemTypeFieldCacheKey(projectName, workItemType), {
+          projectName,
+          workItemType,
+        });
+      }
+    }
+  }
+
+  const workItemTypeFieldResults = new Map<
+    string,
+    { fields?: Set<string>; error?: string }
+  >();
+  for (const [cacheKey, { projectName, workItemType }] of fieldSupportRequests) {
+    try {
+      workItemTypeFieldResults.set(cacheKey, {
+        fields: await fetchWorkItemTypeFieldReferences(config, projectName, workItemType),
+      });
+    } catch (error) {
+      workItemTypeFieldResults.set(cacheKey, {
+        error: error instanceof Error
+          ? error.message
+          : "Unable to inspect Azure DevOps work item type fields.",
+      });
+    }
+  }
+
+  for (const workItem of workItems) {
+    const remoteItem = syncContext.itemsBySourceId.get(workItem.sourceId);
+    if (!remoteItem) {
+      continue;
+    }
+
+    const fieldUpdates: ConnectorSyncWorkItemUpdate["fields"] = {};
+
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+      const mappedFieldName = mappedFieldNames[fieldKey];
+      if (!mappedFieldName) {
+        continue;
+      }
+
+      const needsFieldSupportCheck = needsWorkItemTypeFieldSupportCheck(
+        workItem,
+        remoteItem,
+        fieldKey,
+      );
+      let allowMissingRemoteValue = false;
+      let fieldSupportError: string | undefined;
+      if (needsFieldSupportCheck) {
+        const projectName = remoteItem.projectName ?? config.project;
+        const workItemType = remoteItem.workItemType;
+        if (projectName && workItemType) {
+          const cacheKey = workItemTypeFieldCacheKey(projectName, workItemType);
+          const fieldSupportResult = workItemTypeFieldResults.get(cacheKey);
+          fieldSupportError = fieldSupportResult?.error;
+          const normalizedMappedFieldName = normalizeLookupValue(mappedFieldName);
+          if (normalizedMappedFieldName) {
+            allowMissingRemoteValue =
+              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ?? false;
+          }
+        }
+      }
+      if (fieldSupportError) {
+        fieldUpdates[fieldKey] = {
+          status: "error",
+          localValue: workItem[fieldKey],
+          remoteValue: remoteItem[fieldKey],
+          baselineValue: workItem.estimateSync?.[fieldKey]?.baselineValue,
+          message: fieldSupportError,
+        };
+        continue;
+      }
+      if (needsFieldSupportCheck && !allowMissingRemoteValue) {
+        continue;
+      }
+
+      const fieldUpdate = buildAzureEstimateFieldUpdate(
+        workItem,
+        remoteItem,
+        fieldKey,
+        allowMissingRemoteValue,
+      );
+      if (!fieldUpdate) {
+        continue;
+      }
+      fieldUpdates[fieldKey] = fieldUpdate;
+    }
+
+    if (Object.keys(fieldUpdates).length === 0) {
+      continue;
+    }
+
+    for (const fieldKey of Object.keys(fieldUpdates) as Array<keyof typeof fieldUpdates>) {
+      const mappedFieldName = mappedFieldNames[fieldKey];
+      const fieldUpdate = fieldUpdates[fieldKey];
+      const localValue = workItem[fieldKey];
+      if (
+        !mappedFieldName ||
+        fieldUpdate?.status !== "pushed" ||
+        typeof localValue !== "number" ||
+        !Number.isFinite(localValue)
+      ) {
+        continue;
+      }
+
+      try {
+        await updateAzureWorkItemFields(config, remoteItem.externalId, {
+          [mappedFieldName]: localValue,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to update Azure DevOps work item.";
+        const failedFieldUpdate: ConnectorSyncFieldUpdate = {
+          ...fieldUpdate,
+          status: "error",
+          message,
+        };
+        delete failedFieldUpdate.nextBaselineValue;
+        fieldUpdates[fieldKey] = failedFieldUpdate;
+      }
+    }
+
+    updates.push({
+      localWorkItemId: workItem.localWorkItemId,
+      sourceId: workItem.sourceId,
+      fields: fieldUpdates,
+    });
+  }
+
+  return updates;
+}
+
+export async function validateAzureDevOpsConnection(config: AzureDevOpsConnectionInput) {
+  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
+  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
+  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
+  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
+  const ids = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+  if (!Array.isArray(ids)) {
+    throw new Error(
+      `Azure DevOps query did not return a valid work item list for ${normalizeOrganizationUrl(config.organizationUrl)}.`,
+    );
+  }
+
+  return {
+    priorityField,
+    originalEstimateField,
+    remainingEstimateField,
+    completedEstimateField,
+  } satisfies AzureDevOpsConnectionValidationResult;
+}
+
+export async function fetchAzureDevOpsImportCandidates(
+  config: AzureDevOpsConnectionInput,
+): Promise<AzureDevOpsImportFetchResult> {
+  const syncContext = await fetchAzureDevOpsSyncContext(config);
+  return { items: syncContext.items };
+}
+
+/** The work item id at the end of a source URL, such as `.../_workitems/edit/42`. */
+export function parseAzureWorkItemId(
+  sourceId: string,
+  organizationUrl?: string,
+): number | null {
+  try {
+    const source = new URL(sourceId);
+    if (source.protocol !== "https:" && source.protocol !== "http:") return null;
+    if (source.username || source.password) return null;
+    if (organizationUrl) {
+      const organization = new URL(normalizeOrganizationUrl(organizationUrl));
+      if (
+        source.origin !== organization.origin ||
+        !source.pathname.toLowerCase().startsWith(
+          organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
+        )
+      ) return null;
+    }
+    const match = /\/_workitems\/edit\/([1-9]\d*)\/?$/.exec(source.pathname);
+    const id = match ? Number(match[1]) : NaN;
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ajour's items that reached a done category, so Ajour archives them. Items the
+ * sync query no longer returns are fetched by id.
+ */
+async function findDoneWorkItems(
+  config: AzureDevOpsConnectionInput,
+  syncContext: AzureDevOpsSyncContext,
+  workItems: ConnectorSyncWorkItem[],
+): Promise<ConnectorImportCandidateInput[]> {
+  const localIds = new Map<number, string>();
+  for (const workItem of workItems) {
+    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
+    if (id !== null && !syncContext.itemsBySourceId.has(workItem.sourceId)) {
+      localIds.set(id, workItem.sourceId);
+    }
+  }
+  if (localIds.size === 0) {
+    return [];
+  }
+
+  const missingIds = Array.from(localIds.keys()).filter(
+    (id) => !syncContext.allItems.has(id),
+  );
+  const fetched = await fetchWorkItems(config, missingIds);
+  const stateInfo = new Map([
+    ...syncContext.stateInfo,
+    ...(await describeWorkItemStates(syncContext.resolver, fetched)),
+  ]);
+  const candidates = new Map(syncContext.allItems);
+  for (const workItem of fetched) {
+    candidates.set(workItem.id, workItem);
+  }
+
+  const doneItems: ConnectorImportCandidateInput[] = [];
+  for (const [id, sourceId] of localIds) {
+    const workItem = candidates.get(id);
+    const info = stateInfo.get(id);
+    if (!workItem || !info?.done) {
+      continue;
+    }
+
+    doneItems.push({
+      source: "azure_devops",
+      connectionId: config.id ?? "unknown_connection",
+      connectionLabel: config.label,
+      tenantLabel: config.tenantLabel,
+      sourceId,
+      externalId: String(id),
+      sourceUrl: sourceId,
+      title: normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
+      projectName: getProjectName(workItem),
+      workItemType:
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ?? "Work item",
+      state: normalizeDisplayValue(workItem.fields?.["System.State"]),
+      stateCategory: info.category,
+      stateDone: true,
+      depth: 0,
+      selectable: false,
+      selected: false,
+      childCount: 0,
+    });
+  }
+  return doneItems;
+}
+
+export async function syncAzureDevOpsConnection(
+  config: AzureDevOpsConnectionInput,
+  workItems: ConnectorSyncWorkItem[] = [],
+): Promise<ConnectorPluginSyncResult> {
+  const syncContext = await fetchAzureDevOpsSyncContext(config);
+  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  // Last, so the sync's earlier requests keep their order.
+  const doneItems = await findDoneWorkItems(config, syncContext, workItems);
+  return {
+    items: [...syncContext.items, ...doneItems],
+    workItemUpdates,
+  };
+}

@@ -1,15 +1,15 @@
-// Chooses the plugins CI builds and the plugins it publishes.
+// Chooses the plugins CI tests.
 //
-// A plugin is built when a file in its folder changed, and every plugin is
-// built when a shared file changed, such as the lockfile or the workflow. Only
-// a plugin whose own folder changed is published, so a lockfile refresh does
-// not release every plugin again. A first push, a push whose base is no longer
-// in the history and a manual run select every plugin, or the ones named.
+// A plugin is tested when a file in its folder changed, and every plugin is
+// tested when a shared file changed, such as the lockfile or the workflow. A
+// first push, a push whose base is no longer in the history and a manual run
+// select every plugin, or the ones named.
 //
 // In CI the inputs come from the environment and the result goes to
-// GITHUB_OUTPUT. Locally: node scripts/plan-ci.mjs --base origin/main
+// GITHUB_OUTPUT as plugins=["folder", ...]. Locally:
+// node scripts/plan-ci.mjs --base origin/main
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, readdirSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const { values: options } = parseArgs({
@@ -17,16 +17,13 @@ const { values: options } = parseArgs({
     base: { type: "string", default: process.env.BASE_SHA ?? "" },
     head: { type: "string", default: process.env.HEAD_SHA || "HEAD" },
     plugins: { type: "string", default: process.env.REQUESTED_PLUGINS ?? "" },
-    publish: { type: "boolean", default: process.env.PUBLISH === "true" },
   },
 });
 
-// The slug becomes a prerelease identifier in the release tag, which Ajour
-// parses as a semantic version, so it is limited to what semver allows.
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const pluginsRoot = new URL("../plugins/", import.meta.url);
 
-const plugins = readdirSync(pluginsRoot, { withFileTypes: true })
+const allSlugs = readdirSync(pluginsRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => {
     if (!slugPattern.test(entry.name)) {
@@ -34,20 +31,9 @@ const plugins = readdirSync(pluginsRoot, { withFileTypes: true })
         `Plugin folder "${entry.name}" must use lowercase letters, digits and single hyphens.`,
       );
     }
-    const metadata = JSON.parse(
-      readFileSync(new URL(`${entry.name}/package.json`, pluginsRoot), "utf8"),
-    );
-    const packaged = typeof metadata.scripts?.package === "string";
-    const releaseTitle = metadata.ajourRelease?.title;
-    return {
-      slug: entry.name,
-      packaged,
-      publishable: packaged && typeof releaseTitle === "string",
-    };
+    return entry.name;
   })
-  .sort((left, right) => left.slug.localeCompare(right.slug));
-
-const allSlugs = plugins.map((plugin) => plugin.slug);
+  .sort((left, right) => left.localeCompare(right));
 
 function requestedSlugs(value) {
   const names = value
@@ -83,33 +69,35 @@ function changedFiles(base, head) {
   }
 }
 
-// Documentation and the license outside plugins/ change no build.
+// Documentation, the license and the source manifest outside plugins/ change
+// no plugin. The source job checks ajour.json on every run.
 function isShared(file) {
-  return !file.startsWith("plugins/") && !/\.md$/i.test(file) && file !== "LICENSE";
+  return (
+    !file.startsWith("plugins/") &&
+    !/\.md$/i.test(file) &&
+    !["LICENSE", "ajour.json", "ajour.json.sig"].includes(file)
+  );
 }
 
-let built;
-let changed;
+let tested;
 let reason;
 const requested = requestedSlugs(options.plugins);
 if (requested.length > 0) {
-  built = requested;
-  changed = requested;
+  tested = requested;
   reason = `requested: ${options.plugins}`;
 } else {
   const files = changedFiles(options.base, options.head);
   if (files === null) {
-    built = allSlugs;
-    changed = allSlugs;
+    tested = allSlugs;
     reason = hasBase
       ? `${options.base} is not in the history, so every plugin`
       : "no base to compare, so every plugin";
   } else {
-    changed = allSlugs.filter((slug) =>
-      files.some((file) => file.startsWith(`plugins/${slug}/`)),
-    );
     const shared = files.filter(isShared);
-    built = shared.length > 0 ? allSlugs : changed;
+    tested =
+      shared.length > 0
+        ? allSlugs
+        : allSlugs.filter((slug) => files.some((file) => file.startsWith(`plugins/${slug}/`)));
     reason =
       shared.length > 0
         ? `shared files changed (${shared.slice(0, 5).join(", ")}${shared.length > 5 ? ", …" : ""})`
@@ -117,31 +105,12 @@ if (requested.length > 0) {
   }
 }
 
-const matrix = plugins
-  .filter((plugin) => built.includes(plugin.slug))
-  .map((plugin) => ({
-    slug: plugin.slug,
-    packaged: plugin.packaged,
-    publish: options.publish && plugin.publishable && changed.includes(plugin.slug),
-  }));
-const publish = matrix.filter((entry) => entry.publish).map((entry) => entry.slug);
-const wouldPublish = plugins
-  .filter((plugin) => plugin.publishable && changed.includes(plugin.slug) && built.includes(plugin.slug))
-  .map((plugin) => plugin.slug);
+const plugins = allSlugs.filter((slug) => tested.includes(slug));
 
 process.stdout.write(
-  [
-    `Reason: ${reason}`,
-    `Build: ${matrix.map((entry) => entry.slug).join(", ") || "none"}`,
-    `Publish: ${publish.join(", ") || "none"}`,
-    ...(options.publish ? [] : [`Would publish on main: ${wouldPublish.join(", ") || "none"}`]),
-    "",
-  ].join("\n"),
+  [`Reason: ${reason}`, `Test: ${plugins.join(", ") || "none"}`, ""].join("\n"),
 );
 
 if (process.env.GITHUB_OUTPUT) {
-  appendFileSync(
-    process.env.GITHUB_OUTPUT,
-    `build=${JSON.stringify(matrix)}\npublish=${JSON.stringify(publish)}\n`,
-  );
+  appendFileSync(process.env.GITHUB_OUTPUT, `plugins=${JSON.stringify(plugins)}\n`);
 }

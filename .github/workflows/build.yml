@@ -1,4 +1,4 @@
-name: Build plugins
+name: Check plugins
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       plugins:
-        description: Plugins to build, and publish when run on main. "all", or folder names under plugins/ separated by commas.
+        description: Plugins to test. "all", or folder names under plugins/ separated by commas.
         required: true
         default: all
 
@@ -22,8 +22,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      build: ${{ steps.plan.outputs.build }}
-      publish: ${{ steps.plan.outputs.publish }}
+      plugins: ${{ steps.plan.outputs.plugins }}
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -43,29 +42,26 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           REQUESTED_PLUGINS: ${{ inputs.plugins }}
-          PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
         run: node scripts/plan-ci.mjs
 
-  build:
-    name: Build ${{ matrix.slug }}
+  plugin:
+    name: Test ${{ matrix.plugin }}
     needs: plan
-    if: needs.plan.outputs.build != '[]'
+    if: needs.plan.outputs.plugins != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.plan.outputs.build) }}
+        plugin: ${{ fromJSON(needs.plan.outputs.plugins) }}
     defaults:
       run:
-        working-directory: plugins/${{ matrix.slug }}
+        working-directory: plugins/${{ matrix.plugin }}
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          # The build number is the count of commits on main.
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -90,151 +86,34 @@ jobs:
       - name: Run checks
         run: corepack pnpm run --if-present typecheck
 
-      - name: Set build version
-        id: release
-        if: matrix.publish
-        shell: bash
-        env:
-          SLUG: ${{ matrix.slug }}
-        run: |
-          set -euo pipefail
-          base="$(node -p "require('./package.json').version")"
-          suffix="main.$(git rev-list --count HEAD).${GITHUB_SHA::7}"
-          version="$(node scripts/set-build-version.mjs "$suffix")"
-          id="$(node -p "require('./plugin.json').id")"
-          title="$(node -p "require('./package.json').ajourRelease.title")"
-          # Ajour reads the tag as a semantic version, so the plugin goes in
-          # the prerelease part: v1.1.0-azure-devops.main.130.9aac30e.
-          echo "tag=v$base-$SLUG.$suffix" >> "$GITHUB_OUTPUT"
-          echo "name=$title v$version" >> "$GITHUB_OUTPUT"
-          echo "asset=$id-$version.ajour-connector" >> "$GITHUB_OUTPUT"
-
-      - name: Package plugin
-        if: matrix.packaged
-        run: corepack pnpm package
-
-      - name: Build plugin
-        if: ${{ !matrix.packaged }}
-        run: corepack pnpm run --if-present build
-
-      - name: Prepare release
-        if: matrix.publish
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_NAME: ${{ steps.release.outputs.name }}
-          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/release"
-          cp "package/$RELEASE_ASSET" "$RUNNER_TEMP/release/"
-          jq -n '{tag: env.RELEASE_TAG, name: env.RELEASE_NAME, asset: env.RELEASE_ASSET}' \
-            > "$RUNNER_TEMP/release/release.json"
-
-      - name: Upload installable plugin
-        if: matrix.publish
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: plugin-${{ matrix.slug }}
-          path: ${{ runner.temp }}/release/
-          if-no-files-found: error
-          retention-days: 30
-
-  publish:
-    name: Publish ${{ matrix.slug }}
-    needs: [plan, build]
-    if: needs.plan.outputs.publish != '[]'
+  source:
+    name: Check plugin source
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        slug: ${{ fromJSON(needs.plan.outputs.publish) }}
+      contents: read
     steps:
-      - name: Download installable plugin
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          name: plugin-${{ matrix.slug }}
-          path: release-assets
+          # ajour.json pins earlier commits; verify reads each file at its commit.
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Publish plugin prerelease
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SLUG: ${{ matrix.slug }}
-        run: |
-          set -euo pipefail
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # Ajour runs plugins on Node 24, inside Electron 44. Fetch the newest
+          # 24.x patch rather than the older one cached on the runner.
+          node-version: 24
+          check-latest: true
 
-          RELEASE_TAG="$(jq -r .tag release-assets/release.json)"
-          EXPECTED_RELEASE_NAME="$(jq -r .name release-assets/release.json)"
-          EXPECTED_ASSET_NAME="$(jq -r .asset release-assets/release.json)"
+      # No install: the scripts use Node.js alone, and the smoke import proves
+      # each plugin runs from its published files without node_modules.
+      - name: Test the source scripts
+        run: node --test "scripts/*.test.mjs"
 
-          archive="release-assets/$EXPECTED_ASSET_NAME"
-          if [[ ! -f "$archive" ]]; then
-            echo "Expected packaged plugin archive was not found: $archive" >&2
-            exit 1
-          fi
+      - name: Import each plugin in plain Node
+        run: node scripts/smoke-import.mjs
 
-          ref_api="repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG"
-          assert_tag_target() {
-            local tag_type tag_sha
-            tag_type="$(gh api "$ref_api" --jq '.object.type')"
-            tag_sha="$(gh api "$ref_api" --jq '.object.sha')"
-            if [[ "$tag_type" != "commit" || "$tag_sha" != "$GITHUB_SHA" ]]; then
-              echo "Refusing to publish: $RELEASE_TAG does not point directly to $GITHUB_SHA." >&2
-              exit 1
-            fi
-          }
-
-          release_api="repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG"
-          if gh api "$release_api" >/dev/null 2>&1; then
-            release_state="$(gh api "$release_api" --jq '[.tag_name, .name, (.draft | tostring), (.prerelease | tostring)] | @tsv')"
-            IFS=$'\t' read -r actual_tag actual_name is_draft is_prerelease <<< "$release_state"
-            if [[ "$actual_tag" != "$RELEASE_TAG" || "$actual_name" != "$EXPECTED_RELEASE_NAME" || "$is_draft" != "false" || "$is_prerelease" != "true" ]]; then
-              echo "Refusing to overwrite a release whose identity or state does not match this build." >&2
-              exit 1
-            fi
-
-            assert_tag_target
-
-            existing_assets="$(gh api "$release_api" --jq '.assets[].name')"
-            while IFS= read -r existing_asset; do
-              [[ -z "$existing_asset" ]] && continue
-              if [[ "$existing_asset" != "$EXPECTED_ASSET_NAME" ]]; then
-                echo "Refusing to overwrite a release containing unexpected asset: $existing_asset" >&2
-                exit 1
-              fi
-            done <<< "$existing_assets"
-
-            gh release upload "$RELEASE_TAG" "$archive" --clobber --repo "$GITHUB_REPOSITORY"
-            exit 0
-          fi
-
-          if gh api "$ref_api" >/dev/null 2>&1; then
-            assert_tag_target
-          fi
-
-          # Every plugin releases from this repository, so the notes start at
-          # this plugin's previous release rather than at the newest release.
-          build_number="$(sed -E 's/^.*\.main\.([0-9]+)\..*$/\1/' <<< "$RELEASE_TAG")"
-          previous_tag="$(
-            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name' \
-              | { grep -E "^v[0-9]+\.[0-9]+\.[0-9]+-$SLUG\.main\.[0-9]+\.[0-9a-f]+$" || true; } \
-              | sed -E 's/^.*\.main\.([0-9]+)\..*$/\1 &/' \
-              | awk -v current="$build_number" '$1 < current' \
-              | sort -n | tail -n 1 | cut -d ' ' -f 2
-          )"
-          notes_start=()
-          if [[ -n "$previous_tag" ]]; then
-            notes_start=(--notes-start-tag "$previous_tag")
-          fi
-
-          gh release create "$RELEASE_TAG" "$archive" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$EXPECTED_RELEASE_NAME" \
-            --generate-notes \
-            "${notes_start[@]}" \
-            --prerelease \
-            --latest=false
+      - name: Check ajour.json
+        run: node scripts/ajour-source.mjs verify

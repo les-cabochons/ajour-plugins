@@ -4,9 +4,13 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
+  "ajour": {
+    "sourceName": "Ajour official plugins"
+  },
   "scripts": {
     "test": "corepack pnpm -r run test",
     "typecheck": "corepack pnpm -r run --if-present typecheck",
-    "verify": "corepack pnpm -r run verify"
+    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "verify": "corepack pnpm -r run verify && corepack pnpm run test:scripts"
   }
 }

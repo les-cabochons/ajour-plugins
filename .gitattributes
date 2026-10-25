@@ -1,0 +1,4 @@
+# ajour.json.sig signs the exact bytes of ajour.json, so git must never change
+# their line endings, whatever core.autocrlf says.
+ajour.json -text
+ajour.json.sig -text

@@ -24,21 +24,9 @@ install:
 test plugin="":
     {{PNPM}} {{ if plugin == "" { "-r" } else { "--filter ./plugins/" + plugin } }} run test
 
-[doc("Watches one plugin's sources and rebuilds on changes")]
-dev plugin:
-    {{PNPM}} --filter ./plugins/{{plugin}} run dev
-
 [doc("Runs TypeScript and syntax checks")]
 typecheck plugin="":
     {{PNPM}} {{ if plugin == "" { "-r" } else { "--filter ./plugins/" + plugin } }} run --if-present typecheck
-
-[doc("Builds the plugin JavaScript")]
-build plugin="":
-    {{PNPM}} {{ if plugin == "" { "-r" } else { "--filter ./plugins/" + plugin } }} run --if-present build
-
-[doc("Builds the installable .ajour-connector archives")]
-package plugin="":
-    {{PNPM}} {{ if plugin == "" { "-r" } else { "--filter ./plugins/" + plugin } }} run --if-present package
 
 [doc("Runs the complete local CI verification")]
 verify plugin="":

@@ -8,7 +8,7 @@
 // is stable. Blocks Jira does not allow where they stand, such as a heading in
 // a quote, are written as paragraphs.
 
-import { MEDIA_MARK } from "./adf-markdown.js";
+import { MEDIA_MARK } from "./adf-markdown.ts";
 
 export type AdfMarkNode = { type: string; attrs?: Record<string, unknown> };
 

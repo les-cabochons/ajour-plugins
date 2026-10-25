@@ -1,14 +1,14 @@
 import type {
   BacklogWriteDescriptionRequest,
   BacklogWriteDescriptionResult,
-} from "./contract.js";
-import { describeJiraDescriptionFully, MAX_LOST } from "./description.js";
-import { documentOf } from "./description-nested.js";
-import { checkPreservation } from "./description-guard.js";
-import { patchDescriptionAdf } from "./description-patch.js";
-import { fetchDescribedIssue, requireIssueKey } from "./description-source.js";
-import { buildIssueUrl, describeIssue, requestJira, type JiraConnectionInput } from "./jira.js";
-import { markdownToAdf, type AdfDocument } from "./markdown-adf.js";
+} from "./contract.ts";
+import { describeJiraDescriptionFully, MAX_LOST } from "./description.ts";
+import { documentOf } from "./description-nested.ts";
+import { checkPreservation } from "./description-guard.ts";
+import { patchDescriptionAdf } from "./description-patch.ts";
+import { fetchDescribedIssue, requireIssueKey } from "./description-source.ts";
+import { buildIssueUrl, describeIssue, requestJira, type JiraConnectionInput } from "./jira.ts";
+import { markdownToAdf, type AdfDocument } from "./markdown-adf.ts";
 
 function isDocument(value: unknown): value is { type: "doc"; content: unknown[] } {
   return typeof value === "object" && value !== null && (value as { type?: unknown }).type === "doc";

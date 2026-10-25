@@ -1,5 +1,5 @@
-import { adfToMarkdown, adfToMarkdownParts, type AdfImageContext, type AdfNode } from "./adf-markdown.js";
-import { markdownToAdf, type AdfDocument, type AdfOutNode } from "./markdown-adf.js";
+import { adfToMarkdown, adfToMarkdownParts, type AdfImageContext, type AdfNode } from "./adf-markdown.ts";
+import { markdownToAdf, type AdfDocument, type AdfOutNode } from "./markdown-adf.ts";
 import {
   AMBIGUOUS_EDIT,
   alignLines,
@@ -7,7 +7,7 @@ import {
   reconcileDocument,
   restoreKeptNodes,
   withoutIdentity,
-} from "./description-nested.js";
+} from "./description-nested.ts";
 
 export { AMBIGUOUS_EDIT };
 

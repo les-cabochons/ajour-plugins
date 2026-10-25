@@ -5,15 +5,15 @@ import type {
   ConnectorSyncFieldUpdate,
   ConnectorSyncWorkItem,
   ConnectorSyncWorkItemUpdate,
-} from "./contract.js";
-import { resolveEstimateSyncAction } from "./estimate-sync.js";
-import { htmlToMarkdown } from "./html-markdown.js";
-import { describeWorkItem } from "./description.js";
-import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.js";
+} from "./contract.ts";
+import { resolveEstimateSyncAction } from "./estimate-sync.ts";
+import { htmlToMarkdown } from "./html-markdown.ts";
+import { describeWorkItem } from "./description.ts";
+import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.ts";
 import {
   createStateCategoryResolver,
   type AzureStateInfo,
-} from "./state-categories.js";
+} from "./state-categories.ts";
 
 export interface AzureDevOpsConnectionInput {
   id?: string;

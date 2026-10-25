@@ -1,5 +1,5 @@
-import { htmlToMarkdown, htmlToMarkdownParts } from "./html-markdown.js";
-import { markdownTextEdges, markdownToHtml } from "./markdown-html.js";
+import { htmlToMarkdown, htmlToMarkdownParts } from "./html-markdown.ts";
+import { markdownTextEdges, markdownToHtml } from "./markdown-html.ts";
 
 // Writes an edited description back into its HTML, keeping the HTML of every
 // block the user did not change exactly as it was, and the HTML between

@@ -1,4 +1,4 @@
-import { parseConnectorFieldValues, type ConnectorFieldValues } from "./contract.js";
+import { parseConnectorFieldValues, type ConnectorFieldValues } from "./contract.ts";
 
 /** A project, or one repository of it when `repository` is set. */
 export interface PullRequestScope {

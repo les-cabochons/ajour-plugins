@@ -1,4 +1,4 @@
-import { parseConnectorFieldValues, type ConnectorFieldValues } from "./contract.js";
+import { parseConnectorFieldValues, type ConnectorFieldValues } from "./contract.ts";
 
 /** An organization or user, or one repository when `repository` is set. */
 export interface GitHubScope {

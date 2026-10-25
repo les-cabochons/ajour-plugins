@@ -1,3 +1,5 @@
+// The checks Ajour applies to plugin.json when it installs the plugin, so a
+// broken manifest fails here instead of in the user's Ajour.
 const pluginIdPattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const pluginVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const connectorFieldTypes = new Set([
@@ -59,7 +61,7 @@ function assertConnectorFieldValue(value, label) {
   throw new Error(label + " is not a valid connector field value.");
 }
 
-function assertConnectionField(field, index) {
+function assertConnectionField(field, index, capabilities) {
   const label = "connectionFields[" + index + "]";
   assertRecord(field, label);
   assertString(field.id, label + ".id", { min: 1, max: 120, trim: true });
@@ -100,6 +102,15 @@ function assertConnectionField(field, index) {
   assertOptionalFiniteNumber(field.min, label + ".min");
   assertOptionalFiniteNumber(field.max, label + ".max");
   assertOptionalFiniteNumber(field.step, label + ".step");
+
+  // The capability the field configures. Ajour hides it while that capability is off.
+  if (
+    field.capability !== undefined &&
+    (!["connector", "codeHost"].includes(field.capability) ||
+      capabilities?.[field.capability] === undefined)
+  ) {
+    throw new Error(label + ".capability must name a capability the plugin declares.");
+  }
 }
 
 export function assertConnectorPluginManifest(manifest) {
@@ -122,10 +133,31 @@ export function assertConnectorPluginManifest(manifest) {
 
   assertRecord(manifest.capabilities, "Connector manifest capabilities");
   const capabilityNames = Object.keys(manifest.capabilities);
-  if (capabilityNames.length !== 1 || capabilityNames[0] !== "calendar") {
-    throw new Error("Connector manifest capabilities must declare only calendar.");
+  if (
+    capabilityNames.length === 0 ||
+    capabilityNames.some((name) => name !== "connector" && name !== "codeHost")
+  ) {
+    throw new Error(
+      "Connector manifest capabilities must declare connector, codeHost or both.",
+    );
   }
-  assertRecord(manifest.capabilities.calendar, "Connector manifest capabilities.calendar");
+  for (const name of capabilityNames) {
+    assertRecord(manifest.capabilities[name], "Connector manifest capabilities." + name);
+  }
+  // Issue descriptions Ajour syncs, and with `write`, writes back.
+  const description = manifest.capabilities.connector?.description;
+  if (description !== undefined) {
+    assertRecord(description, "Connector manifest capabilities.connector.description");
+    assertOptionalBoolean(description.write, "Connector manifest capabilities.connector.description.write");
+    if (
+      description.maxLength !== undefined &&
+      (!Number.isInteger(description.maxLength) || description.maxLength < 1 || description.maxLength > 10_000_000)
+    ) {
+      throw new Error(
+        "Connector manifest capabilities.connector.description.maxLength must be a whole number from 1 to 10,000,000.",
+      );
+    }
+  }
 
   assertString(manifest.displayName, "Connector manifest displayName", {
     min: 1,
@@ -154,6 +186,8 @@ export function assertConnectorPluginManifest(manifest) {
     throw new Error("Connector manifest connectionFields must contain 1 to 50 fields.");
   }
 
-  manifest.connectionFields.forEach(assertConnectionField);
+  manifest.connectionFields.forEach((field, index) =>
+    assertConnectionField(field, index, manifest.capabilities),
+  );
   return manifest;
 }

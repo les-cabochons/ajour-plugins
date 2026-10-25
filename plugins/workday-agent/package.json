@@ -5,15 +5,8 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
-  "ajourRelease": {
-    "title": "Ajour Workday (agent)"
-  },
   "scripts": {
-    "package": "node scripts/package-connector.mjs",
     "test": "node --test",
-    "verify": "corepack pnpm test && corepack pnpm package"
-  },
-  "devDependencies": {
-    "tar": "7.5.13"
+    "verify": "corepack pnpm test"
   }
 }

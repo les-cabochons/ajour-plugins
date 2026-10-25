@@ -1,4 +1,4 @@
-import type { ConnectorPriorityLevel } from "./contract.js";
+import type { ConnectorPriorityLevel } from "./contract.ts";
 
 /**
  * The one place that maps Jira's default priority names to Ajour's priority

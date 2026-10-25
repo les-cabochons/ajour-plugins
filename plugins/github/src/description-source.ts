@@ -1,13 +1,13 @@
-import type { GitHubConfig } from "./config.js";
+import type { GitHubConfig } from "./config.ts";
 import type {
   BacklogReadDescriptionRequest,
   BacklogReadDescriptionResult,
   BacklogWriteDescriptionRequest,
   BacklogWriteDescriptionResult,
-} from "./contract.js";
-import { bodyFor, bodyLength, describeIssueBody, GITHUB_BODY_MAX_LENGTH } from "./description.js";
-import { GitHubClient, splitRepository } from "./github.js";
-import { requireIssueRef, type IssueRef } from "./issues.js";
+} from "./contract.ts";
+import { bodyFor, bodyLength, describeIssueBody, GITHUB_BODY_MAX_LENGTH } from "./description.ts";
+import { GitHubClient, splitRepository } from "./github.ts";
+import { requireIssueRef, type IssueRef } from "./issues.ts";
 
 /** The fields of a REST issue a description needs. */
 interface RestIssue {

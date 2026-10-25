@@ -1,9 +1,9 @@
-import type { AzureWorkItem } from "./azure-devops.js";
-import type { ConnectorSyncedDescription } from "./contract.js";
-import { htmlToMarkdown, htmlToMarkdownWithLosses } from "./html-markdown.js";
-import { toAzureMarkdown } from "./comments.js";
-import { replaceOutsideCode } from "./markdown-code.js";
-import { markdownToHtml } from "./markdown-html.js";
+import type { AzureWorkItem } from "./azure-devops.ts";
+import type { ConnectorSyncedDescription } from "./contract.ts";
+import { htmlToMarkdown, htmlToMarkdownWithLosses } from "./html-markdown.ts";
+import { toAzureMarkdown } from "./comments.ts";
+import { replaceOutsideCode } from "./markdown-code.ts";
+import { markdownToHtml } from "./markdown-html.ts";
 
 /** A Markdown description's mention, as Azure DevOps writes it. */
 const MARKDOWN_MENTION = /@<([0-9a-fA-F-]{36})>/g;

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listCalendarEvents, validateConnection } from "../src/plugin.js";
+import { listCalendarEvents, validateConnection } from "../src/plugin.ts";
 
 const ADDRESS =
   "webcal://calendar.google.com/calendar/ical/me%40example.com/private-5f3a9c0d1e2f3a4b5c6d7e8f9a0b1c21e/basic.ics";

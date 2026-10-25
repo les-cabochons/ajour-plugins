@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchCalendarFeed, normalizeCalendarAddress } from "../src/feed.js";
+import { fetchCalendarFeed, normalizeCalendarAddress } from "../src/feed.ts";
 
 const SECRET = "private-5f3a9c0d1e2f3a4b5c6d7e8f9a0b1c21e";
 const ADDRESS = `https://calendar.google.com/calendar/ical/me%40example.com/${SECRET}/basic.ics`;

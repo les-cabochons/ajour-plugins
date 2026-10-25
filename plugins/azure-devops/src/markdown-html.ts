@@ -6,7 +6,7 @@
 // text, never passed through. A blank line ends a list, as html-markdown.ts
 // writes two lists apart, so HTML → Markdown → HTML → Markdown is stable.
 
-import { decodeHtmlEntities, IMAGE_SIZE_MARK } from "./html-markdown.js";
+import { decodeHtmlEntities, IMAGE_SIZE_MARK } from "./html-markdown.ts";
 
 type Block =
   | { kind: "paragraph"; lines: string[] }

@@ -1,4 +1,4 @@
-import { repositoryInScope, type GitHubConfig } from "./config.js";
+import { repositoryInScope, type GitHubConfig } from "./config.ts";
 import type {
   ConnectorImportCandidateInput,
   ConnectorPluginConnection,
@@ -7,9 +7,9 @@ import type {
   ConnectorSettleWriteRequest,
   ConnectorSettleWriteResult,
   ConnectorSyncWorkItem,
-} from "./contract.js";
-import { describeIssueBody } from "./description.js";
-import { GitHubClient, nextCursor, splitRepository, type PageInfo } from "./github.js";
+} from "./contract.ts";
+import { describeIssueBody } from "./description.ts";
+import { GitHubClient, nextCursor, splitRepository, type PageInfo } from "./github.ts";
 
 const SEARCH_PAGE_SIZE = 50;
 const MAX_SEARCH_RESULTS = 1000;

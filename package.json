@@ -5,15 +5,8 @@
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
   "scripts": {
-    "build": "corepack pnpm -r run --if-present build",
     "test": "corepack pnpm -r run test",
     "typecheck": "corepack pnpm -r run --if-present typecheck",
-    "package": "corepack pnpm -r run --if-present package",
     "verify": "corepack pnpm -r run verify"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

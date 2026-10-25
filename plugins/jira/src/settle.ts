@@ -3,7 +3,7 @@ import type {
   ConnectorSettleStatesResult,
   ConnectorSettleWriteRequest,
   ConnectorSettleWriteResult,
-} from "./contract.js";
+} from "./contract.ts";
 import {
   getStatusCategory,
   getStatusName,
@@ -12,8 +12,8 @@ import {
   requestJira,
   type JiraConnectionInput,
   type JiraIssue,
-} from "./jira.js";
-import { jiraPriorityToLevel, levelToJiraPriority } from "./priority.js";
+} from "./jira.ts";
+import { jiraPriorityToLevel, levelToJiraPriority } from "./priority.ts";
 
 /**
  * Settling a backlog item from Ajour: the statuses an issue can move to, and

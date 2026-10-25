@@ -1,3 +1,5 @@
+// The checks Ajour applies to plugin.json when it installs the plugin, so a
+// broken manifest fails here instead of in the user's Ajour.
 const pluginIdPattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const pluginVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const connectorFieldTypes = new Set([

@@ -1,4 +1,4 @@
-import { adfToMarkdown, type AdfImageContext, type AdfNode } from "./adf-markdown.js";
+import { adfToMarkdown, type AdfImageContext, type AdfNode } from "./adf-markdown.ts";
 
 // What keeps a description's untouched parts exactly as they were below the
 // top level. When the write rebuilds a block from Markdown, its children are

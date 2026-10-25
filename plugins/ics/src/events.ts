@@ -1,4 +1,6 @@
-import ICAL from "ical.js";
+// ical.js 2.2.1 is vendored in src/vendor: MPL-2.0 (https://mozilla.org/MPL/2.0/),
+// source at https://github.com/kewisch/ical.js. See src/vendor/ical.js.LICENSE.
+import ICAL from "./vendor/ical.js";
 import {
   MAX_CALENDAR_EVENTS,
   MAX_CALENDAR_EVENT_TITLE_LENGTH,
@@ -6,14 +8,14 @@ import {
   type CalendarEventResponse,
   type CalendarEventStatus,
   type CalendarListEventsRequest,
-} from "./contract.js";
+} from "./contract.ts";
 import {
   addDays,
   isTimeZone,
   parseLocalDate,
   startOfDay,
   wallClockToEpoch,
-} from "./zones.js";
+} from "./zones.ts";
 
 type Component = InstanceType<typeof ICAL.Component>;
 type IcalEvent = InstanceType<typeof ICAL.Event>;
@@ -113,12 +115,15 @@ function propertyZone(component: Component, name: string) {
 }
 
 class Converter {
-  constructor(
-    /** The zone for floating times and all-day dates. */
-    readonly requestZone: string,
-    /** The calendar's own zone, X-WR-TIMEZONE, for floating times. */
-    readonly calendarZone: string | undefined,
-  ) {}
+  /** The zone for floating times and all-day dates. */
+  readonly requestZone: string;
+  /** The calendar's own zone, X-WR-TIMEZONE, for floating times. */
+  readonly calendarZone: string | undefined;
+
+  constructor(requestZone: string, calendarZone: string | undefined) {
+    this.requestZone = requestZone;
+    this.calendarZone = calendarZone;
+  }
 
   /** A date-time to Unix milliseconds. `tzid` is the property's TZID. */
   dateTime(time: IcalTime, tzid: unknown): number {

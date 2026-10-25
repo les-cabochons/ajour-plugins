@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assertConnectorPluginManifest } from "../scripts/connector-manifest.mjs";
+import { assertConnectorPluginManifest } from "./connector-manifest.mjs";
 
 const validManifest = JSON.parse(
   readFileSync(new URL("../plugin.json", import.meta.url), "utf8"),

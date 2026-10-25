@@ -1,4 +1,4 @@
-import { repositoryInScope, type GitHubConfig } from "./config.js";
+import { repositoryInScope, type GitHubConfig } from "./config.ts";
 import type {
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
@@ -8,7 +8,7 @@ import type {
   CodeHostReviewVerdict,
   CodeHostSyncResult,
   CodeHostUser,
-} from "./contract.js";
+} from "./contract.ts";
 
 const SEARCH_PAGE_SIZE = 25;
 const MAX_SEARCH_RESULTS = 1000;
@@ -21,10 +21,13 @@ interface GraphQLResponse<T> {
 }
 
 export class GitHubClient {
-  constructor(
-    private readonly apiUrl: string,
-    private readonly token: string,
-  ) {}
+  private readonly apiUrl: string;
+  private readonly token: string;
+
+  constructor(apiUrl: string, token: string) {
+    this.apiUrl = apiUrl;
+    this.token = token;
+  }
 
   /** A REST URL: GitHub.com serves REST from api.github.com, GitHub Enterprise Server from /api/v3. */
   private restUrl(path: string) {

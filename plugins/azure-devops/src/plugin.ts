@@ -18,16 +18,16 @@ import type {
   ConnectorSettleStatesRequest,
   ConnectorSettleWriteRequest,
   ConnectorSyncWorkItem,
-} from "./contract.js";
-import { parseConnectorFieldValues } from "./contract.js";
+} from "./contract.ts";
+import { parseConnectorFieldValues } from "./contract.ts";
 import {
   syncAzureDevOpsConnection,
   type AzureDevOpsConnectionInput,
   validateAzureDevOpsConnection,
-} from "./azure-devops.js";
-import { listAzureSettleStates, writeAzureSettle } from "./settle.js";
-import { readAzureDescription } from "./description-source.js";
-import { writeAzureDescription } from "./description-write.js";
+} from "./azure-devops.ts";
+import { listAzureSettleStates, writeAzureSettle } from "./settle.ts";
+import { readAzureDescription } from "./description-source.ts";
+import { writeAzureDescription } from "./description-write.ts";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
@@ -36,19 +36,19 @@ import {
   postAzureItemComment,
   searchAzureItemPeople,
   setAzureItemCommentReaction,
-} from "./comments.js";
-import { buildPullRequestConfig, formatScopes } from "./pull-request-config.js";
+} from "./comments.ts";
+import { buildPullRequestConfig, formatScopes } from "./pull-request-config.ts";
 import {
   AzureReposClient,
   fetchViewer,
   syncPullRequests as syncAzurePullRequests,
-} from "./pull-requests.js";
+} from "./pull-requests.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
   PRIORITY_LEVELS,
   parsePriorityLevelRanges,
-} from "./priority-levels.js";
+} from "./priority-levels.ts";
 
 const TASK_ICON_DISPLAY_MODES = new Set(["always", "fallback", "never"]);
 

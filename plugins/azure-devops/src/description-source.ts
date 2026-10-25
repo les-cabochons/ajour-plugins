@@ -3,12 +3,12 @@ import {
   requestAzureDevOps,
   type AzureDevOpsConnectionInput,
   type AzureWorkItem,
-} from "./azure-devops.js";
+} from "./azure-devops.ts";
 import type {
   BacklogReadDescriptionRequest,
   BacklogReadDescriptionResult,
-} from "./contract.js";
-import { describeWorkItem } from "./description.js";
+} from "./contract.ts";
+import { describeWorkItem } from "./description.ts";
 
 /**
  * The work item with every field and the format of each multiline field.

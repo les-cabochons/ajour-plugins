@@ -8,23 +8,23 @@ import {
   updateAzureWorkItemFields,
   type AzureDevOpsConnectionInput,
   type AzureWorkItem,
-} from "./azure-devops.js";
+} from "./azure-devops.ts";
 import type {
   ConnectorSettleStatesResult,
   ConnectorSettleWriteRequest,
   ConnectorSettleWriteResult,
-} from "./contract.js";
+} from "./contract.ts";
 import {
   priorityLevelForValue,
   priorityLevelLabel,
   priorityValueForLevel,
-} from "./priority-levels.js";
+} from "./priority-levels.ts";
 import {
   createStateCategoryResolver,
   formatStateCategory,
   isDoneStateCategory,
   sortStatesByCategory,
-} from "./state-categories.js";
+} from "./state-categories.ts";
 
 /**
  * Settling a backlog item from Ajour: the states its work item type can move

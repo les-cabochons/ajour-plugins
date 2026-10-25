@@ -11,43 +11,24 @@ supports estimate updates through Ajour's connector plugin protocol.
 
 ## Development
 
+The connector runs from its TypeScript source. Ajour imports `src/plugin.ts`
+directly, so there is nothing to build.
+
 ```sh
 just install
 just test
 just typecheck
-just build
-```
-
-To rebuild the development plugin whenever its source changes, keep the watcher
-running:
-
-```sh
-just dev
-```
-
-Run the complete local CI path with:
-
-```sh
 just verify
 ```
 
-## Build an installable connector
+`just typecheck` checks the source with the rules Node's type stripping sets.
+`just verify` runs the tests and the type checks. From the repository root,
+`just verify jira` also imports the connector in plain Node, from only the
+files it publishes.
 
-```sh
-just package
-```
-
-The archive is written to `package/jira-<version>.ajour-connector`. Its version
-comes from `plugin.json`; keep that value aligned with `package.json` when
-preparing a new release.
-
-Every push to `main` that changes this folder runs tests and type checks,
-stamps a unique prerelease version such as `1.0.0-main.130.9aac30e` into the
-build, packages the installable archive, retains it as a GitHub Actions
-artifact for 30 days, and publishes it as a prerelease of this repository
-tagged `v1.0.0-jira.main.130.9aac30e`. The base version remains the matching
-version declared in `plugin.json` and `package.json` on the branch. See
-[Releases](../../README.md#releases).
+The connector is released through the repository's `ajour.json`. When you
+change it, bump the version in `plugin.json` and `package.json`, and keep the
+two the same. See [Releases](../../README.md#releases).
 
 ## Descriptions
 
@@ -162,8 +143,10 @@ The manifest declares `description` with `write: true` and `maxLength: 32767`.
 
 ## Install in Ajour
 
-In a production desktop build, open **Settings → Plugins**, choose **Install
-plugin**, and select the generated `.ajour-connector` archive.
+Ajour lists the connector from the official plugin source. To try a local
+change, run `just package jira` from the repository root. Then in Ajour open
+**Settings → Plugins**, choose **Install from file**, and select
+`plugins/jira/package/jira-<version>.ajour-connector`.
 
 The connector requires the Jira site URL, account email, and an Atlassian API
 token with the permissions appropriate for the enabled read or update

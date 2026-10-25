@@ -57,38 +57,36 @@ Requirements: Node.js 24, Corepack with pnpm 10.7.0, and `just` (optional).
 just install
 just test
 just typecheck
-just build
+just verify
 ```
 
-`just dev` rebuilds the bundle on every change. To try it in a development
-build of Ajour, point Settings, Debug, at this folder.
+The plugin runs from its TypeScript source. Ajour imports `src/plugin.ts`
+directly, so there is nothing to build. `just verify` runs the tests and the
+type checks; from the repository root, `just verify ics` also imports the
+plugin in plain Node, from only the files it publishes. To try it in a
+development build of Ajour, point Settings, Debug, at this folder.
 
-The build bundles the plugin and [ical.js](https://github.com/kewisch/ical.js)
-into `dist/plugin.js` with esbuild, because Ajour installs only `plugin.json`
-and `dist/`.
+Ajour installs no dependencies, so [ical.js](https://github.com/kewisch/ical.js)
+2.2.1 is vendored, unchanged, in `src/vendor/ical.js`. `src/vendor/ical.d.ts`
+takes its types from the `ical.js` devDependency, so keep the two on the same
+version. To update it, copy `dist/ical.js` from the new ical.js package over
+`src/vendor/ical.js`, and change the version in `package.json` and in
+`src/vendor/ical.js.LICENSE`.
 
-## Build an installable plugin
-
-```sh
-just package
-```
-
-The archive is written to `package/ics-<version>.ajour-connector`. Its version
-comes from `plugin.json`; keep it aligned with `package.json`.
-
-Every push to `main` that changes this folder runs the tests and type
-checks, stamps a prerelease version such as `0.1.0-main.130.9aac30e`, packages
-the archive, keeps it as a GitHub Actions artifact for 30 days and publishes it
-as a prerelease of this repository tagged `v0.1.0-ics.main.130.9aac30e`. See
+The plugin is released through the repository's `ajour.json`. When you
+change it, bump the version in `plugin.json` and `package.json`. See
 [Releases](../../README.md#releases).
 
 ## Install in Ajour
 
-In the desktop app, open **Settings, Plugins**, choose **Install plugin** and
-select the `.ajour-connector` archive. Then add a connection with your
-calendar's address.
+Ajour lists the plugin from the official plugin source. To try a local
+change, run `just package ics` from the repository root. Then in Ajour open
+**Settings, Plugins**, choose **Install from file** and select
+`plugins/ics/package/ics-<version>.ajour-connector`. Then add a connection
+with your calendar's address.
 
 ## License
 
-MIT. The bundle includes ical.js, under the Mozilla Public License 2.0; its
-license notice and source link are at the top of `dist/plugin.js`.
+MIT. `src/vendor/ical.js` is ical.js 2.2.1, under the Mozilla Public License
+2.0, from https://github.com/kewisch/ical.js. Its license text is in
+`src/vendor/ical.js.LICENSE`, which the plugin publishes with it.

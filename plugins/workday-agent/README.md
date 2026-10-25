@@ -30,11 +30,10 @@ It never presses a Submit button in Workday.
 
 ## Install
 
-1. Download the `.ajour-connector` file from the latest release.
-2. In Ajour, Settings > Plugins, install the file.
-3. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
-4. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
-5. On the Commit page, click "Commit to Workday". Once the week is committed, click "Check Workday and submit".
+1. In Ajour, Settings > Plugins, install Workday (agent) from the official plugin source. To try a local copy instead, run `just package workday-agent` from the repository root, then choose Install from file and select `plugins/workday-agent/package/workday-agent-<version>.ajour-connector`.
+2. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
+3. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
+4. On the Commit page, click "Commit to Workday". Once the week is committed, click "Check Workday and submit".
 
 Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.1 needs an Ajour whose `mark_entries_committed` takes `changes` with versions. Version 0.5.0 also needs an Ajour with `get_week_status`, `submit_week` and the `submit-week` placement.
 
@@ -47,7 +46,7 @@ just install
 just verify
 ```
 
-`just package` writes `package/workday-agent-<version>.ajour-connector`. Each push to `main` that changes this folder publishes a prerelease of this repository with that file. See [Releases](../../README.md#releases).
+The plugin has no code: Ajour reads `plugin.json` and the prompts as they are, and `just verify` checks them. It is released through the repository's `ajour.json`. When you change it, bump the version in `plugin.json` and `package.json`. See [Releases](../../README.md#releases).
 
 ## License
 

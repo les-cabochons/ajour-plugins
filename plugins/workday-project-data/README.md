@@ -26,9 +26,13 @@ Requirements: Node.js 24, Corepack with pnpm 10.7.0, and optionally `just`.
 just verify
 ```
 
-`just build` writes the runnable entrypoint to `dist/plugin.mjs`. Ajour loads
-the compiled directory containing `plugin.json` and `dist/`; this repository has
-no dependency on Ajour source code.
+Ajour imports `src/plugin.mjs` directly, so there is nothing to build. The
+plugin depends on no Ajour source code.
+
+The official plugin source lists it as coming soon, without files. To try it,
+run `just package workday-project-data` from the repository root and install
+`plugins/workday-project-data/package/workday-project-data-<version>.ajour-connector`
+with Install from file.
 
 ## License
 

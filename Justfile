@@ -1,7 +1,7 @@
 # Ajour plugins command surface
 #
-# test, typecheck and verify run on all plugins, or on one when you name its
-# folder under plugins/, for example `just test jira`.
+# test, typecheck, smoke and verify run on all plugins, or on one when you
+# name its folder under plugins/, for example `just test jira`.
 
 set quiet
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
@@ -29,9 +29,14 @@ test plugin="":
 typecheck plugin="":
     {{PNPM}} {{ if plugin == "" { "-r" } else { "--filter ./plugins/" + plugin } }} run --if-present typecheck
 
+[doc("Imports each plugin's entrypoint in plain Node, from only its published files")]
+smoke plugin="":
+    node scripts/smoke-import.mjs {{plugin}}
+
 [doc("Runs the complete local CI verification")]
 verify plugin="":
     {{ if plugin == "" { PNPM + " verify" } else { PNPM + " --filter ./plugins/" + plugin + " run verify" } }}
+    {{ if plugin == "" { "" } else { "node scripts/smoke-import.mjs " + plugin } }}
 
 [doc("Creates an encrypted signing key, in ~/.ajour/signing-key.json unless you pass --out <file>")]
 keygen *args:

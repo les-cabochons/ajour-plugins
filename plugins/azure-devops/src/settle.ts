@@ -42,7 +42,8 @@ function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string)
 async function fetchWorkItemState(config: AzureDevOpsConnectionInput, id: number) {
   return await requestAzureDevOps<AzureWorkItem>(
     config,
-    `/_apis/wit/workitems/${id}?fields=System.State,System.WorkItemType,System.TeamProject&api-version=7.1`,
+    `/_apis/wit/workitems/${id}`,
+    { query: { fields: "System.State,System.WorkItemType,System.TeamProject", "api-version": "7.1" } },
   );
 }
 

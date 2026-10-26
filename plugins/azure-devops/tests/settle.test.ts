@@ -9,6 +9,7 @@ import {
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
 import { AGILE_TASK_STATES } from "./work-item-type-states.ts";
+import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ORG = "https://dev.azure.com/contoso";
 
@@ -24,7 +25,7 @@ function buildConnection(
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: ORG,
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     priorityLevels: parsePriorityLevelRanges(DEFAULT_PRIORITY_LEVEL_VALUES),
     ...overrides,
@@ -113,8 +114,8 @@ function fakeAzureDevOps({
     }
     throw new Error(`Unexpected request: ${url}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
-  return { patches };
+  const { requests } = stubAzureFetch(fetchMock);
+  return { patches, requests };
 }
 
 describe("Azure DevOps state categories in sync", () => {
@@ -310,7 +311,7 @@ describe("Azure DevOps settle", () => {
     "https://dev.azure.com/contoso/Mercury/_workitems/edit/9007199254740992",
   ])("refuses to read or write an unrelated work item: %s", async (invalidSourceId) => {
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    stubAzureFetch(fetchMock);
 
     await expect(listAzureSettleStates(buildConnection(), invalidSourceId)).rejects.toThrow(
       "is not an Azure DevOps work item",
@@ -322,7 +323,7 @@ describe("Azure DevOps settle", () => {
   });
 
   it("does not fetch a tracked item from another organization during done sync", async () => {
-    fakeAzureDevOps({ items: { 7: task("Done", "Closed") }, queryIds: [] });
+    const { requests } = fakeAzureDevOps({ items: { 7: task("Done", "Closed") }, queryIds: [] });
 
     const result = await syncAzureDevOpsConnection(buildConnection(), [
       {
@@ -332,7 +333,7 @@ describe("Azure DevOps settle", () => {
     ]);
 
     expect(result.items).toEqual([]);
-    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("workitemsbatch"))).toBe(false);
+    expect(requests.some((request) => request.path.includes("workitemsbatch"))).toBe(false);
   });
 
   it("refuses a priority without a priority field and passes on Azure DevOps' refusal", async () => {

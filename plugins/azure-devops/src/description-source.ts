@@ -17,7 +17,9 @@ import { describeWorkItem } from "./description.ts";
  * be written back as HTML.
  */
 export async function fetchWorkItemWithFormats(config: AzureDevOpsConnectionInput, id: number) {
-  return await requestAzureDevOps<AzureWorkItem>(config, `/_apis/wit/workitems/${id}?api-version=7.1`);
+  return await requestAzureDevOps<AzureWorkItem>(config, `/_apis/wit/workitems/${id}`, {
+    query: { "api-version": "7.1" },
+  });
 }
 
 function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {

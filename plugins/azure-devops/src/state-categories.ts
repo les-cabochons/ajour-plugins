@@ -1,4 +1,4 @@
-import type { AzureDevOpsConnectionInput } from "./azure-devops.ts";
+import type { AzureDevOpsConnectionInput, AzureRequestInit } from "./azure-devops.ts";
 
 /** Azure DevOps state categories, in workflow order. */
 const CATEGORY_ORDER = ["Proposed", "InProgress", "Resolved", "Completed", "Removed"];
@@ -62,8 +62,8 @@ export function sortStatesByCategory(states: AzureWorkItemTypeState[]) {
 
 type RequestAzureDevOps = <T>(
   config: AzureDevOpsConnectionInput,
-  pathname: string,
-  init?: RequestInit,
+  path: string,
+  init?: AzureRequestInit,
 ) => Promise<T>;
 
 /**
@@ -82,7 +82,8 @@ export function createStateCategoryResolver(
     if (!states) {
       states = request<AzureWorkItemTypeStatesResponse>(
         config,
-        `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/states?api-version=7.1`,
+        `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/states`,
+        { query: { "api-version": "7.1" } },
       ).then((response) =>
         (response.value ?? []).flatMap((state) =>
           typeof state.name === "string" && typeof state.category === "string"

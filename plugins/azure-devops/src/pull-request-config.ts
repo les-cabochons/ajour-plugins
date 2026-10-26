@@ -7,9 +7,10 @@ export interface PullRequestScope {
 }
 
 export interface PullRequestConfig {
-  /** Organization or collection URL without a trailing slash. */
+  /** The connection `ajour.http` sends through. */
+  connectionId: string;
+  /** Organization or collection URL without a trailing slash, for web links. */
   organizationUrl: string;
-  token: string;
   include: PullRequestScope[];
   exclude: PullRequestScope[];
   hideDrafts: boolean;
@@ -45,10 +46,13 @@ function parseScopes(value: unknown, fieldId: string): PullRequestScope[] {
 }
 
 /**
- * The organization or collection root that pull request calls start from.
- * Accepts https://dev.azure.com/org (a project or repository URL under it
- * too), https://org.visualstudio.com, or an Azure DevOps Server collection
- * URL such as https://ado.contoso.com/tfs/DefaultCollection.
+ * The organization or collection that every call starts from: the
+ * Organization URL as saved, without a trailing slash. Ajour's broker builds
+ * each request's address from the saved URL and never climbs above its path,
+ * so the URL must name the organization itself: https://dev.azure.com/org,
+ * https://org.visualstudio.com, or an Azure DevOps Server collection such as
+ * https://ado.contoso.com/tfs/DefaultCollection. A project's or repository's
+ * URL under dev.azure.com or visualstudio.com is refused, with what to enter.
  */
 export function organizationRootUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
@@ -72,10 +76,18 @@ export function organizationRootUrl(value: unknown) {
         'Azure DevOps field "organizationUrl" must name the organization, such as https://dev.azure.com/your-org.',
       );
     }
-    return `${url.origin}/${segments[0]}`;
-  }
-  if (host.endsWith(".visualstudio.com")) {
-    return url.origin;
+    if (segments.length > 1) {
+      throw new Error(
+        `Azure DevOps field "organizationUrl" must be the organization's URL, ${url.origin}/${segments[0]}, not a project's.`,
+      );
+    }
+  } else if (
+    host.endsWith(".visualstudio.com") &&
+    (segments.length > 1 || (segments[0] !== undefined && segments[0].toLowerCase() !== "defaultcollection"))
+  ) {
+    throw new Error(
+      `Azure DevOps field "organizationUrl" must be the organization's URL, ${url.origin}, not a project's.`,
+    );
   }
   return `${url.origin}${segments.length ? `/${segments.join("/")}` : ""}`;
 }
@@ -84,16 +96,19 @@ function parseBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-/** Pull request settings from the connection's shared and pull request fields. */
-export function buildPullRequestConfig(values: ConnectorFieldValues): PullRequestConfig {
-  const parsed = parseConnectorFieldValues(values);
-  if (typeof parsed.personalAccessToken !== "string" || !parsed.personalAccessToken.trim()) {
-    throw new Error('Azure DevOps field "personalAccessToken" is required.');
-  }
+/**
+ * Pull request settings from the connection's shared and pull request fields.
+ * They hold no token: Ajour's broker keeps it and attaches it to each request.
+ */
+export function buildPullRequestConfig(connection: {
+  id: string;
+  config: ConnectorFieldValues;
+}): PullRequestConfig {
+  const parsed = parseConnectorFieldValues(connection.config);
 
   return {
+    connectionId: connection.id,
     organizationUrl: organizationRootUrl(parsed.organizationUrl),
-    token: parsed.personalAccessToken.trim(),
     include: parseScopes(parsed.pullRequestsInclude, "pullRequestsInclude"),
     exclude: parseScopes(parsed.pullRequestsExclude, "pullRequestsExclude"),
     hideDrafts: parseBoolean(parsed.hideDraftPullRequests, false),

@@ -45,13 +45,51 @@ function projectPlan(rows) {
   return [{ name: "View_Project_Planner_Composite_", rows: [PLAN_HEADER, ...rows] }];
 }
 
-test("declares an import-only schema on data shape API 1", async () => {
-  const manifest = JSON.parse(await readFile(new URL("./plugin.json", import.meta.url), "utf8"));
+async function readManifest() {
+  return JSON.parse(await readFile(new URL("./plugin.json", import.meta.url), "utf8"));
+}
+
+test("declares an import-only schema on plugin API 4", async () => {
+  const manifest = await readManifest();
   assert.equal(manifest.id, "workday-project-data");
-  assert.equal(manifest.version, "2.0.0");
-  assert.equal(manifest.apiVersion, 1);
+  assert.equal(manifest.version, "2.1.0");
+  assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.mjs");
   assert.deepEqual(manifest.capabilities, { projectDataShape: { apiVersion: 1 } });
+  assert.equal(manifest.capabilities.projectDataShape.datasets, undefined);
+});
+
+test("asks for no network and no connection, and loads when needed", async () => {
+  const manifest = await readManifest();
+  assert.deepEqual(manifest.runtime, { start: "whenNeeded" });
+  for (const key of ["network", "connectionFields", "connectionAccess", "signIn"]) {
+    assert.equal(key in manifest, false, `plugin.json must not declare ${key}`);
+  }
+  assert.deepEqual(Object.keys(manifest).sort(), [
+    "apiVersion",
+    "capabilities",
+    "description",
+    "displayName",
+    "entrypoint",
+    "iconSvg",
+    "id",
+    "runtime",
+    "version",
+  ]);
+});
+
+test("keeps the version of plugin.json and package.json together", async () => {
+  const pack = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8"));
+  assert.equal(pack.version, (await readManifest()).version);
+});
+
+test("runs in a sandboxed browser worker: no import, no Node global, no network", async () => {
+  const source = await readFile(new URL("./src/plugin.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /^\s*import\s/m, "an import would load a module the sandbox does not serve");
+  assert.doesNotMatch(source, /\bimport\s*\(/, "a dynamic import would load a module the sandbox does not serve");
+  assert.doesNotMatch(source, /\brequire\s*\(/);
+  assert.doesNotMatch(source, /\b(?:node:|Buffer\b|process\b|__dirname|__filename|globalThis\.process)/);
+  assert.doesNotMatch(source, /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|ajour)\b/);
 });
 
 test("imports the project export as a project with its tasks", async () => {

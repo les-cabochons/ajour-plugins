@@ -10,6 +10,7 @@ import {
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
 import { withWorkItemTypeStates } from "./work-item-type-states.ts";
+import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ANA = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
 
@@ -18,7 +19,7 @@ function buildConnection(): AzureDevOpsConnectionInput {
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: "https://dev.azure.com/contoso",
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     autoSync: false,
     autoSyncIntervalMinutes: 15,
@@ -75,7 +76,7 @@ async function candidateFor(description: string, format?: string) {
     }
     return json({ value: [] });
   });
-  vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+  stubAzureFetch(withWorkItemTypeStates(fetchMock));
   const result = await fetchAzureDevOpsImportCandidates(buildConnection());
   return result.items[0]!;
 }
@@ -171,7 +172,7 @@ describe("descriptions a sync sends", () => {
       }
       return json({ value: [] });
     });
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
     const result = await fetchAzureDevOpsImportCandidates(buildConnection());
 
     expect(result.items[0]?.description).toEqual({ text: "" });
@@ -206,16 +207,13 @@ describe("readDescription", () => {
     tenantLabel: "Contoso",
     config: {
       organizationUrl: "https://dev.azure.com/contoso",
-      personalAccessToken: "secret",
       queryScope: "assigned_to_me",
     },
   } as never;
 
   it("reads the work item's current description", async () => {
     const urls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: unknown) => {
+    stubAzureFetch(vi.fn(async (input: unknown) => {
         urls.push(String(input));
         return json({
           id: 4821,
@@ -238,9 +236,7 @@ describe("readDescription", () => {
   });
 
   it("keeps a Markdown description as written, though a request naming fields omits its format", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: unknown) =>
+    stubAzureFetch(vi.fn(async (input: unknown) =>
         json({
           id: 4821,
           rev: 7,
@@ -262,7 +258,7 @@ describe("readDescription", () => {
   });
 
   it("refuses a source id that is not one of this organization's work items", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+    stubAzureFetch(vi.fn());
 
     await expect(
       readDescription(

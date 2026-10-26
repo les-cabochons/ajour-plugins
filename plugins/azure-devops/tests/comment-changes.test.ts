@@ -3,7 +3,6 @@ import type { AzureDevOpsConnectionInput } from "../src/azure-devops.ts";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
-  identitiesBaseUrl,
   searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "../src/comments.ts";
@@ -11,6 +10,7 @@ import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
+import { ALL_ACCESS, deriveAddress, manifest, stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ORG = "https://dev.azure.com/contoso";
 const ANA = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
@@ -24,7 +24,7 @@ function config(): AzureDevOpsConnectionInput {
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: ORG,
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     priorityLevels: parsePriorityLevelRanges(DEFAULT_PRIORITY_LEVEL_VALUES),
   };
@@ -40,9 +40,7 @@ function json(body: unknown, status = 200) {
 /** Records each comment request; `answer` replies to everything but the project lookup. */
 function fakeAzure(answer: (method: string, url: URL) => Response) {
   const calls: Array<{ method: string; url: URL; body?: unknown }> = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  stubAzureFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/_apis/wit/workitems/4821")) {
         return json({ id: 4821, fields: { "System.TeamProject": "Contoso Portal" } });
@@ -205,9 +203,7 @@ describe("searching Azure DevOps people", () => {
         : typeof answer === "function"
           ? answer(project)
           : (answer ?? json(empty));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    stubAzureFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith("/_apis/identities")) {
           searches.push(url);
@@ -465,14 +461,15 @@ describe("searching Azure DevOps people", () => {
     await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401)");
   });
 
-  it("finds the identities host for each kind of organization URL", () => {
-    expect(identitiesBaseUrl("https://dev.azure.com/contoso/")).toBe(
+  it("searches people on the identities host Ajour derives for each kind of organization URL", () => {
+    const identities = manifest.network!.derivedHosts!.find((host) => host.id === "identities")!;
+    expect(deriveAddress(identities.forms, "https://dev.azure.com/contoso/")).toBe(
       "https://vssps.dev.azure.com/contoso",
     );
-    expect(identitiesBaseUrl("https://contoso.visualstudio.com")).toBe(
+    expect(deriveAddress(identities.forms, "https://contoso.visualstudio.com")).toBe(
       "https://contoso.vssps.visualstudio.com",
     );
-    expect(identitiesBaseUrl("https://tfs.contoso.local/DefaultCollection")).toBe(
+    expect(deriveAddress(identities.forms, "https://tfs.contoso.local/DefaultCollection")).toBe(
       "https://tfs.contoso.local/DefaultCollection",
     );
   });

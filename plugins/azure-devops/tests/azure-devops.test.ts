@@ -10,6 +10,7 @@ import {
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
 import { withWorkItemTypeStates } from "./work-item-type-states.ts";
+import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 function buildConnection(
   overrides: Partial<AzureDevOpsConnectionInput> = {},
@@ -18,7 +19,7 @@ function buildConnection(
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: "https://dev.azure.com/contoso",
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     autoSync: false,
     autoSyncIntervalMinutes: 15,
@@ -91,7 +92,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -137,7 +138,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(
@@ -221,7 +222,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -299,7 +300,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -404,7 +405,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -504,7 +505,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({}),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -619,7 +620,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({ message: "Write rejected" }, 400),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -687,7 +688,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         jsonResponse({ value: {} }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({ completedEstimateFieldName: "Completed Work" }),
@@ -770,7 +771,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -815,7 +816,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(
@@ -865,7 +866,7 @@ describe("Azure DevOps description notes", () => {
       return jsonResponse({ value: [] });
     });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
     const result = await fetchAzureDevOpsImportCandidates(buildConnection());
     return result.items[0]?.note;
   }

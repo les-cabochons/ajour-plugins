@@ -3,6 +3,12 @@
 Ajour Connector - Jira syncs Jira issues into Ajour's local backlog and
 supports estimate updates through Ajour's connector plugin protocol.
 
+The connector runs on **plugin API 4**: it runs in a sandboxed worker with no
+network, disk or Node access. Every request goes through `ajour.http`, which
+Ajour's broker sends for it. The broker builds the URL from the Site URL the
+user saved and attaches the Basic credential from the email and the API token,
+so the connector never sees the token.
+
 ## Requirements
 
 - Node.js 24
@@ -11,8 +17,11 @@ supports estimate updates through Ajour's connector plugin protocol.
 
 ## Development
 
-The connector runs from its TypeScript source. Ajour imports `src/plugin.ts`
-directly, so there is nothing to build.
+The connector runs from its TypeScript source. Ajour serves each `.ts` file to
+the worker with its types stripped, so there is nothing to build. The source
+is erasable TypeScript only, imports types with `import type`, imports its own
+files with a relative path and their `.ts` extension, and imports nothing else
+at runtime: nothing resolves a bare import in the worker.
 
 ```sh
 just install
@@ -21,14 +30,27 @@ just typecheck
 just verify
 ```
 
-`just typecheck` checks the source with the rules Node's type stripping sets.
-`just verify` runs the tests and the type checks. From the repository root,
+`just typecheck` checks the source with the rules type stripping sets, and
+without Node types, so `Buffer` or `process` in the source fails the type
+check. The tests also fail on a `fetch(`, `require(`, `node:` import, `process`,
+`Buffer`, `Authorization` or the API token's field name in the code, comments
+and strings aside. `just verify` runs the tests and the type checks. From the repository root,
 `just verify jira` also imports the connector in plain Node, from only the
-files it publishes.
+files it publishes. The import loads the entrypoint without calling an
+operation, so it needs no `ajour` global.
 
 The connector is released through the repository's `ajour.json`. When you
 change it, bump the version in `plugin.json` and `package.json`, and keep the
 two the same. See [Releases](../../README.md#releases).
+
+## The Ajour SDK
+
+The tests use `createFakeAjour` from `@ajour/plugin-sdk`, which refuses what
+Ajour's broker would: an endpoint, method or header that `plugin.json` does not
+declare. The SDK is not on npm yet, so the repository vendors the packed
+package in [`vendor/`](../../vendor/README.md), and the plugin installs it as a
+`file:` dev dependency, for types and the fake only. Once it is published,
+swap the dependency for a version range.
 
 ## Descriptions
 
@@ -150,7 +172,31 @@ change, run `just package jira` from the repository root. Then in Ajour open
 
 The connector requires the Jira site URL, account email, and an Atlassian API
 token with the permissions appropriate for the enabled read or update
-operations. Credentials stay in Ajour's local connector configuration.
+operations. Ajour keeps the token in its vault and never passes it to the
+connector. The site must be Jira Cloud on a public address: the connector uses
+REST API v3 and does not declare an on-premises connection.
+
+Until the release that switches every plugin to API 4, Ajour admits an API 4
+package in development builds only.
+
+### What the connector may call
+
+`plugin.json` declares these endpoints, relative to the Site URL, and the
+`Accept` and `Content-Type` request headers. Ajour shows them in the plugin's
+Access section, and its broker refuses anything else.
+
+| Method | Path | Used for |
+| ------ | ---- | -------- |
+| GET | `/rest/api/3/myself` | Checking the credential when a connection is saved |
+| GET | `/rest/api/3/field` | Resolving the estimate fields by name or id |
+| POST | `/rest/api/3/search/jql` | The sync's JQL search |
+| POST | `/rest/api/3/search` | The search's fallback when the site rejects the first |
+| GET | `/rest/api/3/issue/*` | Reading an issue's status, priority, description and attachments |
+| PUT | `/rest/api/3/issue/*` | Writing estimates, priority and descriptions |
+| GET | `/rest/api/3/issue/*/transitions` | Listing the statuses an issue can move to |
+| POST | `/rest/api/3/issue/*/transitions` | Settling an issue into a status |
+
+The connector loads when needed (`runtime.start`).
 
 ## License
 

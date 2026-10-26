@@ -42,7 +42,7 @@ export async function readIssueDescription(
   request: BacklogReadDescriptionRequest,
 ): Promise<BacklogReadDescriptionResult> {
   const ref = requireIssueRef(config, request.sourceId);
-  const issue = await fetchIssueBody(new GitHubClient(config.apiUrl, config.token), ref);
+  const issue = await fetchIssueBody(new GitHubClient(config.connectionId), ref);
   return { description: describeIssueBody(issue.body) };
 }
 
@@ -59,7 +59,7 @@ export async function writeIssueDescription(
   request: BacklogWriteDescriptionRequest,
 ): Promise<BacklogWriteDescriptionResult> {
   const ref = requireIssueRef(config, request.sourceId);
-  const client = new GitHubClient(config.apiUrl, config.token);
+  const client = new GitHubClient(config.connectionId);
   const issue = await fetchIssueBody(client, ref);
   const current = describeIssueBody(issue.body);
   if (current.text !== request.expected) {

@@ -3,7 +3,12 @@
 Ajour Code Host - GitHub brings your GitHub pull requests into Ajour: the ones
 you wrote and the ones you were asked to review. It also syncs the issues
 assigned to you into the backlog. It implements the connector and code host
-capabilities of Ajour's plugin API version 3.
+capabilities of Ajour's plugin API version 4.
+
+The plugin runs in a sandboxed worker with no network, disk or Node access.
+Every request goes through `ajour.http`, which Ajour's broker sends for it.
+The broker builds the URL from the GitHub URL the user saved and attaches the
+token as a bearer credential, so the plugin never sees the token.
 
 ## What it does today
 
@@ -73,8 +78,11 @@ declare it, so Ajour hides them while it is off.
 
 ## Development
 
-The plugin runs from its TypeScript source. Ajour imports `src/plugin.ts`
-directly, so there is nothing to build.
+The plugin runs from its TypeScript source. Ajour serves each `.ts` file to the
+worker with its types stripped, so there is nothing to build. The source is
+erasable TypeScript only, imports types with `import type`, imports its own
+files with a relative path and their `.ts` extension, and imports nothing else
+at runtime: nothing resolves a bare import in the worker.
 
 ```sh
 just install
@@ -83,10 +91,15 @@ just typecheck
 just verify
 ```
 
-`just typecheck` checks the source with the rules Node's type stripping sets.
+`just typecheck` checks the source with the rules type stripping sets, and
+without Node types, so `Buffer` or `process` in the source fails the type
+check. The tests also fail on a `fetch(`, `require(`, `node:` import,
+`process`, `Buffer`, `Authorization` or the token's field name in the code,
+comments and strings aside, and on a GitHub address built in the plugin.
 `just verify` runs the tests and the type checks. From the repository root,
 `just verify github` also imports the plugin in plain Node, from only the
-files it publishes.
+files it publishes. The import loads the entrypoint without calling an
+operation, so it needs no `ajour` global.
 
 Point a development build of Ajour at this folder with
 `AJOUR_DEV_PLUGIN_DIRS`, or choose it on **Settings → Debug**.
@@ -94,6 +107,15 @@ Point a development build of Ajour at this folder with
 The plugin is released through the repository's `ajour.json`. When you change
 it, bump the version in `plugin.json` and `package.json`, and keep the two the
 same. See [Releases](../../README.md#releases).
+
+## The Ajour SDK
+
+The tests use `createFakeAjour` from `@ajour/plugin-sdk`, which refuses what
+Ajour's broker would: an endpoint, derived host, method or header that
+`plugin.json` does not declare. The SDK is not on npm yet, so the repository
+vendors the packed package in [`vendor/`](../../vendor/README.md), and the
+plugin installs it as a `file:` dev dependency, for types and the fake only.
+Once it is published, swap the dependency for a version range.
 
 ## Install in Ajour
 
@@ -110,8 +132,41 @@ be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs
 without organization access. The plugin does not guess membership. For GitHub
 Enterprise Server, set **GitHub URL** to your server, such as
-`https://github.acme.com`. The token stays in Ajour's local connection
-configuration.
+`https://github.acme.com`, and mark the connection as on-premises when the
+server is on a private network or uses `http`. Ajour keeps the token in its
+vault and never passes it to the plugin. Use `https://github.com` for
+GitHub.com, without `www`.
+
+Until the release that switches every plugin to API 4, Ajour admits an API 4
+package in development builds only.
+
+### What the plugin may call
+
+`plugin.json` declares two derived hosts, built from **GitHub URL**, with the
+endpoints below, and the `Accept`, `Content-Type`, `User-Agent` and
+`X-GitHub-Api-Version` request headers. Ajour shows them in the plugin's Access
+section, and its broker refuses anything else. The plugin declares no endpoint
+on the GitHub URL itself, and the base path of the URL is ignored.
+
+| Host | GitHub.com | GitHub Enterprise Server |
+| ---- | ---------- | ------------------------ |
+| `rest` | `https://api.github.com` | `{GitHub URL}/api/v3` |
+| `graphql` | `https://api.github.com` | `{GitHub URL}/api` |
+
+| Host | Method | Path | Used for |
+| ---- | ------ | ---- | -------- |
+| `graphql` | POST | `/graphql` | Checking the token, searching and reading pull requests and issues, closing and reopening issues |
+| `rest` | GET | `/repos/*/*/activity`, `/repositories/*/activity` | Attributing a push to the pusher and its time |
+| `rest` | GET | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Reading an issue's description |
+| `rest` | PATCH | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Writing an issue's description |
+
+The `/repositories/*` paths are for a renamed or transferred repository: GitHub
+redirects its old address to one of that form, and the plugin follows the
+redirect only on a path the manifest declares.
+
+`POST /graphql` is allowed as a whole: the broker does not read queries, so the
+token's scopes are the limit on what the plugin can read or change. The plugin
+loads when needed (`runtime.start`).
 
 Sync includes review-request events and mention flags so Ajour can decide when
 an item needs attention without storing comment or review bodies. For a reviewer

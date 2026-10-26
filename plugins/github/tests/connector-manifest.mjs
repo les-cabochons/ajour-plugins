@@ -113,6 +113,125 @@ function assertConnectionField(field, index, capabilities) {
   }
 }
 
+const httpMethods = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
+
+// Headers a plugin may never set, whatever its manifest lists, and the prefixes
+// of two families. Ajour's broker refuses them, so a manifest that lists one
+// never installs.
+const deniedRequestHeaders = new Set([
+  "authorization",
+  "cookie",
+  "host",
+  "forwarded",
+  "x-http-method-override",
+  "x-http-method",
+  "x-method-override",
+  "x-original-url",
+  "x-rewrite-url",
+  "x-original-host",
+  "x-host",
+  "x-real-ip",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "te",
+  "upgrade",
+  "keep-alive",
+  "trailer",
+  "expect",
+]);
+const deniedRequestHeaderPrefixes = ["proxy-", "x-forwarded-"];
+
+function assertEndpoints(endpoints, label) {
+  if (!Array.isArray(endpoints) || endpoints.length < 1 || endpoints.length > 200) {
+    throw new Error(label + " must contain 1 to 200 endpoints.");
+  }
+  endpoints.forEach((endpoint, index) => {
+    const endpointLabel = label + "[" + index + "]";
+    assertRecord(endpoint, endpointLabel);
+    if (!httpMethods.has(endpoint.method)) {
+      throw new Error(endpointLabel + ".method is invalid.");
+    }
+    assertString(endpoint.path, endpointLabel + ".path", { min: 1, max: 500 });
+    if (!endpoint.path.startsWith("/") || endpoint.path.includes("://") || endpoint.path.endsWith("/")) {
+      throw new Error(endpointLabel + ".path must be a path relative to its host, such as /graphql.");
+    }
+  });
+}
+
+/**
+ * The part of plugin API 4 this plugin relies on: its requests go through
+ * Ajour's broker, which builds the URL from the base address field and a
+ * derived host's forms and attaches the bearer credential, so the manifest
+ * must name them and the endpoints it calls. Ajour validates the whole manifest
+ * again at install.
+ */
+function assertNetwork(manifest) {
+  assertRecord(manifest.network, "Connector manifest network");
+  const { auth, baseAddress, derivedHosts, endpoints, requestHeaders } = manifest.network;
+  const fields = new Map(manifest.connectionFields.map((field) => [field.id, field]));
+
+  assertRecord(auth, "Connector manifest network.auth");
+  if (auth.scheme !== "bearer") {
+    throw new Error("Connector manifest network.auth must use the bearer scheme.");
+  }
+  if (fields.get(auth.secretField)?.secret !== true) {
+    throw new Error("Connector manifest network.auth.secretField must be a secret connection field.");
+  }
+
+  assertRecord(baseAddress, "Connector manifest network.baseAddress");
+  if (fields.get(baseAddress.field)?.type !== "url" || fields.get(baseAddress.field).secret === true) {
+    throw new Error("Connector manifest network.baseAddress.field must be a url connection field that is not secret.");
+  }
+  assertOptionalBoolean(baseAddress.allowOnPremises, "Connector manifest network.baseAddress.allowOnPremises");
+
+  // The plugin calls only its derived hosts: the API is never on the GitHub URL itself.
+  if (endpoints !== undefined && endpoints.length > 0) {
+    throw new Error("Connector manifest network.endpoints must be empty: the API is on derived hosts.");
+  }
+  if (!Array.isArray(derivedHosts) || derivedHosts.length < 1 || derivedHosts.length > 10) {
+    throw new Error("Connector manifest network.derivedHosts must contain 1 to 10 derived hosts.");
+  }
+  const hostIds = new Set();
+  derivedHosts.forEach((host, index) => {
+    const label = "Connector manifest network.derivedHosts[" + index + "]";
+    assertRecord(host, label);
+    assertString(host.id, label + ".id", { min: 1, max: 40, pattern: /^[a-z][a-zA-Z0-9-]{0,39}$/ });
+    if (hostIds.has(host.id)) {
+      throw new Error(label + ".id is used twice.");
+    }
+    hostIds.add(host.id);
+    if (!Array.isArray(host.forms) || host.forms.length < 1 || host.forms.length > 5) {
+      throw new Error(label + ".forms must contain 1 to 5 forms.");
+    }
+    host.forms.forEach((form, formIndex) => {
+      const formLabel = label + ".forms[" + formIndex + "]";
+      assertRecord(form, formLabel);
+      assertString(form.host, formLabel + ".host", { min: 1, max: 253 });
+      assertOptionalString(form.whenHost, formLabel + ".whenHost", { min: 1, max: 253 });
+      assertOptionalString(form.pathPrefix, formLabel + ".pathPrefix", { min: 1, max: 200 });
+      if (form.whenHost === undefined && formIndex !== host.forms.length - 1) {
+        throw new Error(formLabel + " must be the last form to leave out whenHost.");
+      }
+    });
+    assertEndpoints(host.endpoints, label + ".endpoints");
+  });
+
+  if (!Array.isArray(requestHeaders)) {
+    throw new Error("Connector manifest network.requestHeaders must be a list.");
+  }
+  requestHeaders.forEach((header, index) => {
+    assertString(header, "Connector manifest network.requestHeaders[" + index + "]", { min: 1, max: 100 });
+    const name = header.toLowerCase();
+    if (
+      deniedRequestHeaders.has(name) ||
+      deniedRequestHeaderPrefixes.some((prefix) => name.startsWith(prefix))
+    ) {
+      throw new Error("Connector manifest network.requestHeaders may not list " + header + ".");
+    }
+  });
+}
+
 export function assertConnectorPluginManifest(manifest) {
   assertRecord(manifest, "Connector manifest");
   assertString(manifest.id, "Connector manifest id", {
@@ -127,8 +246,8 @@ export function assertConnectorPluginManifest(manifest) {
     pattern: pluginVersionPattern,
   });
 
-  if (manifest.apiVersion !== 3) {
-    throw new Error("Connector manifest API version must be 3.");
+  if (manifest.apiVersion !== 4) {
+    throw new Error("Connector manifest API version must be 4.");
   }
 
   assertRecord(manifest.capabilities, "Connector manifest capabilities");
@@ -189,5 +308,6 @@ export function assertConnectorPluginManifest(manifest) {
   manifest.connectionFields.forEach((field, index) =>
     assertConnectionField(field, index, manifest.capabilities),
   );
+  assertNetwork(manifest);
   return manifest;
 }

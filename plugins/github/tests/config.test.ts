@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { buildGitHubConfig, graphqlUrlForHost, repositoryInScope } from "../src/config.ts";
+import { buildGitHubConfig, repositoryInScope } from "../src/config.ts";
+import { pluginConnection } from "./support/github-ajour.ts";
+
+const build = (config: Record<string, string | number | boolean> = {}) =>
+  buildGitHubConfig(pluginConnection(config));
 
 describe("GitHub connection config", () => {
-  it("uses api.github.com for github.com and /api for GitHub Enterprise Server", () => {
-    expect(graphqlUrlForHost("https://github.com")).toBe("https://api.github.com/graphql");
-    expect(graphqlUrlForHost("https://github.acme.com")).toBe("https://github.acme.com/api/graphql");
-  });
-
-  it("defaults to github.com, team requests on and drafts shown", () => {
-    expect(buildGitHubConfig({ token: " secret " })).toEqual({
+  it("defaults to github.com, team requests on and drafts shown, and holds no token", () => {
+    expect(buildGitHubConfig({ id: "c1", config: {} })).toEqual({
+      connectionId: "c1",
       hostUrl: "https://github.com",
-      apiUrl: "https://api.github.com/graphql",
-      token: "secret",
       include: [],
       exclude: [],
       hideDrafts: false,
@@ -19,17 +17,23 @@ describe("GitHub connection config", () => {
     });
   });
 
-  it("requires a token", () => {
-    expect(() => buildGitHubConfig({ hostUrl: "https://github.com" })).toThrow(/token/);
+  it("keeps the origin of the saved URL, port included, for Enterprise Server", () => {
+    expect(build({ hostUrl: "https://github.acme.com:8443/ignored/path" }).hostUrl).toBe("https://github.acme.com:8443");
+    expect(build({ hostUrl: "http://ghe.internal.test/" }).hostUrl).toBe("http://ghe.internal.test");
+  });
+
+  it("rejects a GitHub URL that is not an HTTP address", () => {
+    expect(() => build({ hostUrl: "not a url" })).toThrow(/GitHub URL/);
+    expect(() => build({ hostUrl: "ftp://github.com" })).toThrow(/HTTP or HTTPS/);
+    expect(() => build({ hostUrl: "https://www.github.com" })).toThrow(/without www/);
   });
 
   it("rejects a scope that is not an owner or owner/repository", () => {
-    expect(() => buildGitHubConfig({ token: "t", include: "acme/api/extra" })).toThrow(/acme\/api\/extra/);
+    expect(() => build({ include: "acme/api/extra" })).toThrow(/acme\/api\/extra/);
   });
 
   it("keeps included owners and repositories and drops excluded ones", () => {
-    const config = buildGitHubConfig({
-      token: "t",
+    const config = build({
       include: "Acme, octocat/hello-world",
       exclude: "acme/legacy",
     });
@@ -41,6 +45,6 @@ describe("GitHub connection config", () => {
   });
 
   it("keeps every repository without an include list", () => {
-    expect(repositoryInScope(buildGitHubConfig({ token: "t" }), "any/repo")).toBe(true);
+    expect(repositoryInScope(build(), "any/repo")).toBe(true);
   });
 });

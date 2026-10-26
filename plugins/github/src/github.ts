@@ -1,3 +1,4 @@
+import type {} from "@ajour/plugin-sdk/globals";
 import { repositoryInScope, type GitHubConfig } from "./config.ts";
 import type {
   CodeHostCommentFact,
@@ -20,31 +21,64 @@ interface GraphQLResponse<T> {
   errors?: { message: string }[];
 }
 
-export class GitHubClient {
-  private readonly apiUrl: string;
-  private readonly token: string;
+/** The headers every request names. The manifest lists each, and the broker adds the bearer credential. */
+const API_VERSION = "2022-11-28";
+const USER_AGENT = "ajour-github-plugin";
 
-  constructor(apiUrl: string, token: string) {
-    this.apiUrl = apiUrl;
-    this.token = token;
+/** What a response gives back that the client reads: `ajour.http`'s answer. */
+type GitHubResponse = Awaited<ReturnType<typeof ajour.http>>;
+
+/**
+ * Sends GitHub requests through `ajour.http`. The broker builds the URL from
+ * the GitHub URL the user saved and attaches the token as a bearer credential:
+ * `rest` and `graphql` name the manifest's derived hosts, which are
+ * `api.github.com` on GitHub.com and `/api/v3` and `/api/graphql` on GitHub
+ * Enterprise Server. The plugin sets no URL and no credential.
+ */
+export class GitHubClient {
+  private readonly connectionId: string;
+
+  constructor(connectionId: string) {
+    this.connectionId = connectionId;
   }
 
-  /** A REST URL: GitHub.com serves REST from api.github.com, GitHub Enterprise Server from /api/v3. */
-  private restUrl(path: string) {
-    const base = new URL(this.apiUrl);
-    return new URL(`${base.pathname === "/graphql" ? "" : "/api/v3"}${path}`, base);
+  private async send(
+    host: "rest" | "graphql",
+    request: {
+      method: "GET" | "POST" | "PATCH";
+      path: string;
+      query?: Record<string, string | number>;
+      body?: unknown;
+    },
+  ): Promise<GitHubResponse> {
+    const hasBody = request.body !== undefined;
+    try {
+      return await ajour.http({
+        connectionId: this.connectionId,
+        host,
+        method: request.method,
+        path: request.path,
+        ...(request.query ? { query: request.query } : {}),
+        headers: {
+          Accept: "application/vnd.github+json",
+          "User-Agent": USER_AGENT,
+          ...(host === "rest" ? { "X-GitHub-Api-Version": API_VERSION } : {}),
+          ...(hasBody ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
+      });
+    } catch (error) {
+      throw new Error(`GitHub request failed: ${error instanceof Error ? error.message : "Network error"}`);
+    }
   }
 
   async latestPush(repository: string, ref: string, headSha: string): Promise<{ at: number; actor: CodeHostUser } | undefined> {
-    const url = this.restUrl(`/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`);
-    url.searchParams.set("ref", `refs/heads/${ref}`);
-    url.searchParams.set("per_page", "100");
-    url.searchParams.set("direction", "desc");
     try {
-      const response = await fetch(url, { headers: {
-        Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ajour-github-plugin",
-      } });
+      const response = await this.send("rest", {
+        method: "GET",
+        path: `/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`,
+        query: { ref: `refs/heads/${ref}`, per_page: 100, direction: "desc" },
+      });
       if (!response.ok) return undefined;
       const activities: unknown = await response.json();
       if (!Array.isArray(activities)) return undefined;
@@ -62,17 +96,11 @@ export class GitHubClient {
   }
 
   /** A REST call. A refusal throws with GitHub's status and message. */
-  async rest<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-    const response = await fetch(this.restUrl(path), {
+  async rest<T>(path: string, init: { method?: "GET" | "PATCH"; body?: unknown } = {}): Promise<T> {
+    const response = await this.send("rest", {
       method: init.method ?? "GET",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "ajour-github-plugin",
-        ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+      path,
+      ...(init.body === undefined ? {} : { body: init.body }),
     });
 
     if (response.status === 401) {
@@ -87,16 +115,7 @@ export class GitHubClient {
   }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(this.apiUrl, {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "ajour-github-plugin",
-      },
-      body: JSON.stringify({ query, variables }),
-    });
+    const response = await this.send("graphql", { method: "POST", path: "/graphql", body: { query, variables } });
 
     if (response.status === 401) {
       throw new Error("GitHub rejected the token. Check that it is valid and not expired.");
@@ -556,7 +575,7 @@ export async function syncPullRequests(
   config: GitHubConfig,
   tracked: CodeHostPullRequestRef[],
 ): Promise<CodeHostSyncResult> {
-  const client = new GitHubClient(config.apiUrl, config.token);
+  const client = new GitHubClient(config.connectionId);
   const viewer = await fetchViewer(client);
   const viewerTeams = config.includeTeamRequests
     ? await fetchViewerTeams(client, viewer.login)

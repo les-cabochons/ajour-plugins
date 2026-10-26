@@ -1,4 +1,4 @@
-import { createAuthHeader } from "./azure-devops.ts";
+import { isRejectedToken, sendAzureDevOps, TOKEN_REJECTED, type AzureResponse } from "./azure-devops.ts";
 import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.ts";
 import type {
   CodeHostCommentFact,
@@ -31,39 +31,37 @@ export class AzureReposNotFoundError extends Error {
   }
 }
 
+/**
+ * Reads pull requests through `ajour.http`. Ajour's broker builds each address
+ * from the Organization URL and attaches the token; the client names a path
+ * under the organization or collection, and its query.
+ */
 export class AzureReposClient {
-  private readonly organizationUrl: string;
-  private readonly authorization: string;
+  private readonly connectionId: string;
 
-  constructor(organizationUrl: string, token: string) {
-    this.organizationUrl = organizationUrl;
-    this.authorization = createAuthHeader(token);
+  /** `connectionId` is the connection `ajour.http` sends through. */
+  constructor(connectionId: string) {
+    this.connectionId = connectionId;
   }
 
   async get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
-    const url = new URL(`${this.organizationUrl}${path}`);
+    const query: Record<string, string | number | boolean> = {};
     for (const [name, value] of Object.entries(params)) {
-      if (value !== undefined) url.searchParams.set(name, String(value));
+      if (value !== undefined) query[name] = value;
     }
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Accept: "application/json", Authorization: this.authorization },
-        redirect: "manual",
-      });
-    } catch (error) {
-      throw new Error(
-        `Azure DevOps request failed: ${error instanceof Error ? error.message : "network error"}.`,
-      );
-    }
+    const response = await sendAzureDevOps(
+      { id: this.connectionId },
+      path,
+      Object.keys(query).length > 0 ? { query } : {},
+    );
 
     // A rejected token gets 401, or a 203 or a redirect to the sign-in page.
-    const isJson = (response.headers.get("content-type") ?? "").includes("application/json");
-    if (response.status === 401 || response.status === 203 || (response.status >= 300 && response.status < 400)) {
-      throw new Error(
-        "Azure DevOps rejected the token. Check that it is valid, not expired, and allowed in this organization.",
-      );
+    // The broker follows a redirect only within the organization and to an
+    // endpoint the manifest declares, so one to sign in comes back as it is.
+    const isJson = (response.headers["content-type"] ?? "").includes("application/json");
+    if (isRejectedToken(response)) {
+      throw new Error(TOKEN_REJECTED);
     }
     if (response.status === 403 || response.status === 404) {
       throw new AzureReposNotFoundError(await errorDetail(response, isJson), response.status);
@@ -101,16 +99,16 @@ function codeAccessError(error: unknown) {
     : error;
 }
 
-async function errorDetail(response: Response, isJson: boolean) {
+async function errorDetail(response: AzureResponse, isJson: boolean) {
   if (isJson) {
     try {
       const payload = (await response.json()) as { message?: unknown };
       if (typeof payload.message === "string" && payload.message.trim()) return payload.message.trim();
     } catch {
-      // Fall back to the status text.
+      // Fall back to a plain detail.
     }
   }
-  return response.statusText || "Request failed";
+  return "Request failed";
 }
 
 interface AzureIdentity {
@@ -589,7 +587,7 @@ export async function syncPullRequests(
   config: PullRequestConfig,
   tracked: CodeHostPullRequestRef[],
 ): Promise<CodeHostSyncResult> {
-  const client = new AzureReposClient(config.organizationUrl, config.token);
+  const client = new AzureReposClient(config.connectionId);
   const viewer = await fetchViewer(client);
   const viewerTeams = config.includeTeamRequests ? await fetchViewerTeams(client) : new Set<string>();
 

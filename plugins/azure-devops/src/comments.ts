@@ -1,9 +1,11 @@
 import {
-  createAuthHeader,
   getProjectName,
   parseAzureWorkItemId,
   requestAzureDevOps,
+  sendAzureDevOps,
   type AzureDevOpsConnectionInput,
+  type AzureQuery,
+  type AzureRequestInit,
   type AzureWorkItem,
 } from "./azure-devops.ts";
 import type {
@@ -163,7 +165,7 @@ export function toBacklogComment(comment: AzureComment): BacklogComment {
 
 async function fetchViewer(
   config: AzureDevOpsConnectionInput,
-  init?: RequestInit,
+  init?: AzureRequestInit,
 ): Promise<BacklogPerson> {
   const data = await requestAzureDevOps<AzureConnectionData>(
     config,
@@ -183,7 +185,8 @@ async function fetchViewer(
 async function fetchProjectName(config: AzureDevOpsConnectionInput, id: number) {
   const workItem = await requestAzureDevOps<AzureWorkItem>(
     config,
-    `/_apis/wit/workitems/${id}?fields=System.TeamProject&api-version=7.1`,
+    `/_apis/wit/workitems/${id}`,
+    { query: { fields: "System.TeamProject", "api-version": "7.1" } },
   );
   const project = getProjectName(workItem);
   if (!project) {
@@ -218,16 +221,17 @@ export async function listAzureItemComments(
     fetchViewer(config),
     fetchProjectName(config, id),
   ]);
-  const params = new URLSearchParams({
-    $top: String(request.limit),
+  const query: AzureQuery = {
+    $top: request.limit,
     order: "desc",
     $expand: "renderedText,reactions",
     "api-version": COMMENTS_API_VERSION,
-  });
-  if (request.cursor) params.set("continuationToken", request.cursor);
+  };
+  if (request.cursor) query.continuationToken = request.cursor;
   const page = await requestAzureDevOps<AzureCommentList>(
     config,
-    `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?${params}`,
+    `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments`,
+    { query },
   );
   const comments = (page.comments ?? [])
     .filter((comment) => !comment.isDeleted)
@@ -255,14 +259,14 @@ export async function postAzureItemComment(
     throw new Error("A comment needs some text.");
   }
   const project = await fetchProjectName(config, id);
-  const params = new URLSearchParams({
-    format: "markdown",
-    "api-version": COMMENTS_API_VERSION,
-  });
   const created = await requestAzureDevOps<AzureComment>(
     config,
-    `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?${params}`,
-    { method: "POST", body: JSON.stringify({ text: toAzureMarkdown(body) }) },
+    `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments`,
+    {
+      method: "POST",
+      query: { format: "markdown", "api-version": COMMENTS_API_VERSION },
+      body: JSON.stringify({ text: toAzureMarkdown(body) }),
+    },
   );
   // The comment reads back as Ajour wrote it, with its mentions named.
   return { comment: { ...toBacklogComment(created), body } };
@@ -298,14 +302,14 @@ export async function editAzureItemComment(
   if (!body) {
     throw new Error("A comment needs some text.");
   }
-  const params = new URLSearchParams({
-    format: "markdown",
-    "api-version": COMMENTS_API_VERSION,
-  });
   const updated = await requestAzureDevOps<AzureComment>(
     config,
-    `${await commentPath(config, request)}?${params}`,
-    { method: "PATCH", body: JSON.stringify({ text: toAzureMarkdown(body) }) },
+    await commentPath(config, request),
+    {
+      method: "PATCH",
+      query: { format: "markdown", "api-version": COMMENTS_API_VERSION },
+      body: JSON.stringify({ text: toAzureMarkdown(body) }),
+    },
   );
   return { comment: { ...toBacklogComment(updated), body } };
 }
@@ -317,8 +321,8 @@ export async function deleteAzureItemComment(
 ): Promise<Record<string, never>> {
   await requestAzureDevOps<unknown>(
     config,
-    `${await commentPath(config, request)}?api-version=${COMMENTS_API_VERSION}`,
-    { method: "DELETE" },
+    await commentPath(config, request),
+    { method: "DELETE", query: { "api-version": COMMENTS_API_VERSION } },
   );
   return {};
 }
@@ -335,13 +339,12 @@ export async function setAzureItemCommentReaction(
   const path = await commentPath(config, request);
   await requestAzureDevOps<unknown>(
     config,
-    `${path}/reactions/${type}?api-version=7.1-preview.1`,
-    { method: request.reacted ? "PUT" : "DELETE" },
+    `${path}/reactions/${type}`,
+    { method: request.reacted ? "PUT" : "DELETE", query: { "api-version": "7.1-preview.1" } },
   );
-  const comment = await requestAzureDevOps<AzureComment>(
-    config,
-    `${path}?$expand=reactions&api-version=${COMMENTS_API_VERSION}`,
-  );
+  const comment = await requestAzureDevOps<AzureComment>(config, path, {
+    query: { $expand: "reactions", "api-version": COMMENTS_API_VERSION },
+  });
   return { reactions: toBacklogComment(comment).reactions ?? [] };
 }
 
@@ -371,21 +374,15 @@ function suggestion(identity: AzureIdentity): BacklogPerson {
 }
 
 /**
- * Where identities live: vssps.dev.azure.com/{org} for dev.azure.com,
- * {org}.vssps.visualstudio.com for the older hosts, and the collection
- * itself for Azure DevOps Server.
+ * The manifest's derived host where identities live, which Ajour's broker
+ * builds from the Organization URL: vssps.dev.azure.com/{org} for
+ * dev.azure.com, {org}.vssps.visualstudio.com for the older hosts, and the
+ * collection itself for Azure DevOps Server.
  */
-export function identitiesBaseUrl(organizationUrl: string) {
-  const url = new URL(organizationUrl.replace(/\/+$/, ""));
-  if (url.hostname === "dev.azure.com") {
-    return `https://vssps.dev.azure.com${url.pathname}`;
-  }
-  const legacy = /^([^.]+)\.visualstudio\.com$/.exec(url.hostname);
-  if (legacy) {
-    return `https://${legacy[1]}.vssps.visualstudio.com`;
-  }
-  return `${url.origin}${url.pathname}`;
-}
+export const IDENTITIES_HOST = "identities";
+
+/** The access choice that lets a connection search the organisation's people. */
+export const PEOPLE_SEARCH_ACCESS = "peopleSearch";
 
 /** The item's fields that name a person. */
 const PEOPLE_FIELDS = ["System.AssignedTo", "System.CreatedBy", "System.ChangedBy"];
@@ -422,23 +419,24 @@ async function fetchItemPeople(
   knownProject: string | undefined,
   timeoutMs: number,
 ): Promise<{ project: string | undefined; people: AzureIdentity[] }> {
-  const params = new URLSearchParams({
-    $top: String(PEOPLE_COMMENT_PAGE),
-    order: "desc",
-    "api-version": COMMENTS_API_VERSION,
-  });
   // The fields' people still count when the comments fail.
   const comments = (project: string) =>
     requestAzureDevOps<AzureCommentList>(
       config,
-      `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments?${params}`,
-      { signal: AbortSignal.timeout(timeoutMs) },
+      `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments`,
+      {
+        query: { $top: PEOPLE_COMMENT_PAGE, order: "desc", "api-version": COMMENTS_API_VERSION },
+        signal: AbortSignal.timeout(timeoutMs),
+      },
     ).catch((): AzureCommentList => ({}));
   const early = knownProject ? comments(knownProject) : undefined;
   const workItem = await requestAzureDevOps<AzureWorkItem>(
     config,
-    `/_apis/wit/workitems/${id}?fields=System.TeamProject,${PEOPLE_FIELDS.join(",")}&api-version=7.1`,
-    { signal: AbortSignal.timeout(timeoutMs) },
+    `/_apis/wit/workitems/${id}`,
+    {
+      query: { fields: ["System.TeamProject", ...PEOPLE_FIELDS].join(","), "api-version": "7.1" },
+      signal: AbortSignal.timeout(timeoutMs),
+    },
   );
   const project = getProjectName(workItem) ?? knownProject;
   const people: unknown[] = PEOPLE_FIELDS.map((field) => workItem.fields?.[field]);
@@ -490,9 +488,10 @@ async function fetchProjectPeople(
 ): Promise<AzureIdentity[]> {
   const found = await requestAzureDevOps<{ workItems?: { id: number }[] }>(
     config,
-    `/${encodeURIComponent(project)}/_apis/wit/wiql?$top=${PROJECT_PEOPLE_ITEMS}&api-version=7.1`,
+    `/${encodeURIComponent(project)}/_apis/wit/wiql`,
     {
       method: "POST",
+      query: { $top: PROJECT_PEOPLE_ITEMS, "api-version": "7.1" },
       body: JSON.stringify({
         query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @today - ${PROJECT_PEOPLE_DAYS} ORDER BY [System.ChangedDate] DESC`,
       }),
@@ -503,9 +502,10 @@ async function fetchProjectPeople(
   if (ids.length === 0) return [];
   const batch = await requestAzureDevOps<{ value?: AzureWorkItem[] }>(
     config,
-    "/_apis/wit/workitemsbatch?api-version=7.1",
+    "/_apis/wit/workitemsbatch",
     {
       method: "POST",
+      query: { "api-version": "7.1" },
       body: JSON.stringify({ ids, fields: PEOPLE_FIELDS }),
       signal: AbortSignal.timeout(timeoutMs),
     },
@@ -524,27 +524,16 @@ async function searchOrganizationPeople(
   query: string,
   timeoutMs: number,
 ) {
-  const url = new URL(`${identitiesBaseUrl(config.organizationUrl)}/_apis/identities`);
-  url.searchParams.set("searchFilter", "General");
-  url.searchParams.set("filterValue", query);
-  url.searchParams.set("queryMembership", "None");
-  url.searchParams.set("api-version", "7.1");
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        Authorization: createAuthHeader(config.personalAccessToken),
-      },
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    throw new Error(
-      `Azure DevOps request failed: ${error instanceof Error ? error.message : "Network error"}`,
-    );
-  }
+  const response = await sendAzureDevOps(config, "/_apis/identities", {
+    host: IDENTITIES_HOST,
+    query: {
+      searchFilter: "General",
+      filterValue: query,
+      queryMembership: "None",
+      "api-version": "7.1",
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!response.ok) {
     throw new Error(`Azure DevOps request failed (${response.status}): people search`);
   }
@@ -585,6 +574,9 @@ export async function searchAzureItemPeople(
   const queryWords = nameWords(query);
   if (query && queryWords.length === 0) return { people: [] };
 
+  // Ajour asks with a query only while people search is on. The check keeps
+  // a request the broker would refuse from being sent at all.
+  const searchesOrganization = query !== "" && config.access.includes(PEOPLE_SEARCH_ACCESS);
   const knownProject = projectOfSourceId(config, request.sourceId);
   const item = fetchItemPeople(config, id, knownProject, timeoutMs);
   // The project's people are asked for at once, then again from the item's
@@ -604,9 +596,9 @@ export async function searchAzureItemPeople(
   const [onItem, onProject, inOrganization] = await Promise.allSettled([
     item,
     projectPeople(),
-    query ? searchOrganizationPeople(config, query, timeoutMs) : Promise.resolve([]),
+    searchesOrganization ? searchOrganizationPeople(config, query, timeoutMs) : Promise.resolve([]),
   ]);
-  const searches = query ? [onItem, onProject, inOrganization] : [onItem, onProject];
+  const searches = searchesOrganization ? [onItem, onProject, inOrganization] : [onItem, onProject];
   const failed = searches.find((search) => search.status === "rejected");
   if (failed && searches.every((search) => search.status === "rejected")) {
     throw failed.reason;
@@ -673,9 +665,10 @@ async function fetchSettledDetails(
   const details = new Map<number, { project: string; changedAt?: number }>();
   const batch = await requestAzureDevOps<{ value?: (AzureWorkItem | null)[] }>(
     config,
-    "/_apis/wit/workitemsbatch?api-version=7.1",
+    "/_apis/wit/workitemsbatch",
     {
       method: "POST",
+      query: { "api-version": "7.1" },
       body: JSON.stringify({
         ids,
         fields: ["System.TeamProject", "System.ChangedDate"],
@@ -738,11 +731,6 @@ export async function findAzureCommentFacts(
     return { commentFacts: [] };
   }
 
-  const params = new URLSearchParams({
-    $top: String(SETTLED_COMMENT_PAGE),
-    order: "desc",
-    "api-version": COMMENTS_API_VERSION,
-  });
   const readComments = async (
     entry: (typeof settled)[number],
     project: string,
@@ -750,8 +738,11 @@ export async function findAzureCommentFacts(
     try {
       const page = await requestAzureDevOps<AzureCommentList>(
         config,
-        `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments?${params}`,
-        { signal: signal() },
+        `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments`,
+        {
+          query: { $top: SETTLED_COMMENT_PAGE, order: "desc", "api-version": COMMENTS_API_VERSION },
+          signal: signal(),
+        },
       );
       const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
         !comment.isDeleted &&

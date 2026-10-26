@@ -1,7 +1,7 @@
 // Checks the rules Ajour applies when it installs the plugin, so a broken
 // manifest or prompt fails here instead of in the user's Ajour.
 import assert from "node:assert/strict";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 
 const root = new URL("../", import.meta.url);
@@ -21,10 +21,13 @@ function unknownSlots(text, task) {
     );
 }
 
-test("the manifest is an agent-task plugin with project properties for API 3", () => {
-  assert.equal(manifest.apiVersion, 3);
+test("the manifest is an agent-task plugin with project properties for API 4", () => {
+  assert.equal(manifest.apiVersion, 4);
   assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties"]);
-  assert.equal(manifest.entrypoint, undefined);
+  // No code, so no entrypoint, and no network or connection for the broker.
+  for (const key of ["entrypoint", "network", "connectionFields", "connectionAccess", "runtime"]) {
+    assert.equal(manifest[key], undefined, key);
+  }
   assert.deepEqual(
     tasks.map((task) => [task.id, task.placement]),
     [
@@ -45,6 +48,34 @@ for (const task of tasks) {
     const prompt = await readFile(new URL(task.prompt, root), "utf8");
     assert.deepEqual(unknownSlots(prompt, task), []);
     assert.deepEqual(unknownSlots(task.weekLink, task), []);
+  });
+}
+
+/** The Ajour MCP tools each task declares: what its prompt tells the agent to call. */
+const declaredTools = {
+  "commit-week": ["get_week_changes", "list_time_entries", "mark_entries_committed"],
+  "submit-week": ["get_week_status", "submit_week"],
+};
+/** Session tools are always allowed and never declared. */
+const sessionTools = new Set(["begin_session", "update_session", "end_session", "ask", "wait_for_answer"]);
+/** Tools a prompt names only to forbid. */
+const forbiddenTools = { "commit-week": [], "submit-week": ["mark_entries_committed"] };
+
+for (const task of tasks) {
+  test(`${task.id}: declares exactly the Ajour MCP tools its prompt uses`, async () => {
+    const prompt = await readFile(new URL(task.prompt, root), "utf8");
+    assert.deepEqual([...task.tools].sort(), [...declaredTools[task.id]].sort());
+    const named = new Set(prompt.match(/\b[a-z]+(?:_[a-z]+)+\b/g));
+    const unexpected = [...named].filter(
+      (name) =>
+        !name.startsWith("browser_") &&
+        !sessionTools.has(name) &&
+        !task.tools.includes(name) &&
+        !forbiddenTools[task.id].includes(name),
+    );
+    assert.deepEqual(unexpected, [], "the prompt names a tool the task does not declare");
+    for (const tool of task.tools) assert.ok(named.has(tool), `${tool} is declared but the prompt never uses it`);
+    for (const tool of forbiddenTools[task.id]) assert.ok(!task.tools.includes(tool));
   });
 }
 
@@ -100,4 +131,52 @@ test("every \"Stop\" ends the session as cancelled", async () => {
     const prompt = await readFile(new URL(`prompts/${name}`, root), "utf8");
     assert.doesNotMatch(prompt, /"Stop"[^.\n]*failed/, name);
   }
+});
+
+test("plugin.json and package.json carry the same version", async () => {
+  const pack = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  assert.equal(pack.version, manifest.version);
+});
+
+/** The files and folders the plugin publishes, as the source listing names them. */
+async function publishedFiles() {
+  const pack = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const found = [];
+  for (const name of pack.ajour.files) {
+    const stat = await lstat(new URL(name, root));
+    if (stat.isDirectory()) {
+      for (const child of await readdir(new URL(`${name}/`, root), { recursive: true })) {
+        if (!(await lstat(new URL(`${name}/${child}`, root))).isDirectory()) found.push(`${name}/${child}`);
+      }
+    } else found.push(name);
+  }
+  return found.map((file) => file.replaceAll("\\", "/")).sort();
+}
+
+// This plugin is manifest-only, so there is no source to check for `fetch(`,
+// `require(`, `node:`, `process.`, `Buffer` or a credential. What stays true,
+// and what the sibling plugins' source-purity tests protect, is that it runs no
+// code: Ajour has nothing to start in a sandboxed worker, and the broker holds
+// no credential for it.
+test("publishes the manifest, the prompts and nothing that runs", async () => {
+  assert.deepEqual(await publishedFiles(), [
+    "LICENSE",
+    "package.json",
+    "plugin.json",
+    "prompts/commit-week.md",
+    "prompts/submit-week.md",
+  ]);
+  const sourceFolder = await lstat(new URL("src", root)).catch(() => undefined);
+  assert.equal(sourceFolder, undefined, "the plugin has no src folder, so nothing to run");
+});
+
+test("declares no code, no network and no credential in the manifest", () => {
+  for (const key of ["entrypoint", "runtime", "network", "connectionFields", "connectionAccess", "signIn"]) {
+    assert.equal(key in manifest, false, `plugin.json must not declare ${key}`);
+  }
+  // Prose may say "password" ("never types a password"); a field named for a credential may not exist.
+  const keys = [];
+  JSON.stringify(manifest, (key, value) => (keys.push(key), value));
+  assert.deepEqual(keys.filter((key) => /authorization|password|token|secret|credential|apikey/i.test(key)), []);
+  assert.doesNotMatch(JSON.stringify(manifest), /fetch\(|require\(|node:|process\.|Buffer|Authorization/);
 });

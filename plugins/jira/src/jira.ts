@@ -5,10 +5,10 @@ import type {
   ConnectorSyncWorkItem,
   ConnectorSyncWorkItemUpdate,
   JiraQueryScope,
-} from "./contract.js";
-import { describeJiraDescription } from "./description.js";
-import { resolveEstimateSyncAction } from "./estimate-sync.js";
-import { jiraPriorityToLevel } from "./priority.js";
+} from "./contract.ts";
+import { describeJiraDescription } from "./description.ts";
+import { resolveEstimateSyncAction } from "./estimate-sync.ts";
+import { jiraPriorityToLevel } from "./priority.ts";
 
 const CLOSED_STATUS_CATEGORY = "done";
 const MAX_RESULTS = 200;

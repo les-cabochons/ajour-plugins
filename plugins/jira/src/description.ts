@@ -1,6 +1,6 @@
-import { adfToMarkdown, adfToMarkdownWithLosses, type AdfImageContext } from "./adf-markdown.js";
-import type { ConnectorSyncedDescription } from "./contract.js";
-import { markdownToAdf } from "./markdown-adf.js";
+import { adfToMarkdown, adfToMarkdownWithLosses, type AdfImageContext } from "./adf-markdown.ts";
+import type { ConnectorSyncedDescription } from "./contract.ts";
+import { markdownToAdf } from "./markdown-adf.ts";
 
 /** The most of a description Ajour stores (Ajour's ADR 0009). */
 export const MAX_DESCRIPTION_LENGTH = 64_000;

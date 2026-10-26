@@ -1,5 +1,5 @@
-import { createAuthHeader } from "./azure-devops.js";
-import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.js";
+import { createAuthHeader } from "./azure-devops.ts";
+import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.ts";
 import type {
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
@@ -10,7 +10,7 @@ import type {
   CodeHostReviewVerdict,
   CodeHostSyncResult,
   CodeHostUser,
-} from "./contract.js";
+} from "./contract.ts";
 
 const API_VERSION = "7.1";
 const TEAMS_API_VERSION = "7.1-preview.3";
@@ -23,21 +23,20 @@ const STATUS_POLICY_TYPE = "cbdc66da-9728-4af8-aada-9a5a32e4a226";
 
 /** Thrown for 404 and 403, so a pull request out of reach can be skipped. */
 export class AzureReposNotFoundError extends Error {
-  constructor(
-    message: string,
-    readonly status: 403 | 404,
-  ) {
+  readonly status: 403 | 404;
+
+  constructor(message: string, status: 403 | 404) {
     super(message);
+    this.status = status;
   }
 }
 
 export class AzureReposClient {
+  private readonly organizationUrl: string;
   private readonly authorization: string;
 
-  constructor(
-    private readonly organizationUrl: string,
-    token: string,
-  ) {
+  constructor(organizationUrl: string, token: string) {
+    this.organizationUrl = organizationUrl;
     this.authorization = createAuthHeader(token);
   }
 
@@ -509,8 +508,11 @@ async function listActive(client: AzureReposClient, scope: string, criteria: Rec
 export class PullRequestSearch {
   /** Undefined when the organization-wide list works. */
   private projectIds?: Promise<string[] | undefined>;
+  private readonly client: AzureReposClient;
 
-  constructor(private readonly client: AzureReposClient) {}
+  constructor(client: AzureReposClient) {
+    this.client = client;
+  }
 
   async run(criteria: Record<string, string>) {
     const projectIds = await this.resolveProjects();

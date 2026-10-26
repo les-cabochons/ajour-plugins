@@ -1,4 +1,4 @@
-import { NAMED_ENTITIES } from "./html-entities.js";
+import { NAMED_ENTITIES } from "./html-entities.ts";
 
 // Converts an Azure DevOps HTML description to the markdown Ajour renders in
 // backlog item notes. The parser is lenient, like the editor's HTML: unclosed

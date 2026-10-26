@@ -20,10 +20,6 @@ test:
 typecheck:
     {{PNPM}} typecheck
 
-[doc("Builds the runnable plugin entrypoint")]
-build:
-    {{PNPM}} build
-
 [doc("Runs the complete local verification")]
 verify:
     {{PNPM}} verify

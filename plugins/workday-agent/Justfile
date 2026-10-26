@@ -21,10 +21,6 @@ install:
 test:
     {{PNPM}} test
 
-[doc("Builds the installable .ajour-connector archive")]
-package:
-    {{PNPM}} package
-
 [doc("Runs the complete local CI verification")]
 verify:
     {{PNPM}} verify

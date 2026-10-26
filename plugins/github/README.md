@@ -73,48 +73,34 @@ declare it, so Ajour hides them while it is off.
 
 ## Development
 
+The plugin runs from its TypeScript source. Ajour imports `src/plugin.ts`
+directly, so there is nothing to build.
+
 ```sh
 just install
 just test
 just typecheck
-just build
+just verify
 ```
 
-To rebuild whenever the source changes, keep the watcher running:
-
-```sh
-just dev
-```
+`just typecheck` checks the source with the rules Node's type stripping sets.
+`just verify` runs the tests and the type checks. From the repository root,
+`just verify github` also imports the plugin in plain Node, from only the
+files it publishes.
 
 Point a development build of Ajour at this folder with
 `AJOUR_DEV_PLUGIN_DIRS`, or choose it on **Settings → Debug**.
 
-Run the complete local CI path with:
-
-```sh
-just verify
-```
-
-## Build an installable plugin
-
-```sh
-just package
-```
-
-The archive is written to `package/github-<version>.ajour-connector`. Its
-version comes from `plugin.json`; keep that value aligned with `package.json`
-when preparing a new release.
-
-Every push to `main` that changes this folder runs tests and type checks,
-stamps a unique prerelease version such as `0.2.0-main.130.9aac30e` into the
-build, packages the installable archive, and publishes it as a prerelease of
-this repository tagged `v0.2.0-github.main.130.9aac30e`. See
-[Releases](../../README.md#releases).
+The plugin is released through the repository's `ajour.json`. When you change
+it, bump the version in `plugin.json` and `package.json`, and keep the two the
+same. See [Releases](../../README.md#releases).
 
 ## Install in Ajour
 
-In a production desktop build, open **Settings → Plugins**, choose **Install
-plugin**, and select the generated `.ajour-connector` archive.
+Ajour lists the plugin from the official plugin source. To try a local
+change, run `just package github` from the repository root. Then in Ajour
+open **Settings → Plugins**, choose **Install from file**, and select
+`plugins/github/package/github-<version>.ajour-connector`.
 
 The connection needs a personal access token. A fine-grained token needs the
 Issues permission set to Read and write for issues, and read and write access

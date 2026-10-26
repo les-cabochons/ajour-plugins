@@ -1,4 +1,4 @@
-import type { AzureDevOpsConnectionInput } from "./azure-devops.js";
+import type { AzureDevOpsConnectionInput } from "./azure-devops.ts";
 
 /** Azure DevOps state categories, in workflow order. */
 const CATEGORY_ORDER = ["Proposed", "InProgress", "Resolved", "Completed", "Removed"];

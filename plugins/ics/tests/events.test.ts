@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { describeCalendar, listEvents, parseCalendar } from "../src/events.js";
+import { describeCalendar, listEvents, parseCalendar } from "../src/events.ts";
 
 function fixture(name: string) {
   return parseCalendar(

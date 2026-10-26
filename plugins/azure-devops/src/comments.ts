@@ -5,7 +5,7 @@ import {
   requestAzureDevOps,
   type AzureDevOpsConnectionInput,
   type AzureWorkItem,
-} from "./azure-devops.js";
+} from "./azure-devops.ts";
 import type {
   BacklogComment,
   BacklogCommentFact,
@@ -23,9 +23,9 @@ import type {
   BacklogSetItemCommentReactionRequest,
   BacklogSetItemCommentReactionResult,
   ConnectorSyncWorkItem,
-} from "./contract.js";
-import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.js";
-import { replaceOutsideCode } from "./markdown-code.js";
+} from "./contract.ts";
+import { decodeHtmlEntities, htmlToMarkdown } from "./html-markdown.ts";
+import { replaceOutsideCode } from "./markdown-code.ts";
 
 /**
  * An item's comments for Ajour's item page (Ajour's ADR 0008). Ajour asks for

@@ -1,4 +1,4 @@
-import type { ConnectorPriorityLevel } from "./contract.js";
+import type { ConnectorPriorityLevel } from "./contract.ts";
 
 /**
  * Maps the numbers of the connection's priority field to Ajour's priority

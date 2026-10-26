@@ -1,4 +1,4 @@
-import { buildGitHubConfig } from "./config.js";
+import { buildGitHubConfig } from "./config.ts";
 import {
   parseConnectorFieldValues,
   type BacklogReadDescriptionRequest,
@@ -16,10 +16,10 @@ import {
   type ConnectorSettleWriteRequest,
   type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
-} from "./contract.js";
-import { readIssueDescription, writeIssueDescription } from "./description-source.js";
-import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.js";
-import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.js";
+} from "./contract.ts";
+import { readIssueDescription, writeIssueDescription } from "./description-source.ts";
+import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
+import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 
 /** Both issues and pull requests need only a token GitHub accepts. */
 export async function validateConnection(

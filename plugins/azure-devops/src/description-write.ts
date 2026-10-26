@@ -3,16 +3,16 @@ import {
   requestAzureDevOps,
   type AzureDevOpsConnectionInput,
   type AzureWorkItem,
-} from "./azure-devops.js";
-import { toAzureMarkdown } from "./comments.js";
+} from "./azure-devops.ts";
+import { toAzureMarkdown } from "./comments.ts";
 import type {
   BacklogWriteDescriptionRequest,
   BacklogWriteDescriptionResult,
-} from "./contract.js";
-import { describeWorkItem, isMarkdownField } from "./description.js";
-import { fetchWorkItemWithFormats } from "./description-source.js";
-import { patchDescriptionHtml } from "./description-patch.js";
-import { markdownToHtml } from "./markdown-html.js";
+} from "./contract.ts";
+import { describeWorkItem, isMarkdownField } from "./description.ts";
+import { fetchWorkItemWithFormats } from "./description-source.ts";
+import { patchDescriptionHtml } from "./description-patch.ts";
+import { markdownToHtml } from "./markdown-html.ts";
 
 /** The longest description Azure DevOps takes, as it measures: the stored HTML or Markdown. */
 export const AZURE_DESCRIPTION_MAX_LENGTH = 1_000_000;

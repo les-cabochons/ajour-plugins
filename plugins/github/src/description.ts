@@ -1,4 +1,4 @@
-import type { ConnectorSyncedDescription } from "./contract.js";
+import type { ConnectorSyncedDescription } from "./contract.ts";
 
 /** The most of a description Ajour stores (Ajour's ADR 0009). */
 export const MAX_DESCRIPTION_LENGTH = 64_000;

@@ -1,3 +1,5 @@
+// The checks Ajour applies to plugin.json when it installs the plugin, so a
+// broken manifest fails here instead of in the user's Ajour.
 const pluginIdPattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const pluginVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const connectorFieldTypes = new Set([
@@ -132,17 +134,20 @@ export function assertConnectorPluginManifest(manifest) {
   assertRecord(manifest.capabilities, "Connector manifest capabilities");
   const capabilityNames = Object.keys(manifest.capabilities);
   if (
-    capabilityNames.length === 0 ||
+    !capabilityNames.includes("connector") ||
     capabilityNames.some((name) => name !== "connector" && name !== "codeHost")
   ) {
     throw new Error(
-      "Connector manifest capabilities must declare connector, codeHost or both.",
+      "Connector manifest capabilities must declare connector and may also declare codeHost.",
     );
   }
   for (const name of capabilityNames) {
     assertRecord(manifest.capabilities[name], "Connector manifest capabilities." + name);
   }
-  // Issue descriptions Ajour syncs, and with `write`, writes back.
+  assertOptionalBoolean(
+    manifest.capabilities.connector?.settle,
+    "Connector manifest capabilities.connector.settle",
+  );
   const description = manifest.capabilities.connector?.description;
   if (description !== undefined) {
     assertRecord(description, "Connector manifest capabilities.connector.description");

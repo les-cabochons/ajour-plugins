@@ -50,6 +50,7 @@ test("declares an import-only schema on data shape API 1", async () => {
   assert.equal(manifest.id, "workday-project-data");
   assert.equal(manifest.version, "2.0.0");
   assert.equal(manifest.apiVersion, 1);
+  assert.equal(manifest.entrypoint, "src/plugin.mjs");
   assert.deepEqual(manifest.capabilities, { projectDataShape: { apiVersion: 1 } });
 });
 

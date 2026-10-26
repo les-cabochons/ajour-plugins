@@ -1,14 +1,14 @@
 import type {
   BacklogReadDescriptionRequest,
   BacklogReadDescriptionResult,
-} from "./contract.js";
+} from "./contract.ts";
 import {
   describeIssue,
   parseJiraIssueKey,
   requestJira,
   type JiraConnectionInput,
   type JiraIssue,
-} from "./jira.js";
+} from "./jira.ts";
 
 export function requireIssueKey(sourceId: string) {
   const key = parseJiraIssueKey(sourceId);

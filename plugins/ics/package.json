@@ -5,24 +5,41 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
-  "ajourRelease": {
-    "title": "Ajour Plugin - ICS calendar"
+  "ajour": {
+    "features": [
+      "calendar-events"
+    ],
+    "tags": [
+      "calendar",
+      "ics",
+      "google-calendar",
+      "outlook"
+    ],
+    "author": {
+      "name": "Alex Trépanier",
+      "url": "https://github.com/alextrepa"
+    },
+    "license": {
+      "name": "MIT License",
+      "spdxId": "MIT"
+    },
+    "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
+    "status": "available",
+    "files": [
+      "plugin.json",
+      "package.json",
+      "LICENSE",
+      "src"
+    ]
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/build.mjs --watch",
-    "package": "corepack pnpm build && node scripts/package-connector.mjs",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "corepack pnpm test && corepack pnpm typecheck && corepack pnpm package"
-  },
-  "dependencies": {
-    "ical.js": "2.2.1"
+    "typecheck": "tsc -p tsconfig.json",
+    "verify": "corepack pnpm test && corepack pnpm typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "esbuild": "0.28.2",
-    "tar": "7.5.13",
+    "ical.js": "2.2.1",
     "typescript": "^5.8.2",
     "vitest": "^4.1.5"
   }

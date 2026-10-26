@@ -21,21 +21,9 @@ install:
 test:
     {{PNPM}} test
 
-[doc("Watches the plugin source and rebuilds the bundle on changes")]
-dev:
-    {{PNPM}} dev
-
-[doc("Runs TypeScript checks")]
+[doc("Type-checks the TypeScript source Ajour runs")]
 typecheck:
     {{PNPM}} typecheck
-
-[doc("Bundles the plugin JavaScript")]
-build:
-    {{PNPM}} build
-
-[doc("Builds the installable .ajour-connector archive")]
-package:
-    {{PNPM}} package
 
 [doc("Runs the complete local CI verification")]
 verify:

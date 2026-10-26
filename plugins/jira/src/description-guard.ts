@@ -1,5 +1,5 @@
-import { adfToMarkdown, type AdfImageContext, type AdfNode } from "./adf-markdown.js";
-import { AMBIGUOUS_EDIT, documentOf } from "./description-nested.js";
+import { adfToMarkdown, type AdfImageContext, type AdfNode } from "./adf-markdown.ts";
+import { AMBIGUOUS_EDIT, documentOf } from "./description-nested.ts";
 
 // Checks a write against its source, independently of how the patch aligned
 // them: none of the patch's alignment or pairing is used here.

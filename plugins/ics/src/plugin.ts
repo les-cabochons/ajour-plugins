@@ -6,9 +6,9 @@ import {
   type ConnectorPluginConnection,
   type ConnectorPluginValidationResult,
   type ConnectorSummaryValues,
-} from "./contract.js";
-import { describeCalendar, listEvents, parseCalendar } from "./events.js";
-import { fetchCalendarFeed, normalizeCalendarAddress } from "./feed.js";
+} from "./contract.ts";
+import { describeCalendar, listEvents, parseCalendar } from "./events.ts";
+import { fetchCalendarFeed, normalizeCalendarAddress } from "./feed.ts";
 
 function readConfig(values: ConnectorFieldValues) {
   const parsed = parseConnectorFieldValues(values);

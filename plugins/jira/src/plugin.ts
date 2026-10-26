@@ -6,16 +6,16 @@ import type {
   ConnectorSettleStatesRequest,
   ConnectorSettleWriteRequest,
   ConnectorSyncWorkItem,
-} from "./contract.js";
-import { parseConnectorFieldValues } from "./contract.js";
+} from "./contract.ts";
+import { parseConnectorFieldValues } from "./contract.ts";
 import {
   syncJiraConnection,
   type JiraConnectionInput,
   validateJiraConnection,
-} from "./jira.js";
-import { listJiraSettleStates, writeJiraSettle } from "./settle.js";
-import { readJiraDescription } from "./description-source.js";
-import { writeJiraDescription } from "./description-write.js";
+} from "./jira.ts";
+import { listJiraSettleStates, writeJiraSettle } from "./settle.ts";
+import { readJiraDescription } from "./description-source.ts";
+import { writeJiraDescription } from "./description-write.ts";
 
 const TASK_ICON_DISPLAY_MODES = new Set(["always", "fallback", "never"]);
 

@@ -7,14 +7,13 @@
   "packageManager": "pnpm@10.7.0",
   "ajour": {
     "name": "Workday project data shape",
-    "description": "Shapes project and task records for Workday-compatible file transfers without connecting to Workday.",
+    "description": "Imports a project and its tasks from Workday's Excel exports, in French, without connecting to Workday.",
     "features": [
       "project-data-shape"
     ],
     "tags": [
       "workday",
       "import",
-      "export",
       "data-shape"
     ],
     "author": {

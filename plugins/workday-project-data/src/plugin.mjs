@@ -1,115 +1,214 @@
+/**
+ * Ajour schema for Workday's Excel exports, in French. It only imports, and
+ * reads two files:
+ *
+ * - The project export ("Afficher un projet"): the project's name and ID in
+ *   the Récapitulatif sheet, and its tasks in Ressources des tâches. Ajour
+ *   imports it in Settings › Projects.
+ * - The project plan export ("View Project Planner Composite View"): the
+ *   tasks with their closed, non-billable and estimate columns, but not the
+ *   project. Ajour imports it with Import tasks… on the project.
+ *
+ * Ajour hands over every sheet as rows of cells: row 1 is `rows[0]`.
+ */
+
 const MS_PER_HOUR = 60 * 60 * 1000;
 
-function normalizeText(value) {
+/**
+ * The name Workday shows for a task with no name of its own. Such a task
+ * takes its phase's name, so "Soutien et optimisation > Regular" becomes
+ * "Soutien et optimisation".
+ */
+const UNNAMED_TASK = "Regular";
+
+const PROJECT_SUMMARY_SHEET = "Récapitulatif";
+const PROJECT_TASKS_SHEET = "Ressources des tâches";
+
+const PLAN_COLUMNS = {
+  number: "Numéro",
+  phase: "Phase/tâche",
+  customName: "Nom personnalisé de la tâche",
+  estimate: "Heures estimatives",
+  nonBillable: "Non facturable",
+  closed: "Fermé",
+};
+
+/** A cell as trimmed text, with runs of spaces, including no-break ones, as one space. */
+function text(value) {
   return String(value ?? "")
     .trim()
     .replace(/\s+/g, " ");
 }
 
-function normalizeStatus(value, options = {}) {
-  const normalized = normalizeText(value).toLowerCase();
-  if (!normalized) {
-    return options.allowBlank ? undefined : (options.fallback ?? "active");
-  }
-  if (normalized === "active" || normalized === "archived") {
-    return normalized;
-  }
-  throw new Error(`Invalid status "${normalized}". Expected active or archived.`);
+/** A label or heading to compare: no accents, lower case. */
+function key(value) {
+  return text(value)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
 }
 
-function normalizeBillable(value) {
-  const normalized = normalizeText(value).toLowerCase().replace(/\s+/g, "_");
-  if (!normalized) return undefined;
-  if (normalized === "billable" || normalized === "true" || normalized === "yes") return true;
-  if (["non_billable", "non-billable", "false", "no"].includes(normalized)) return false;
-  throw new Error(`Invalid billable value "${normalized}". Expected billable or non_billable.`);
+function findSheet(sheets, name) {
+  return sheets.find((sheet) => key(sheet.name) === key(name));
 }
 
-function normalizeHours(value) {
-  if (value === null || value === undefined || value === "") return undefined;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Duration hours must be a finite number.");
-    return value;
-  }
-  const normalized = normalizeText(value).replace(",", ".");
+/**
+ * Workday's Oui or Non. An empty cell is Non. `where` and `column` name the
+ * cell in the error, such as "Row 4" and "Fermé".
+ */
+function isYes(value, where, column) {
+  if (value === true || value === false) return value;
+  const answer = key(value);
+  if (answer === "oui" || answer === "yes") return true;
+  if (answer === "" || answer === "non" || answer === "no") return false;
+  throw new Error(`${where} is invalid. "${column}" must be Oui or Non, not "${text(value)}".`);
+}
+
+/** Hours from a number or text with a decimal comma. An empty cell is undefined. */
+function hours(value, where, column) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  const normalized = text(value).replace(",", ".");
   if (!normalized) return undefined;
   const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) throw new Error(`Invalid duration hours "${normalized}".`);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${where} is invalid. "${column}" must be a number of hours, not "${text(value)}".`);
+  }
   return parsed;
 }
 
-function hoursToMs(value) {
-  if (value === undefined) return undefined;
-  const durationMs = Math.round(value * MS_PER_HOUR);
-  return Number.isFinite(durationMs) ? durationMs : undefined;
-}
-
-function msToHours(value) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "";
-  return Math.round((value / MS_PER_HOUR) * 10_000) / 10_000;
-}
-
-export async function exportProjects(projects) {
-  const rows = projects.flatMap((project) => {
-    if (project.tasks.length === 0) {
-      return [{ project: project.name, code: project.code ?? "", color: project.color, status: project.status, task: "", taskStatus: "", billable: "", budgetHours: "", adjustmentHours: "" }];
-    }
-    return project.tasks.map((task) => ({
-      project: project.name,
-      code: project.code ?? "",
-      color: project.color,
-      status: project.status,
-      task: task.name,
-      taskStatus: task.status,
-      billable: task.billable ? "billable" : "non_billable",
-      budgetHours: msToHours(task.budgetMs),
-      adjustmentHours: msToHours(task.adjustmentMs),
-    }));
-  });
-  return { datasets: [{ id: "projects", rows }] };
-}
-
-export async function importProjects(datasets) {
-  const dataset = datasets.find((candidate) => candidate.id === "projects");
-  if (!dataset) throw new Error('Workday project data requires the "projects" dataset.');
-
-  const projects = [];
-  for (const [rowIndex, row] of dataset.rows.entries()) {
-    const rowNumber = rowIndex + 2;
-    const project = normalizeText(row.project);
-    const code = normalizeText(row.code);
-    const color = normalizeText(row.color);
-    const task = normalizeText(row.task);
-    const isBlankRow = !project && !code && !color && !normalizeText(row.status) && !task && !normalizeText(row.taskStatus) && !normalizeText(row.billable) && (row.budgetHours === null || row.budgetHours === undefined || row.budgetHours === "") && (row.adjustmentHours === null || row.adjustmentHours === undefined || row.adjustmentHours === "");
-    if (isBlankRow) continue;
-
-    const status = normalizeStatus(row.status, { fallback: "active" });
-    const taskStatus = normalizeStatus(row.taskStatus, { allowBlank: true });
-    const billable = normalizeBillable(row.billable);
-    const budgetHours = normalizeHours(row.budgetHours);
-    const adjustmentHours = normalizeHours(row.adjustmentHours);
-    const budgetMs = hoursToMs(budgetHours);
-    const adjustmentMs = hoursToMs(adjustmentHours);
-
-    if (!project) throw new Error(`Row ${rowNumber} is invalid. A project name is required.`);
-    if (!task && taskStatus) throw new Error(`Row ${rowNumber} is invalid. Task status requires a task name.`);
-    if (!task && (billable !== undefined || budgetHours !== undefined || adjustmentHours !== undefined)) {
-      throw new Error(`Row ${rowNumber} is invalid. Billable, budget, or adjustment requires a task name.`);
-    }
-
-    projects.push({
-      name: project,
-      ...(code ? { code } : {}),
-      ...(color ? { color } : {}),
-      status,
-      tasks: task ? [{
-        name: task,
-        ...(taskStatus ? { status: taskStatus } : {}),
-        ...(billable === undefined ? {} : { billable }),
-        ...(budgetMs === undefined || budgetMs <= 0 ? {} : { budgetMs }),
-        ...(adjustmentMs === undefined ? {} : { adjustmentMs }),
-      }] : [],
-    });
+/** The index of each heading in `row`, by key. */
+function columnIndexes(row) {
+  const indexes = new Map();
+  for (const [index, cell] of (row ?? []).entries()) {
+    const heading = key(cell);
+    if (heading && !indexes.has(heading)) indexes.set(heading, index);
   }
-  return { projects };
+  return indexes;
+}
+
+/**
+ * Adds a task, or keeps one of two tasks of the same name: the open one, or
+ * the first when both are open or both closed.
+ */
+function addTask(tasks, task) {
+  const existing = tasks.get(key(task.name));
+  if (!existing || (existing.status === "archived" && task.status !== "archived")) {
+    tasks.set(key(task.name), task);
+  }
+}
+
+function readProjectExport(sheets, summary) {
+  const values = new Map();
+  for (const row of summary.rows) {
+    const label = key(row[0]);
+    if (label && !values.has(label)) values.set(label, row[1]);
+  }
+
+  const id = text(values.get(key("Identifiant du projet")));
+  let name = text(values.get(key("Nom du projet")));
+  if (!name) {
+    throw new Error(`The ${PROJECT_SUMMARY_SHEET} sheet has no "Nom du projet".`);
+  }
+  // Ajour keeps the ID in the code. Workday may also put it in the name.
+  if (id && name.startsWith(`${id} `)) name = name.slice(id.length + 1).trim();
+  const inactive = isYes(values.get(key("Inactif")), `The ${PROJECT_SUMMARY_SHEET} sheet`, "Inactif");
+
+  const tasksSheet = findSheet(sheets, PROJECT_TASKS_SHEET);
+  if (!tasksSheet) {
+    throw new Error(`The workbook has no ${PROJECT_TASKS_SHEET} sheet, where Workday lists the project's tasks.`);
+  }
+  const headerIndex = tasksSheet.rows.findIndex((row) => {
+    const columns = columnIndexes(row);
+    return columns.has(key("Phase de projet")) && columns.has(key("Tâche de projet"));
+  });
+  if (headerIndex < 0) {
+    throw new Error(`The ${PROJECT_TASKS_SHEET} sheet has no "Phase de projet" and "Tâche de projet" columns.`);
+  }
+  const columns = columnIndexes(tasksSheet.rows[headerIndex]);
+  const phaseColumn = columns.get(key("Phase de projet"));
+  const taskColumn = columns.get(key("Tâche de projet"));
+
+  const tasks = new Map();
+  for (const row of tasksSheet.rows.slice(headerIndex + 1)) {
+    const phase = text(row[phaseColumn]);
+    const task = text(row[taskColumn]);
+    if (!task) continue;
+    addTask(tasks, { name: task === UNNAMED_TASK && phase ? phase : task });
+  }
+
+  return {
+    name,
+    ...(id ? { code: id } : {}),
+    status: inactive ? "archived" : "active",
+    tasks: [...tasks.values()],
+  };
+}
+
+function isPlanSheet(sheet) {
+  const columns = columnIndexes(sheet.rows[0]);
+  return columns.has(key(PLAN_COLUMNS.number)) && columns.has(key(PLAN_COLUMNS.customName));
+}
+
+/**
+ * Reads a project plan: a numbered row starts a phase, and each `T` row
+ * under it is a task. The plan doesn't name its project, so the project has
+ * no name.
+ */
+function readPlan(sheet) {
+  const columns = columnIndexes(sheet.rows[0]);
+  const column = (name) => columns.get(key(name));
+  if (column(PLAN_COLUMNS.phase) === undefined) {
+    throw new Error(`The ${sheet.name} sheet has no "${PLAN_COLUMNS.phase}" column.`);
+  }
+
+  const tasks = new Map();
+  let phase = "";
+  for (const [index, row] of sheet.rows.entries()) {
+    if (index === 0 || row.every((cell) => text(cell) === "")) continue;
+    const where = `Row ${index + 1}`;
+    const number = text(row[column(PLAN_COLUMNS.number)]);
+
+    if (/^\d+$/.test(number)) {
+      phase = text(row[column(PLAN_COLUMNS.phase)]);
+      continue;
+    }
+    if (number.toUpperCase() !== "T") {
+      throw new Error(`${where} is invalid. "${PLAN_COLUMNS.number}" must be a phase number or T, not "${number}".`);
+    }
+
+    const name = text(row[column(PLAN_COLUMNS.customName)]) || phase;
+    if (!name) {
+      throw new Error(`${where} is invalid. A task without "${PLAN_COLUMNS.customName}" needs a phase above it.`);
+    }
+    const cell = (name) => (column(name) === undefined ? undefined : row[column(name)]);
+    const task = { name };
+    if (isYes(cell(PLAN_COLUMNS.closed), where, PLAN_COLUMNS.closed)) {
+      // Only a closed task changes its status: one the user archived in Ajour stays archived.
+      task.status = "archived";
+    }
+    if (column(PLAN_COLUMNS.nonBillable) !== undefined) {
+      task.billable = !isYes(cell(PLAN_COLUMNS.nonBillable), where, PLAN_COLUMNS.nonBillable);
+    }
+    const estimate = hours(cell(PLAN_COLUMNS.estimate), where, PLAN_COLUMNS.estimate);
+    if (estimate !== undefined && estimate > 0) {
+      task.budgetMs = Math.round(estimate * MS_PER_HOUR);
+    }
+    addTask(tasks, task);
+  }
+
+  return { status: "active", tasks: [...tasks.values()] };
+}
+
+export async function importProjects(sheets) {
+  const summary = findSheet(sheets, PROJECT_SUMMARY_SHEET);
+  if (summary) {
+    return { projects: [readProjectExport(sheets, summary)] };
+  }
+  const plan = sheets.find(isPlanSheet);
+  if (plan) {
+    return { projects: [readPlan(plan)] };
+  }
+  throw new Error(
+    "This file is not a Workday project export or project plan. The Workday schema reads Workday's Excel exports in French: the project export, with a Récapitulatif sheet, and the project plan.",
+  );
 }

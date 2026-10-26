@@ -1,31 +1,14 @@
 {
   "id": "workday-project-data",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "apiVersion": 1,
   "displayName": "Workday",
-  "description": "Shapes project and task records for Workday-compatible transfers without connecting to Workday.",
+  "description": "Imports a project and its tasks from Workday's Excel exports, in French. Import the project export (Afficher un projet) here, and the project plan with Import tasks… on the project. It never connects to Workday.",
   "iconSvg": "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><path fill=\"currentColor\" d=\"M4 4h16v16H4zM6 7v2h12V7zm0 4v2h5v-2zm7 0v2h5v-2zm-7 4v2h5v-2zm7 0v2h5v-2z\"/></svg>",
   "entrypoint": "dist/plugin.mjs",
   "capabilities": {
     "projectDataShape": {
-      "apiVersion": 1,
-      "datasets": [
-        {
-          "id": "projects",
-          "displayName": "Projects",
-          "columns": [
-            { "key": "project", "header": "project", "type": "string", "required": true, "width": 28 },
-            { "key": "code", "header": "code", "type": "string", "width": 16 },
-            { "key": "color", "header": "color", "type": "string", "width": 14 },
-            { "key": "status", "header": "status", "type": "string", "required": true, "width": 14 },
-            { "key": "task", "header": "task", "type": "string", "width": 28 },
-            { "key": "taskStatus", "header": "task_status", "type": "string", "width": 16 },
-            { "key": "billable", "header": "billable", "type": "string", "width": 16 },
-            { "key": "budgetHours", "header": "budget_hours", "type": "number", "width": 16 },
-            { "key": "adjustmentHours", "header": "adjustment_hours", "type": "number", "width": 18 }
-          ]
-        }
-      ]
+      "apiVersion": 1
     }
   }
 }

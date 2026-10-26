@@ -7,9 +7,10 @@ export interface GitHubScope {
 }
 
 export interface GitHubConfig {
+  /** The connection `ajour.http` sends through. */
+  connectionId: string;
+  /** The GitHub URL the user saved, as an origin: what an issue's or pull request's address starts with. */
   hostUrl: string;
-  apiUrl: string;
-  token: string;
   include: GitHubScope[];
   exclude: GitHubScope[];
   hideDrafts: boolean;
@@ -52,32 +53,26 @@ function parseHostUrl(value: unknown) {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error('GitHub field "GitHub URL" must use HTTP or HTTPS.');
   }
+  if (url.hostname.toLowerCase() === "www.github.com") {
+    // Ajour derives api.github.com from github.com alone.
+    throw new Error('GitHub field "GitHub URL" for GitHub.com is https://github.com, without www.');
+  }
   return url.origin;
-}
-
-/** GitHub.com serves its API from api.github.com; GitHub Enterprise Server from /api. */
-export function graphqlUrlForHost(hostUrl: string) {
-  const host = new URL(hostUrl).hostname.toLowerCase();
-  return host === "github.com" || host === "www.github.com"
-    ? "https://api.github.com/graphql"
-    : `${hostUrl}/api/graphql`;
 }
 
 function parseBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-export function buildGitHubConfig(values: ConnectorFieldValues): GitHubConfig {
-  const parsed = parseConnectorFieldValues(values);
-  if (typeof parsed.token !== "string" || !parsed.token.trim()) {
-    throw new Error('GitHub field "Personal access token" is required.');
-  }
-
-  const hostUrl = parseHostUrl(parsed.hostUrl);
+/**
+ * The settings of a connection Ajour hands to an operation. They hold no token:
+ * that stays with Ajour's broker, which attaches it to each request.
+ */
+export function buildGitHubConfig(connection: { id: string; config: ConnectorFieldValues }): GitHubConfig {
+  const parsed = parseConnectorFieldValues(connection.config);
   return {
-    hostUrl,
-    apiUrl: graphqlUrlForHost(hostUrl),
-    token: parsed.token.trim(),
+    connectionId: connection.id,
+    hostUrl: parseHostUrl(parsed.hostUrl),
     include: parseScopes(parsed.include, "Only these organizations or repositories"),
     exclude: parseScopes(parsed.exclude, "Never these organizations or repositories"),
     hideDrafts: parseBoolean(parsed.hideDrafts, false),

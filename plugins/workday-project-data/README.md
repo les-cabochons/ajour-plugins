@@ -40,21 +40,21 @@ API 4 (les-cabochons/ajour#403). The import contract is unchanged.
 
 `types.check.ts` holds `plugin.json` to the API 4 manifest type of
 `@ajour/plugin-sdk`. The SDK is not on npm yet, so the packed package is
-vendored in `vendor/ajour-plugin-sdk-0.1.0.tgz` and installed as a `file:`
-dev dependency. It was built from Ajour commit
-`13e1c1c0` (`packages/plugin-sdk`, version 0.1.0). To refresh it:
+vendored in the repository's `vendor/ajour-plugin-sdk-0.1.0.tgz`, shared by
+every plugin, and installed as a `file:../../vendor/...` dev dependency. See
+`vendor/README.md` for the Ajour commit it was built from. To refresh it:
 
 ```sh
 # in an Ajour checkout
 corepack pnpm install --frozen-lockfile
 corepack pnpm --filter @ajour/plugin-sdk build
-cd packages/plugin-sdk && npm pack
-# copy ajour-plugin-sdk-<version>.tgz to vendor/, point package.json at it,
-# run `just install`, and update the commit above
+cd packages/plugin-sdk && pnpm pack --pack-destination <this repo>/vendor
+# point each plugin's package.json at the new file, run `just install`, and
+# update the commit in vendor/README.md
 ```
 
 Once the SDK is published, swap the `file:` dependency for a version range and
-delete `vendor/`.
+delete the root `vendor/`.
 
 The official plugin source lists it as coming soon, without files. To try it,
 run `just package workday-project-data` from the repository root and install

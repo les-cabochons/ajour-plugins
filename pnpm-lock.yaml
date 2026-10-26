@@ -64,16 +64,16 @@ importers:
   plugins/workday-project-data:
     devDependencies:
       '@ajour/plugin-sdk':
-        specifier: file:vendor/ajour-plugin-sdk-0.1.0.tgz
-        version: file:plugins/workday-project-data/vendor/ajour-plugin-sdk-0.1.0.tgz
+        specifier: file:../../vendor/ajour-plugin-sdk-0.1.0.tgz
+        version: file:vendor/ajour-plugin-sdk-0.1.0.tgz
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
 
 packages:
 
-  '@ajour/plugin-sdk@file:plugins/workday-project-data/vendor/ajour-plugin-sdk-0.1.0.tgz':
-    resolution: {integrity: sha512-iwDnNOnTy8q/iM/hX1F5h0FVvZ0cRFEcwKWPxCxfHoJ1i5MRynDLABGjYjk4KhblohMayKCESgROVC7fIxB45Q==, tarball: file:plugins/workday-project-data/vendor/ajour-plugin-sdk-0.1.0.tgz}
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz':
+    resolution: {integrity: sha512-o/Yy6UyB2UwGch9Kozdju1vcbRHGKSuViZDkS9j33lPxmlP2XTqPh462XFbBf33l5DBXb7SBLtsvQpBcYzbm2g==, tarball: file:vendor/ajour-plugin-sdk-0.1.0.tgz}
     version: 0.1.0
 
   '@jridgewell/sourcemap-codec@1.6.0':
@@ -489,7 +489,7 @@ packages:
 
 snapshots:
 
-  '@ajour/plugin-sdk@file:plugins/workday-project-data/vendor/ajour-plugin-sdk-0.1.0.tgz': {}
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz': {}
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 

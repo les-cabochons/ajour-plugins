@@ -19,8 +19,14 @@ const manifest = {
 } satisfies PluginManifest;
 
 // A schema that only imports declares no datasets, so it has no export.
-type Exact<Actual extends Expected, Expected> = Actual;
-export type NoDatasets = Exact<
+// `Exact` is true only when each type is assignable to the other, so a
+// declared export (datasets) or a missing apiVersion makes the assignment fail.
+type Exact<Actual, Expected> = [Actual] extends [Expected]
+  ? [Expected] extends [Actual]
+    ? true
+    : false
+  : false;
+export const noDatasets: Exact<
   typeof manifest.capabilities.projectDataShape,
   { apiVersion: 1; datasets?: undefined }
->;
+> = true;

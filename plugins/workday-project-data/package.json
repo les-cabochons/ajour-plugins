@@ -39,7 +39,7 @@
     "verify": "corepack pnpm typecheck && corepack pnpm test"
   },
   "devDependencies": {
-    "@ajour/plugin-sdk": "file:vendor/ajour-plugin-sdk-0.1.0.tgz",
+    "@ajour/plugin-sdk": "file:../../vendor/ajour-plugin-sdk-0.1.0.tgz",
     "typescript": "^5.8.2"
   }
 }

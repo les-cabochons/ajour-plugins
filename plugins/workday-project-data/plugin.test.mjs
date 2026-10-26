@@ -3,6 +3,109 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { importProjects } from "./src/plugin.mjs";
 
+/**
+ * The source with its comments, strings, template text and regular
+ * expressions blanked, so a purity check sees code only: a comment saying
+ * "no fetch" must not fail it, and a string holding "fetch" must not hide it.
+ * Template `${...}` expressions stay, since they run.
+ */
+function withoutCommentsAndStrings(source) {
+  let out = "";
+  const templates = []; // brace depth at each open `${`
+  let depth = 0;
+  let previous = ""; // the last code character that is not whitespace
+  let i = 0;
+  const blank = (text) => text.replace(/[^\n]/g, " ");
+  function skipTemplateText() {
+    const start = i;
+    while (i < source.length && source[i] !== "`" && !(source[i] === "$" && source[i + 1] === "{")) {
+      i += source[i] === "\\" ? 2 : 1;
+    }
+    out += blank(source.slice(start, i));
+    if (source[i] === "`") {
+      out += " ";
+      i += 1;
+    } else if (i < source.length) {
+      out += "  ";
+      i += 2;
+      templates.push(depth);
+      depth += 1;
+    }
+  }
+  while (i < source.length) {
+    const char = source[i];
+    const next = source[i + 1];
+    if (char === "/" && next === "/") {
+      const end = source.indexOf("\n", i);
+      const stop = end === -1 ? source.length : end;
+      out += blank(source.slice(i, stop));
+      i = stop;
+    } else if (char === "/" && next === "*") {
+      const end = source.indexOf("*/", i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += blank(source.slice(i, stop));
+      i = stop;
+    } else if (char === '"' || char === "'") {
+      const start = i;
+      i += 1;
+      while (i < source.length && source[i] !== char && source[i] !== "\n") {
+        i += source[i] === "\\" ? 2 : 1;
+      }
+      i += 1;
+      out += blank(source.slice(start, i));
+      previous = char;
+    } else if (char === "`") {
+      out += " ";
+      i += 1;
+      skipTemplateText();
+      previous = "`";
+    } else if (char === "}" && templates.length > 0 && templates.at(-1) === depth - 1) {
+      templates.pop();
+      depth -= 1;
+      out += " ";
+      i += 1;
+      skipTemplateText();
+    } else if (char === "/" && (previous === "" || "(,=:[!&|?{};".includes(previous))) {
+      const start = i;
+      i += 1;
+      let inClass = false;
+      while (i < source.length && source[i] !== "\n" && (inClass || source[i] !== "/")) {
+        if (source[i] === "\\") i += 1;
+        else if (source[i] === "[") inClass = true;
+        else if (source[i] === "]") inClass = false;
+        i += 1;
+      }
+      i += 1;
+      while (/[a-z]/.test(source[i] ?? "")) i += 1;
+      out += blank(source.slice(start, i));
+      previous = "/";
+    } else {
+      if (char === "{") depth += 1;
+      if (char === "}") depth -= 1;
+      out += char;
+      if (!/\s/.test(char)) previous = char;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+test("the purity check reads code only", () => {
+  const code = [
+    "// fetch(url) in a comment",
+    "/* import x from 'y'; process */",
+    "const a = 'fetch';",
+    'const b = "require(x)";',
+    "const c = `process ${a} Buffer`;",
+    "const d = /[\"']fetch/g;",
+    "const e = `${fetch(a)}`;",
+  ].join("\n");
+  const stripped = withoutCommentsAndStrings(code);
+  assert.equal(stripped.match(/\bfetch\b/g)?.length, 1, stripped);
+  assert.doesNotMatch(stripped, /\b(?:process|Buffer|require|import)\b/);
+  assert.equal(stripped.split("\n").length, code.split("\n").length);
+});
+
 // Laid out like Workday's French exports, with made-up projects and people.
 
 /** The project export ("Afficher un projet"), as Ajour reads its sheets. */
@@ -84,7 +187,9 @@ test("keeps the version of plugin.json and package.json together", async () => {
 });
 
 test("runs in a sandboxed browser worker: no import, no Node global, no network", async () => {
-  const source = await readFile(new URL("./src/plugin.mjs", import.meta.url), "utf8");
+  const source = withoutCommentsAndStrings(
+    await readFile(new URL("./src/plugin.mjs", import.meta.url), "utf8"),
+  );
   assert.doesNotMatch(source, /^\s*import\s/m, "an import would load a module the sandbox does not serve");
   assert.doesNotMatch(source, /\bimport\s*\(/, "a dynamic import would load a module the sandbox does not serve");
   assert.doesNotMatch(source, /\brequire\s*\(/);

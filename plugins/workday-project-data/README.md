@@ -1,12 +1,22 @@
 # Ajour Project Data - Workday
 
-This standalone Ajour project-data-shape plugin maps canonical projects and
-tasks to the current Workday-compatible tabular shape. It does not authenticate
-with, connect to, read from, or write to Workday.
+This Ajour schema plugin imports a project and its tasks from Workday's Excel
+exports, in French. It only imports, and never connects to Workday.
 
-Ajour owns file formats such as Excel, CSV, and JSON. This plugin owns only the
-format-neutral dataset definition and the mappings to and from canonical project
-data.
+- **Project export** ("Afficher un projet", one file per project). Imported in
+  Settings › Projects. The `Récapitulatif` sheet gives the project's name
+  ("Nom du projet") and code ("Identifiant du projet"), and "Inactif" archives
+  it. `Ressources des tâches` gives one task per line.
+- **Project plan** ("View Project Planner Composite View"). It doesn't name
+  its project, so Ajour imports it with Import tasks… on the project. "Fermé"
+  archives a task, "Non facturable" makes it non-billable, and "Heures
+  estimatives" above 0 is its budget.
+
+In both, a task named `Regular`, Workday's task with no name of its own, takes
+its phase's name. Two tasks with the same name become one, and the open one
+wins.
+
+Ajour reads the Excel file and hands this plugin every sheet as rows of cells.
 
 ## Development
 

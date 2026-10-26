@@ -10,6 +10,9 @@
  *   project. Ajour imports it with Import tasks… on the project.
  *
  * Ajour hands over every sheet as rows of cells: row 1 is `rows[0]`.
+ *
+ * Error messages name the sheet, row and column, never a cell's value:
+ * Ajour records them in its events, which hold no file content.
  */
 
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -61,7 +64,7 @@ function isYes(value, where, column) {
   const answer = key(value);
   if (answer === "oui" || answer === "yes") return true;
   if (answer === "" || answer === "non" || answer === "no") return false;
-  throw new Error(`${where} is invalid. "${column}" must be Oui or Non, not "${text(value)}".`);
+  throw new Error(`${where} is invalid. "${column}" must be Oui or Non.`);
 }
 
 /** Hours from a number or text with a decimal comma. An empty cell is undefined. */
@@ -71,7 +74,7 @@ function hours(value, where, column) {
   if (!normalized) return undefined;
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`${where} is invalid. "${column}" must be a number of hours, not "${text(value)}".`);
+    throw new Error(`${where} is invalid. "${column}" must be a number of hours.`);
   }
   return parsed;
 }
@@ -173,7 +176,7 @@ function readPlan(sheet) {
       continue;
     }
     if (number.toUpperCase() !== "T") {
-      throw new Error(`${where} is invalid. "${PLAN_COLUMNS.number}" must be a phase number or T, not "${number}".`);
+      throw new Error(`${where} is invalid. "${PLAN_COLUMNS.number}" must be a phase number or T.`);
     }
 
     const name = text(row[column(PLAN_COLUMNS.customName)]) || phase;

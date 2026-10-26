@@ -119,14 +119,18 @@ test("keeps the open task when a closed one has the same name", async () => {
   assert.deepEqual(result.projects[0].tasks, [{ name: "optimisation", billable: true, budgetMs: 10_800_000 }]);
 });
 
-test("names the row and column of a value it can't read", async () => {
+test("names the row and column of a value it can't read, but not the value", async () => {
   await assert.rejects(
-    importProjects(projectPlan([["1", "Support"], ["T", "Regular", "Billet", null, null, 0, null, null, 0, "Peut-être"]])),
-    { message: 'Row 3 is invalid. "Non facturable" must be Oui or Non, not "Peut-être".' },
+    importProjects(projectPlan([["1", "Support"], ["T", "Regular", "Billet", null, null, 0, null, null, 0, "Client secret"]])),
+    { message: 'Row 3 is invalid. "Non facturable" must be Oui or Non.' },
   );
   await assert.rejects(
-    importProjects(projectPlan([["X", "Support"]])),
-    { message: 'Row 2 is invalid. "Numéro" must be a phase number or T, not "X".' },
+    importProjects(projectPlan([["1", "Support"], ["T", "Regular", "Billet", null, null, "Client secret"]])),
+    { message: 'Row 3 is invalid. "Heures estimatives" must be a number of hours.' },
+  );
+  await assert.rejects(
+    importProjects(projectPlan([["Client secret", "Support"]])),
+    { message: 'Row 2 is invalid. "Numéro" must be a phase number or T.' },
   );
 });
 

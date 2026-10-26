@@ -1,7 +1,7 @@
 {
   "id": "workday-agent",
-  "version": "0.5.0",
-  "apiVersion": 3,
+  "version": "0.6.0",
+  "apiVersion": 4,
   "displayName": "Workday (agent)",
   "description": "Commits your Ajour week changes to the Workday timesheet, and submits the week, through a coding agent and a Chrome window. Unofficial: it drives Workday's web page and breaks when the page changes. It never signs in for you.",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#f5a623\"/><path d=\"M6 10l2 6 2-4 2 4 2-4 2 4 2-6\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
@@ -20,6 +20,7 @@
           "label": "Commit to Workday",
           "placement": "commit-week",
           "prompt": "prompts/commit-week.md",
+          "tools": ["get_week_changes", "list_time_entries", "mark_entries_committed"],
           "estimateMinutes": 10,
           "weekLink": "{{settings.timesheetUrl}}",
           "settings": [
@@ -46,6 +47,7 @@
           "label": "Check Workday and submit",
           "placement": "submit-week",
           "prompt": "prompts/submit-week.md",
+          "tools": ["get_week_status", "submit_week"],
           "estimateMinutes": 10,
           "weekLink": "{{settings.timesheetUrl}}",
           "settings": [

@@ -1,6 +1,6 @@
 {
   "name": "@les-cabochons/ajp-workday-agent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -37,5 +37,9 @@
   "scripts": {
     "test": "node --test",
     "verify": "corepack pnpm test"
+  },
+  "devDependencies": {
+    "@ajour/plugin-sdk": "file:../../vendor/ajour-plugin-sdk-0.1.0.tgz",
+    "typescript": "^5.8.2"
   }
 }

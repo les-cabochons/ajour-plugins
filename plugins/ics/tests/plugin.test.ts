@@ -1,78 +1,66 @@
-import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listCalendarEvents, validateConnection } from "../src/plugin.ts";
+import { SECRET, connection, feed, fixture } from "./support/ajour.ts";
 
-const ADDRESS =
-  "webcal://calendar.google.com/calendar/ical/me%40example.com/private-5f3a9c0d1e2f3a4b5c6d7e8f9a0b1c21e/basic.ics";
-const google = readFileSync(new URL("./fixtures/google.ics", import.meta.url), "utf8");
-
-function serve(body: string, status = 200) {
-  const fetchMock = vi.fn(async () => new Response(body, { status }));
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
+const context = { capabilities: ["calendar" as const] };
+const week = { from: "2026-10-12", to: "2026-10-18", timeZone: "America/Toronto" };
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("validateConnection", () => {
-  it("fetches the calendar and stores the https address and the email", async () => {
-    const fetchMock = serve(google);
+  it("fetches the calendar once and returns the email, not the address", async () => {
+    const fake = feed(fixture("google.ics"));
 
     await expect(
-      validateConnection({ calendarUrl: ADDRESS, email: " Alex@Example.com " }),
+      validateConnection(connection({ email: " Alex@Example.com " }), context),
     ).resolves.toEqual({
-      normalizedConfig: {
-        calendarUrl: ADDRESS.replace("webcal:", "https:"),
-        email: "alex@example.com",
-      },
+      normalizedConfig: { email: "alex@example.com" },
       connectionSummary: {
         Calendar: "alex@example.com",
         "Time zone": "America/Toronto",
         Events: 9,
       },
     });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fake.requests).toHaveLength(1);
+    expect(fake.requests[0]).toMatchObject({ connectionId: "connection-1", method: "GET", path: "" });
   });
 
-  it("refuses an invalid email and a missing address", async () => {
-    serve(google);
+  it("returns an empty config when there is no email", async () => {
+    feed(fixture("outlook.ics"));
+
+    const result = await validateConnection(connection(), context);
+
+    expect(result.normalizedConfig).toEqual({});
+  });
+
+  it("refuses an invalid email before it asks for the calendar", async () => {
+    const fake = feed(fixture("google.ics"));
+
     await expect(
-      validateConnection({ calendarUrl: ADDRESS, email: "alex" }),
+      validateConnection(connection({ email: "alex" }), context),
     ).rejects.toThrow("not a valid email address");
-    await expect(validateConnection({})).rejects.toThrow(
-      "Paste the calendar's ICS address",
-    );
+    expect(fake.requests).toEqual([]);
   });
 
   it("keeps the address out of the error when the calendar is gone", async () => {
-    serve("gone", 404);
-    const error = await validateConnection({ calendarUrl: ADDRESS }).catch(
+    feed(`Not found: https://calendar.google.com/${SECRET}`, { status: 404 });
+
+    const error = await validateConnection(connection(), context).catch(
       (reason: unknown) => reason as Error,
     );
+
     expect(error?.message).toContain("HTTP 404");
-    expect(error?.message).not.toContain("private-5f3a");
+    expect(error?.message).not.toContain(SECRET);
   });
 });
 
 describe("listCalendarEvents", () => {
-  it("returns the week's events for the connection", async () => {
-    serve(google);
+  it("returns the week's Google events for the connection", async () => {
+    feed(fixture("google.ics"));
 
-    const result = await listCalendarEvents(
-      {
-        id: "connection-1",
-        pluginId: "ics",
-        label: "Work",
-        tenantLabel: "Google Calendar",
-        autoSync: false,
-        autoSyncIntervalMinutes: 15,
-        connectedAt: 1,
-        config: { calendarUrl: ADDRESS },
-      },
-      { from: "2026-10-12", to: "2026-10-18", timeZone: "America/Toronto" },
-    );
+    const result = await listCalendarEvents(connection(), week);
 
     expect(result.events.map((event) => event.title)).toEqual([
       "Release night",
@@ -84,5 +72,42 @@ describe("listCalendarEvents", () => {
       "Nordic kickoff",
       "Daily standup",
     ]);
+  });
+
+  it("returns the week's Outlook events", async () => {
+    feed(fixture("outlook.ics"));
+
+    const result = await listCalendarEvents(connection(), week);
+
+    expect(result.events.map((event) => event.title)).toEqual([
+      "Training",
+      "Pay invoices",
+      "1:1 with Maria",
+      "Architecture review",
+    ]);
+  });
+
+  it("returns the week's Exchange events, with the user's reply from their email", async () => {
+    feed(fixture("exchange.ics"));
+
+    const result = await listCalendarEvents(
+      connection({ email: "Alex.Trepanier@contoso.com" }),
+      week,
+    );
+
+    expect(
+      result.events.find((event) => event.eventId === "exchange-sprint-review"),
+    ).toMatchObject({ response: "accepted", isOrganizer: true });
+    expect(
+      result.events.find((event) => event.eventId === "exchange-other-team"),
+    ).toMatchObject({ response: "unknown", isOrganizer: false });
+  });
+
+  it("says what is wrong with the feed", async () => {
+    feed("<html></html>");
+
+    await expect(listCalendarEvents(connection(), week)).rejects.toThrow(
+      "did not return a calendar",
+    );
   });
 });

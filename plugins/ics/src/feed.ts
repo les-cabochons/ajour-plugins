@@ -1,48 +1,22 @@
+import type {} from "@ajour/plugin-sdk/globals";
+
 /*
- * Fetches a calendar feed from its address. The address is a bearer secret:
- * anyone who has it can read the calendar. No error message built here may
- * contain it, and it is never sent anywhere but its own host.
+ * Fetches a calendar feed through Ajour's broker. The feed's address is a
+ * bearer secret: anyone who has it can read the calendar. It is the
+ * connection's secret address, so the plugin never holds it. The plugin asks
+ * for the feed with an empty path, and the broker builds the request from the
+ * saved address (turning webcal:// into https://), follows up to three https
+ * redirects to any host, and hands back the status, the headers and the body,
+ * never the address the feed came from. No message built here can contain it.
  */
 
 export const FEED_TIMEOUT_MS = 20_000;
+/** The plugin's own cap. The broker refuses an answer over 8 MB before this. */
 export const MAX_FEED_BYTES = 5 * 1024 * 1024;
-export const MAX_REDIRECTS = 3;
 
 export interface FetchFeedOptions {
-  fetchImpl?: typeof fetch;
   timeoutMs?: number;
   maxBytes?: number;
-}
-
-/**
- * Accepts the https and webcal addresses calendars publish and returns the
- * https address to fetch. Outlook and Apple hand out webcal links.
- */
-export function normalizeCalendarAddress(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error("Paste the calendar's ICS address.");
-  }
-  let url: URL;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    throw new Error("The calendar address is not a valid web address.");
-  }
-  if (url.protocol === "webcal:" || url.protocol === "webcals:") {
-    url = new URL(`https:${url.href.slice(url.protocol.length)}`);
-  }
-  if (url.protocol !== "https:") {
-    throw new Error(
-      "The calendar address must start with https:// or webcal://.",
-    );
-  }
-  if (url.username || url.password) {
-    throw new Error(
-      "The calendar address must not contain a user name or password.",
-    );
-  }
-  url.hash = "";
-  return url.toString();
 }
 
 function statusMessage(status: number) {
@@ -61,97 +35,87 @@ function statusMessage(status: number) {
   return `The calendar address answered HTTP ${status} instead of a calendar.`;
 }
 
-async function readLimited(response: Response, maxBytes: number) {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    throw tooLarge(maxBytes);
-  }
-  if (!response.body) {
-    return "";
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw tooLarge(maxBytes);
-    }
-    chunks.push(value);
-  }
-  return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
-}
-
 function tooLarge(maxBytes: number) {
   return new Error(
     `The calendar is larger than ${Math.round(maxBytes / 1024 / 1024)} MB. Publish a smaller calendar, or one with less detail.`,
   );
 }
 
-/** Returns the feed's text. Follows at most three redirects, all https. */
+function timedOut() {
+  return new Error(
+    "The calendar took longer than 20 seconds to answer. Try again later.",
+  );
+}
+
+/**
+ * What a request the broker did not send says. The broker's own messages are
+ * fixed text that never holds the address, so the ones that tell the user what
+ * to do (a redirect it refused, an address that is not an address) are kept.
+ */
+function brokerFailure(error: unknown, maxBytes: number) {
+  const { name, code, message } = (error ?? {}) as {
+    name?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  if (name === "AjourRequestError" && typeof message === "string") {
+    if (code === "timeout") return timedOut();
+    if (code === "limit" && /larger than/.test(message)) {
+      return tooLarge(maxBytes);
+    }
+    if (code === "refused" || code === "limit") return new Error(message);
+  }
+  return new Error(
+    "Could not reach the calendar. Check your connection and the address.",
+  );
+}
+
+/** Returns the feed's text, or throws an error that never holds the address. */
 export async function fetchCalendarFeed(
-  address: string,
+  connectionId: string,
   options: FetchFeedOptions = {},
 ): Promise<string> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const maxBytes = options.maxBytes ?? MAX_FEED_BYTES;
   const signal = AbortSignal.timeout(options.timeoutMs ?? FEED_TIMEOUT_MS);
-  let url = normalizeCalendarAddress(address);
 
-  for (let redirects = 0; ; redirects += 1) {
-    let response: Response;
-    try {
-      response = await fetchImpl(url, {
-        redirect: "manual",
-        signal,
-        headers: { Accept: "text/calendar, */*;q=0.1" },
-      });
-    } catch (error) {
-      if (signal.aborted) {
-        throw new Error(
-          "The calendar took longer than 20 seconds to answer. Try again later.",
-        );
-      }
-      const code =
-        error instanceof Error && "cause" in error
-          ? (error.cause as { code?: unknown } | undefined)?.code
-          : undefined;
-      throw new Error(
-        `Could not reach the calendar${typeof code === "string" ? ` (${code})` : ""}. Check your connection and the address.`,
-      );
-    }
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) {
-        throw new Error("The calendar redirected without a new address.");
-      }
-      if (redirects >= MAX_REDIRECTS) {
-        throw new Error("The calendar redirected too many times.");
-      }
-      const next = new URL(location, url);
-      if (next.protocol !== "https:") {
-        throw new Error("The calendar redirected to an address without https.");
-      }
-      url = next.toString();
-      continue;
-    }
-
-    if (!response.ok) {
-      throw new Error(statusMessage(response.status));
-    }
-
-    const text = await readLimited(
-      response,
-      options.maxBytes ?? MAX_FEED_BYTES,
-    );
-    if (!/^\s*BEGIN:VCALENDAR/i.test(text.replace(/^﻿/, ""))) {
-      throw new Error(
-        "The address did not return a calendar. Use the ICS address, not the address of the calendar's web page.",
-      );
-    }
-    return text;
+  let response: Awaited<ReturnType<typeof ajour.http>>;
+  try {
+    response = await ajour.http({
+      connectionId,
+      method: "GET",
+      path: "",
+      headers: { Accept: "text/calendar, */*;q=0.1" },
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw timedOut();
+    throw brokerFailure(error, maxBytes);
   }
+
+  if (!response.ok) {
+    throw new Error(statusMessage(response.status));
+  }
+
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (signal.aborted) throw timedOut();
+    throw brokerFailure(error, maxBytes);
+  }
+  // A string is never shorter in UTF-8 than it is long, so only a feed near
+  // the cap needs its bytes counted.
+  if (
+    text.length > maxBytes ||
+    (text.length * 3 > maxBytes &&
+      new TextEncoder().encode(text).byteLength > maxBytes)
+  ) {
+    throw tooLarge(maxBytes);
+  }
+  if (!/^\s*BEGIN:VCALENDAR/i.test(text.replace(/^﻿/, ""))) {
+    throw new Error(
+      "The address did not return a calendar. Use the ICS address, not the address of the calendar's web page.",
+    );
+  }
+  return text;
 }

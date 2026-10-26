@@ -1,6 +1,6 @@
 {
   "name": "@les-cabochons/ajp-workday",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -35,7 +35,11 @@
   },
   "scripts": {
     "test": "node --test",
-    "typecheck": "node --check src/plugin.mjs",
+    "typecheck": "node --check src/plugin.mjs && tsc -p tsconfig.json",
     "verify": "corepack pnpm typecheck && corepack pnpm test"
+  },
+  "devDependencies": {
+    "@ajour/plugin-sdk": "file:../../vendor/ajour-plugin-sdk-0.1.0.tgz",
+    "typescript": "^5.8.2"
   }
 }

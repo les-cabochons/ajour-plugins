@@ -34,7 +34,7 @@ Keep a list of what you checked, fixed and left. The final summary uses it.
 
 Send update_session: "Comparing Workday with Ajour."
 
-Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskProperties["workday-agent"].task, then taskName.
+Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskProperties["workday-agent"].task. Match it by taskName only when the change has no taskProperties: when taskProperties names a Workday task you cannot find, never fall back to taskName.
 
 An entry's comment has two lines. The first line is the note. When taskProperties["workday-agent"].task differs from taskName, the first line starts with taskName and ": ", such as "Knowledge transfer: Walked Sam through the sync worker", and is taskName alone when there is no note. The second line is the externalId. With an empty first line, the comment is the externalId alone. An older run wrote the comment on one line, as the note, then " · ", then the externalId: such a comment matches the same values.
 

@@ -33,16 +33,18 @@ There is no pace check when committing.
 
 Work day by day, Monday first. Send update_session when you start each day, for example "Tuesday: 2 changes."
 
-Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskProperties["workday-agent"].task, then taskName.
+Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskProperties["workday-agent"].task. Match it by taskName only when the change has no taskProperties: when taskProperties names a Workday task you cannot find, never fall back to taskName.
 
 An entry's comment has two lines. The first line is the note. When taskProperties["workday-agent"].task differs from taskName, the first line starts with taskName and ": ", such as "Knowledge transfer: Walked Sam through the sync worker", and is taskName alone when there is no note. The second line is the externalId. With an empty first line, the comment is the externalId alone. An older run wrote the comment on one line, as the note, then " · ", then the externalId: such a comment matches the same values. Write every comment this way.
 
-- **Added**: look first for an entry on that day and time type whose comment ends with the externalId. Found with the same hours and comment: it is already there. Found with other hours or another comment: edit it to the current values, as for an updated change. Not found: add it as a new entry.
-- **Updated**, same day and time type: find the Workday entry whose comment ends with the externalId, on the committed day, and edit its hours and comment.
-- **Updated**, moved (the day or the time type changed): a previous run may have stopped halfway through the move, so follow these steps in order, whatever you find.
-  1. Destination, the current day and time type: find the entry whose comment ends with the externalId. If it is there, make its hours and comment match the current values, editing it when they differ. If it is not there, add it with the current values. Take a snapshot and check the destination entry has the current hours and comment.
-  2. Source, the committed day and time type, only when it differs from the destination: if an entry whose comment ends with the externalId is there, delete it. Take a snapshot and check it is gone.
-  3. Mark the change only when the destination entry has the current values and the source has no entry with the externalId.
+Find an entry by its externalId on a day, in any time type. A day holds at most one Workday entry whose comment ends with a given externalId, and it may sit under another time type than the change's values give, for example after the user mapped the task to another Workday task. When you edit such an entry, set its time type to the current one too.
+
+- **Added**: look first for an entry on that day whose comment ends with the externalId. Found with the same time type, hours and comment: it is already there. Found with another time type, other hours or another comment: edit it to the current values, as for an updated change. Not found: add it as a new entry.
+- **Updated**, same day: find the Workday entry whose comment ends with the externalId, on that day, and make its time type, hours and comment match the current values.
+- **Updated**, moved to another day: a previous run may have stopped halfway through the move, so follow these steps in order, whatever you find.
+  1. Destination, the current day: find the entry whose comment ends with the externalId. If it is there, make its time type, hours and comment match the current values, editing it when they differ. If it is not there, add it with the current values. Take a snapshot and check the destination entry has the current time type, hours and comment.
+  2. Source, the committed day: if an entry whose comment ends with the externalId is there, delete it. Take a snapshot and check it is gone.
+  3. Mark the change only when the destination entry has the current values and the committed day has no entry with the externalId.
   If any step fails, ask with the choices "Retry" and "Stop", and do not mark the change. "Stop" ends the session as cancelled. The committed day or the current day may be in another week: get_week_changes lists a moved entry as one updated change in both weeks. Go to that week for that step, then come back to the week of {{weekOf}}.
 - **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. No entry on the committed day has its externalId: it is already gone, so mark it and go on. Never delete an entry without the externalId, even one that looks like it. If an entry on that day and time type with no externalId of yours looks like it (same hours or same note), leave it and note it for the summary.
 
@@ -64,7 +66,7 @@ Whatever you find, check every place you noted for that externalId during this r
   - The entry is not in the list: do not conclude it was deleted. It may have moved to another week. Leave the Workday entry as it is and ask with the choices "Skip" and "Stop". "Stop" ends the session as cancelled. Say in the summary that the user should commit the other week again or check that Workday entry.
   Do not mark anything for it. Say in the summary what you did for that entry and why.
 
-An updated change that did not move whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
+An updated change on the same day whose entry you cannot find by its externalId: never pick an entry by its hours alone. Look on the committed day and time type for an entry that could be it, one with no externalId of yours.
 
 - One or more could be it: ask the user and show what you see. For example: "I cannot find Mon, Acme · Build (1,5 h) by its ID. Workday has an entry there with 1,5 h and the comment 'Standup'. Is it the same entry?", with the choices "Yes, it is the same", "Skip" and "Stop". "Yes, it is the same": treat it as that entry, and add the externalId at the end of its comment when you save it. "Skip": skip the change and do not mark it. "Stop": end the session as cancelled.
 - None could be it: say so and ask with the choices "Skip" and "Stop".

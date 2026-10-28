@@ -91,6 +91,14 @@ test("the commit prompt finds an entry by its ID on a day in any time type, so a
   assert.match(commit, /Find an entry by its externalId on a day, in any time type\./);
   assert.match(commit, /\*\*Updated\*\*, moved to another day/);
   assert.doesNotMatch(commit, /the committed day and time type, only when it differs/);
+  assert.match(commit, /When it holds more, an earlier run stopped halfway/);
+});
+
+test("after a refused mark, the commit prompt reads the committed values again instead of reusing the first read", async () => {
+  const commit = await readFile(new URL("prompts/commit-week.md", root), "utf8");
+  assert.match(commit, /look in committedEntries for this entryId/);
+  assert.match(commit, /Never reuse the time type of the change you read first/);
+  assert.doesNotMatch(commit, /list_time_entries has no Workday name or code/);
 });
 
 test("the submit prompt never presses a Workday Submit button", async () => {

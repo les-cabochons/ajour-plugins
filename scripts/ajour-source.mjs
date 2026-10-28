@@ -92,6 +92,7 @@ const PLUGIN_CAPABILITIES = {
   schema: "schema",
   projectDataShape: "schema",
   projectProperties: null,
+  taskProperties: null,
 };
 
 const LISTING_KEYS = [

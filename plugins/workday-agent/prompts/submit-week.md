@@ -13,7 +13,8 @@ Keep a list of what you checked, fixed and left. The final summary uses it.
 5. `pace.status` is not "on-pace": ask before anything else, with the hours in a decimal comma, for example "The week has 30,5 h logged and 40 h expected by now. Submit it anyway?", with the choices "Submit anyway" and "Stop". "Stop": end the session as cancelled.
 6. `committedHoursByDay` is what Workday should hold each day. `committedEntries` lists each committed entry with its externalId and its committed values: the day, project, task, hours and note Workday should have. In the rules below, a committed entry's values read like a change's values.
 7. A change may have projectFullName and projectProperties. Use projectProperties["workday-agent"].code and .name for Workday; they already hold the defaults. Never use projectName to find a project: it is a short name only Ajour knows.
-8. Ajour gives hours as decimal numbers with a dot, such as 0.75. Workday writes and reads hours with a decimal comma: 45 minutes is 0,75 and 7.5 hours is 7,5. Convert when you type hours in Workday, and when you compare Workday's hours with Ajour's.
+8. A change may have taskProperties. Use taskProperties["workday-agent"].task as the Workday task; it already holds the default, the task's name. When it differs from taskName, taskName is the user's own task, tracked in Ajour only, and Workday gets that Workday task.
+9. Ajour gives hours as decimal numbers with a dot, such as 0.75. Workday writes and reads hours with a decimal comma: 45 minutes is 0,75 and 7.5 hours is 7,5. Convert when you type hours in Workday, and when you compare Workday's hours with Ajour's.
 
 ## 2. Open the timesheet
 
@@ -33,9 +34,9 @@ Keep a list of what you checked, fixed and left. The final summary uses it.
 
 Send update_session: "Comparing Workday with Ajour."
 
-Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskName.
+Find a change's time type in Workday. Match the project by projectProperties["workday-agent"].code first, then projectProperties["workday-agent"].name, then projectFullName. If a change has neither projectProperties nor projectFullName, match the project by projectCode. Match the task by taskProperties["workday-agent"].task. Match it by taskName only when the change has no taskProperties: when taskProperties names a Workday task you cannot find, never fall back to taskName.
 
-The comment of an entry Ajour committed is the note, then " · ", then the externalId. With no note, the comment is the externalId alone.
+An entry's comment has two lines. The first line is the note. When taskProperties["workday-agent"].task differs from taskName, the first line starts with taskName and ": ", such as "Knowledge transfer: Walked Sam through the sync worker", and is taskName alone when there is no note. The second line is the externalId. With an empty first line, the comment is the externalId alone. An older run wrote the comment on one line, as the note, then " · ", then the externalId: such a comment matches the same values.
 
 For each day, Monday first, compare Workday's total for the day with committedHoursByDay, and each Workday entry whose comment ends with an externalId from committedEntries with that entry's committed values. Note every difference:
 
@@ -56,8 +57,8 @@ Ask once, listing each difference with its day, project, task, and hours in Work
 
 To add an entry, open the entry dialog from the day itself. Workday's page may be in English or French. Click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower. Fill the dialog in this order, because Workday clears the hours when the time type changes:
    1. Pick the time type first. Wait about two seconds with browser_wait_for, then take a snapshot and check the time type shows and the dialog has settled.
-   2. Type the hours with a decimal comma such as 0,75 (never type a dot), then the comment.
-   3. Take a snapshot and check the hours are still there before you confirm. If they are empty, type them again.
+   2. Type the hours with a decimal comma such as 0,75 (never type a dot). Then fill the comment with both of its lines at once, the line break included. Never press Enter in the dialog: it may confirm it.
+   3. Take a snapshot and check the hours and both lines of the comment are there before you confirm. If the hours are empty, type them again.
    The same applies when you edit an entry and change its time type: set the time type, wait, then set the hours. Confirm the dialog. Take a snapshot and check the entry shows in the day with the right hours.
 
 Workday shows an error on save: read the message. If it names a field you can fix, fix it once. Otherwise cancel the dialog, note the error, and ask with the choices "Leave it" and "Stop". "Stop" ends the session as cancelled.

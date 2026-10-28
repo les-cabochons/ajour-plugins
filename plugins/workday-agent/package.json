@@ -1,6 +1,6 @@
 {
   "name": "@les-cabochons/ajp-workday-agent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -10,7 +10,8 @@
     "features": [
       "timesheet-commit",
       "timesheet-submit",
-      "project-properties"
+      "project-properties",
+      "task-properties"
     ],
     "tags": [
       "workday",

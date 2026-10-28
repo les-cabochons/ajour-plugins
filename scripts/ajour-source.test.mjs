@@ -74,7 +74,7 @@ function writeHello(root, version = "1.0.0") {
     displayName: "Hello",
     description: "Says hello.",
     entrypoint: "src/plugin.ts",
-    capabilities: { connector: {}, projectProperties: {} },
+    capabilities: { connector: {}, projectProperties: {}, taskProperties: {} },
   });
   write(root, "plugins/hello/package.json", {
     name: "hello",

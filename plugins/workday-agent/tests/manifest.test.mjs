@@ -21,9 +21,9 @@ function unknownSlots(text, task) {
     );
 }
 
-test("the manifest is an agent-task plugin with project properties for API 3", () => {
+test("the manifest is an agent-task plugin with project and task properties for API 3", () => {
   assert.equal(manifest.apiVersion, 3);
-  assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties"]);
+  assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties", "taskProperties"]);
   assert.equal(manifest.entrypoint, undefined);
   assert.deepEqual(
     tasks.map((task) => [task.id, task.placement]),
@@ -63,10 +63,26 @@ test("the submit prompt repeats the commit prompt's shared rules word for word",
     ['1. Send update_session: "Opening Workday."', "say what the page shows."],
     ["Ajour gives hours as decimal numbers with a dot", "when you compare Workday's hours with Ajour's."],
     ["A change may have projectFullName and projectProperties.", "it is a short name only Ajour knows."],
-    ["Find a change's time type in Workday.", "Match the task by taskName."],
+    ["A change may have taskProperties.", "Workday gets that Workday task."],
+    ["Find a change's time type in Workday.", "then taskName."],
+    ["An entry's comment has two lines.", "such a comment matches the same values."],
     ["To add an entry, open the entry dialog from the day itself.", "check the entry shows in the day with the right hours."],
   ]) {
     assert.ok(submit.includes(block(commit, start, end)), `submit-week.md differs from commit-week.md from "${start}"`);
+  }
+});
+
+test("a task maps to a Workday task by a task property that defaults to its name", () => {
+  assert.deepEqual(
+    manifest.capabilities.taskProperties.fields.map((field) => [field.id, field.defaultFrom]),
+    [["task", "name"]],
+  );
+});
+
+test("both prompts read the Workday task from that property", async () => {
+  for (const name of ["commit-week.md", "submit-week.md"]) {
+    const prompt = await readFile(new URL(`prompts/${name}`, root), "utf8");
+    assert.match(prompt, /Match the task by taskProperties\["workday-agent"\]\.task, then taskName\./, name);
   }
 });
 

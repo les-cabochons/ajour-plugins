@@ -1,0 +1,523 @@
+{
+  "schemaVersion": 1,
+  "name": "Ajour official plugins",
+  "plugins": [
+    {
+      "id": "azure_devops",
+      "name": "Azure DevOps",
+      "description": "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
+      "version": "1.1.0",
+      "pluginApiVersion": 3,
+      "capabilities": [
+        "connector",
+        "codeHost"
+      ],
+      "features": [
+        "work-item-sync",
+        "estimate-update",
+        "pull-requests"
+      ],
+      "tags": [
+        "azure-devops",
+        "project-management",
+        "synchronization"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
+      "status": "available",
+      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "path": "plugins/azure-devops",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "892bf43e0544f8be3a6db385b5018be1c7ed83d737fb4855d70a5f5006d184df",
+          "size": 1071
+        },
+        {
+          "path": "package.json",
+          "sha256": "1c464a4b9a6950b820b9574117f5536a8c1673f8df9030d222ceef00a8136a27",
+          "size": 1175
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "c0179ae4df2fb322c3c92a33c6cff2e0450e422eb1b881cb8be4f4a46c176253",
+          "size": 7303
+        },
+        {
+          "path": "src/azure-devops.ts",
+          "sha256": "ca56a8e07a008d52d8b9a9df418e69f258f20b86f16abaf4c816ee00b0a3b5ff",
+          "size": 37937
+        },
+        {
+          "path": "src/comments.ts",
+          "sha256": "f5d6b34ed0d928a72ca3f33ffa64474556e1aafa8d3f8388155a3c1363f14cc0",
+          "size": 29494
+        },
+        {
+          "path": "src/contract.ts",
+          "sha256": "7fde892ec580619f178c9f446aba0d3d17fa7fb3326845ae65f86b8b6669adcc",
+          "size": 10370
+        },
+        {
+          "path": "src/description-patch.ts",
+          "sha256": "26c686292c7086a2e43af110d107fcb17fb59f353268e4ca1d2652ce3cccfd14",
+          "size": 9189
+        },
+        {
+          "path": "src/description-source.ts",
+          "sha256": "a5ee1100f6e636ee8d10ca4ec67cb1f53fc5fe516c21d66218d86c5160045261",
+          "size": 1507
+        },
+        {
+          "path": "src/description-write.ts",
+          "sha256": "dc30c49274bb34d60d27c7f0a7432e7be179787ef447e46e8a87f29f2ba20307",
+          "size": 6007
+        },
+        {
+          "path": "src/description.ts",
+          "sha256": "e65e32ad2116012b6ac6c5f407bd0a4095938de7f18e0249fa8f31521a90745b",
+          "size": 4306
+        },
+        {
+          "path": "src/estimate-sync.ts",
+          "sha256": "9fa89c0f6ff1f64d9ea97c04bff5414f5b481df9096045d64deb67b7d271b4d8",
+          "size": 2098
+        },
+        {
+          "path": "src/html-entities.ts",
+          "sha256": "82d6c8f2d645e34a0d936740e2b4b31e1c4cb661a162df2bcb8b11c5144d82e8",
+          "size": 3050
+        },
+        {
+          "path": "src/html-markdown.ts",
+          "sha256": "b52e4eb26713d94b668a8ac6a384e04fec0a3def8feb6b1d2de073097f868049",
+          "size": 46058
+        },
+        {
+          "path": "src/markdown-code.ts",
+          "sha256": "655f1d7e2408ced645fa6aada98c13adc6c1d683b19d1787a82215d7354eef95",
+          "size": 1883
+        },
+        {
+          "path": "src/markdown-html.ts",
+          "sha256": "763be2543b7e1033e11485146913deb209ecb775c0f73a50e5f10a4325d18ca3",
+          "size": 23056
+        },
+        {
+          "path": "src/plugin.ts",
+          "sha256": "730a569343804623d14054b1d179b6495d4eeba2b41fe4a96c6f7039c48c0078",
+          "size": 13087
+        },
+        {
+          "path": "src/priority-levels.ts",
+          "sha256": "01e490b9d3c6d8cfe74e788ba77f7c4e22340b3a4cb4fbe0ce179d36614b946e",
+          "size": 3452
+        },
+        {
+          "path": "src/pull-request-config.ts",
+          "sha256": "3b0a592f82868705fecf0e86f08a4ebc6e133a92779d5280626075b2989ebfb3",
+          "size": 4574
+        },
+        {
+          "path": "src/pull-requests.ts",
+          "sha256": "ae485ca83897c5b40c17fc4d1a6941f206694cb61347751f8a15781621846d2f",
+          "size": 24135
+        },
+        {
+          "path": "src/settle.ts",
+          "sha256": "a181fc4092b589bb466ee46189c08df54c968304693ff816dd5a5c889424db92",
+          "size": 4362
+        },
+        {
+          "path": "src/state-categories.ts",
+          "sha256": "132320f9bbb9ec3a43c24ff6d75467854956e897ca5bf566d197fa573ba5a023",
+          "size": 3835
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "Bring your GitHub issues into Ajour's backlog, and the pull requests you wrote or were asked to review.",
+      "version": "0.2.0",
+      "pluginApiVersion": 3,
+      "capabilities": [
+        "connector",
+        "codeHost"
+      ],
+      "features": [
+        "work-item-sync",
+        "pull-requests"
+      ],
+      "tags": [
+        "github",
+        "code-review",
+        "pull-requests"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
+      "status": "available",
+      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "path": "plugins/github",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cefb70dc3a5e34281052cacce4e03396f3f4b6eb36312f96d56e8091e559e21d",
+          "size": 1069
+        },
+        {
+          "path": "package.json",
+          "sha256": "34571b1aa22419c82af70f4a410b1b8d3921c4a156a32d1e07cc336b36363511",
+          "size": 1105
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "6877c61cb8b8429a59e24661be8a740795e1f55904a9b9b883a39af177e1bbc6",
+          "size": 3729
+        },
+        {
+          "path": "src/config.ts",
+          "sha256": "cd24a0a503c3b24380bd6006707b069b8fc066d6128325ccb1619b0e67d6eddc",
+          "size": 3400
+        },
+        {
+          "path": "src/contract.ts",
+          "sha256": "2c24346ea23939b611c5df8925ffd7b3cd6b01f85c53a73a65ec5a29a1976872",
+          "size": 7360
+        },
+        {
+          "path": "src/description-source.ts",
+          "sha256": "3bbb54efae42715f3a2e823090812bacd0d4bc4dd1698153f615c8b6d09cd80a",
+          "size": 3985
+        },
+        {
+          "path": "src/description.ts",
+          "sha256": "2a16f6d19efa821f75f12868a06eacc25ed679de852124b31d6c17c177f6b977",
+          "size": 6191
+        },
+        {
+          "path": "src/github.ts",
+          "sha256": "5c8903b94ec05421330fcda6afe2e05b0e8bfc84f09789d9541bb17ee769ebea",
+          "size": 22484
+        },
+        {
+          "path": "src/issues.ts",
+          "sha256": "27f158b0c34c0b94679ca40e1d8469a4297b1b22a5d446a41086573bde3086a8",
+          "size": 9973
+        },
+        {
+          "path": "src/plugin.ts",
+          "sha256": "83412bc8c3487555959818e0ccb8c5ba724979699807bffd3bb5083e937042d7",
+          "size": 3607
+        }
+      ]
+    },
+    {
+      "id": "ics",
+      "name": "Calendar address (ICS)",
+      "description": "Suggest the meetings in your Google Calendar, Outlook or Exchange calendar as time entries, through the calendar's private address. Read-only.",
+      "version": "0.1.0",
+      "pluginApiVersion": 3,
+      "capabilities": [
+        "calendar"
+      ],
+      "features": [
+        "calendar-events"
+      ],
+      "tags": [
+        "calendar",
+        "ics",
+        "google-calendar",
+        "outlook"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
+      "status": "available",
+      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "path": "plugins/ics",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "892bf43e0544f8be3a6db385b5018be1c7ed83d737fb4855d70a5f5006d184df",
+          "size": 1071
+        },
+        {
+          "path": "package.json",
+          "sha256": "cfeb6472a9e3249e1fcff9e0bd993d58fd36770c5b7d4920470ccb20e80cde7c",
+          "size": 988
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "f60c5d23114d2f156d472a687dc8d5e0130e408850c2ec5894a1d4d350730574",
+          "size": 2433
+        },
+        {
+          "path": "src/contract.ts",
+          "sha256": "9f2b72203ca64d605bab44eb89334c8631a2440c74c000c660a2a7db5ce15eb2",
+          "size": 2382
+        },
+        {
+          "path": "src/events.ts",
+          "sha256": "f5aa5c904dd1d7a1ebabb8f44819bebc23789a5b0e7809fc9658ffae62ebf20b",
+          "size": 12487
+        },
+        {
+          "path": "src/feed.ts",
+          "sha256": "7c656b84c6d2886b476dc98ec08ee6537393e069fa9b9c28206c90173d1c4fcb",
+          "size": 5168
+        },
+        {
+          "path": "src/plugin.ts",
+          "sha256": "0652ac37c1586d79b701265cd019f6c69e534ccac6dc1cab34c3d5b963f527b9",
+          "size": 1925
+        },
+        {
+          "path": "src/vendor/ical.d.ts",
+          "sha256": "dec8e0086841bc2dfa6e628cc40225494cfefcbd35b281920bfcbf71ae4bdffe",
+          "size": 233
+        },
+        {
+          "path": "src/vendor/ical.js",
+          "sha256": "396c1349c899974b1048460e3c7495ec394ff1a86941ab5bf6291b272b8d53c2",
+          "size": 267656
+        },
+        {
+          "path": "src/vendor/ical.js.LICENSE",
+          "sha256": "29aeedad076b94dae7babac9da072d81d241fa0909ebf8af3c1f126c7963b662",
+          "size": 16931
+        },
+        {
+          "path": "src/zones.ts",
+          "sha256": "4506628d1e94302c690aa1117a2d6090437e0c509876358ebdf6f1dab9a1274d",
+          "size": 3195
+        }
+      ]
+    },
+    {
+      "id": "jira",
+      "name": "Jira",
+      "description": "Sync Jira issues into Ajour's local backlog and update estimates from Ajour.",
+      "version": "1.0.0",
+      "pluginApiVersion": 3,
+      "capabilities": [
+        "connector"
+      ],
+      "features": [
+        "work-item-sync",
+        "estimate-update"
+      ],
+      "tags": [
+        "jira",
+        "project-management",
+        "synchronization"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
+      "status": "available",
+      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "path": "plugins/jira",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "892bf43e0544f8be3a6db385b5018be1c7ed83d737fb4855d70a5f5006d184df",
+          "size": 1071
+        },
+        {
+          "path": "package.json",
+          "sha256": "f10190cf67117cb364c9085087e6230f18bd2c0dbc63a94435161d096e5cd9eb",
+          "size": 1083
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "a5cf651987dd65c8a52709d0f2ff832487ec965b97e1cc9f90ca45fb0e8f349d",
+          "size": 3366
+        },
+        {
+          "path": "src/adf-markdown.ts",
+          "sha256": "965725874f9278b1b936e0792a36b771c1fabf22b76a33a6ff40d124fd3870ea",
+          "size": 33258
+        },
+        {
+          "path": "src/contract.ts",
+          "sha256": "212f5be380a5b659e6985b50d135e19f55faa745f1776fc3905335fb55064fde",
+          "size": 5310
+        },
+        {
+          "path": "src/description-guard.ts",
+          "sha256": "6094c352986e9bca1c33c9c574da6ed963ab707a69766582c70bc613f8289519",
+          "size": 32375
+        },
+        {
+          "path": "src/description-nested.ts",
+          "sha256": "b6eaf8488c7f6a3fe6126e8fe07986dbc9623de3b77ec28863b0e23c9a38498b",
+          "size": 41608
+        },
+        {
+          "path": "src/description-patch.ts",
+          "sha256": "eede2e0c08f1bea2e461eaf08d93c3842d11e5bf650ca98cf4edd1068e0386cb",
+          "size": 12160
+        },
+        {
+          "path": "src/description-source.ts",
+          "sha256": "69d60e36282a051b7e5869d037753895af885776792d9df537e01590a589851c",
+          "size": 1178
+        },
+        {
+          "path": "src/description-write.ts",
+          "sha256": "5c5fcb8539c7588e853e866653e7d1282223c22591ae1afeebef235606be4e45",
+          "size": 5365
+        },
+        {
+          "path": "src/description.ts",
+          "sha256": "ed4d24e0f65ecd3094781b7f006c4f4e4e251516337908d315049a0a9fd69519",
+          "size": 2237
+        },
+        {
+          "path": "src/estimate-sync.ts",
+          "sha256": "9fa89c0f6ff1f64d9ea97c04bff5414f5b481df9096045d64deb67b7d271b4d8",
+          "size": 2098
+        },
+        {
+          "path": "src/jira.ts",
+          "sha256": "a0dd67edfba158e56d600db51d619f195f49ebd93d8e095b5009b7bd8cd41ad7",
+          "size": 25310
+        },
+        {
+          "path": "src/markdown-adf.ts",
+          "sha256": "08c38bb2bb5989436088671d006a6f40c158a7095b40a1f32d046d7dc9fe7c86",
+          "size": 32992
+        },
+        {
+          "path": "src/plugin.ts",
+          "sha256": "b78be779dbe0412ec25074f574fda9d8f3bca2eefdf5577a8d7ccf7ccbb3772c",
+          "size": 4330
+        },
+        {
+          "path": "src/priority.ts",
+          "sha256": "b0aec2ccca7eb96c70344e29baa580970e0bff17f47666547cb677f3ff6809fb",
+          "size": 1424
+        },
+        {
+          "path": "src/settle.ts",
+          "sha256": "b789d4efea6bc6b92616a81019e97089bceee2ec033d2f839ed0af27399a48f1",
+          "size": 5456
+        }
+      ]
+    },
+    {
+      "id": "workday-agent",
+      "name": "Workday (agent)",
+      "description": "Commit your Ajour week to the Workday web timesheet through a coding agent, Claude Code, Codex or OpenCode, in a Chrome window. Unofficial. It drives Workday's page, so it breaks when the page changes. It never signs in for you.",
+      "version": "0.5.0",
+      "pluginApiVersion": 3,
+      "capabilities": [
+        "agentTask"
+      ],
+      "features": [
+        "timesheet-commit",
+        "timesheet-submit",
+        "project-properties"
+      ],
+      "tags": [
+        "workday",
+        "timesheet",
+        "agent"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://docs.ajour.day/plugins/workday-agent",
+      "status": "available",
+      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "path": "plugins/workday-agent",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "cefb70dc3a5e34281052cacce4e03396f3f4b6eb36312f96d56e8091e559e21d",
+          "size": 1069
+        },
+        {
+          "path": "package.json",
+          "sha256": "d5af33389a9bcd92c21782e60d587fea468523356d25fcaf54c1f2e3d42bfa16",
+          "size": 1053
+        },
+        {
+          "path": "plugin.json",
+          "sha256": "2824f9b59f9e5ef57d97075b0adb065d80eba322dfb76718abdacdcfd0028baa",
+          "size": 3094
+        },
+        {
+          "path": "prompts/commit-week.md",
+          "sha256": "fdc8f4dd3c3a125fbb7bd3a026afd2603e5519a17e41da69dbc6ccf0252d1610",
+          "size": 11225
+        },
+        {
+          "path": "prompts/submit-week.md",
+          "sha256": "4d627b48f762ce07f22adae6c966bcc37ef7e8a737ba45774a574ad179c8c87d",
+          "size": 9192
+        }
+      ]
+    },
+    {
+      "id": "workday-project-data",
+      "name": "Workday project data shape",
+      "description": "Imports a project and its tasks from Workday's Excel exports, in French, without connecting to Workday.",
+      "version": "2.0.0",
+      "pluginApiVersion": 1,
+      "capabilities": [
+        "schema"
+      ],
+      "features": [
+        "project-data-shape"
+      ],
+      "tags": [
+        "workday",
+        "import",
+        "data-shape"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/workday-project-data#readme",
+      "status": "coming-soon"
+    }
+  ]
+}

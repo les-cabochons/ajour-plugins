@@ -736,13 +736,20 @@ async function describeWorkItemStates(
 
 async function fetchAzureDevOpsSyncContext(
   config: AzureDevOpsConnectionInput,
+  sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
   const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
   const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
   const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
   const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
-  const baseIds = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+  const baseIds = sourceIds
+    ? sourceIds.map(sourceId => {
+        const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
+        if (id === null) throw new Error("The item does not belong to this Azure DevOps connection.");
+        return id;
+      })
+    : await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
   if (baseIds.length === 0) {
     return {
       items: [],
@@ -1179,9 +1186,10 @@ async function findDoneWorkItems(
 export async function syncAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[] = [],
+  options?: { sourceIds?: string[]; readOnly?: boolean },
 ): Promise<ConnectorPluginSyncResult> {
-  const syncContext = await fetchAzureDevOpsSyncContext(config);
-  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  const syncContext = await fetchAzureDevOpsSyncContext(config, options?.sourceIds);
+  const workItemUpdates = options?.readOnly ? [] : await buildAzureWorkItemUpdates(config, syncContext, workItems);
   // Last, so the sync's earlier requests keep their order.
   const doneItems = await findDoneWorkItems(config, syncContext, workItems);
   return {

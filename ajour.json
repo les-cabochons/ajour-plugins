@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "commit": "fdae4e2dadf4c6190faf87de94e12434ec1fcccd",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -171,7 +171,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "commit": "fdae4e2dadf4c6190faf87de94e12434ec1fcccd",
       "path": "plugins/github",
       "files": [
         {
@@ -254,7 +254,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "commit": "fdae4e2dadf4c6190faf87de94e12434ec1fcccd",
       "path": "plugins/ics",
       "files": [
         {
@@ -342,7 +342,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "commit": "fdae4e2dadf4c6190faf87de94e12434ec1fcccd",
       "path": "plugins/jira",
       "files": [
         {
@@ -436,7 +436,7 @@
       "id": "workday-agent",
       "name": "Workday (agent)",
       "description": "Commit your Ajour week to the Workday web timesheet through a coding agent, Claude Code, Codex or OpenCode, in a Chrome window. Unofficial. It drives Workday's page, so it breaks when the page changes. It never signs in for you.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "pluginApiVersion": 3,
       "capabilities": [
         "agentTask"
@@ -444,7 +444,8 @@
       "features": [
         "timesheet-commit",
         "timesheet-submit",
-        "project-properties"
+        "project-properties",
+        "task-properties"
       ],
       "tags": [
         "workday",
@@ -461,7 +462,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "8fbe093a0b1f977462c629cdac06ba80f34f5990",
+      "commit": "fdae4e2dadf4c6190faf87de94e12434ec1fcccd",
       "path": "plugins/workday-agent",
       "files": [
         {
@@ -471,23 +472,23 @@
         },
         {
           "path": "package.json",
-          "sha256": "d5af33389a9bcd92c21782e60d587fea468523356d25fcaf54c1f2e3d42bfa16",
-          "size": 1053
+          "sha256": "2e9ca8ab933ecc0bc412780e26b33ad6e8489a55db6c79c5f8907a0e98bbbf1a",
+          "size": 1078
         },
         {
           "path": "plugin.json",
-          "sha256": "2824f9b59f9e5ef57d97075b0adb065d80eba322dfb76718abdacdcfd0028baa",
-          "size": 3094
+          "sha256": "5e5f1f1ab360032a297650451f2d4f1ed9b69deac5af3ad9ae62ff1869df1499",
+          "size": 3466
         },
         {
           "path": "prompts/commit-week.md",
-          "sha256": "fdc8f4dd3c3a125fbb7bd3a026afd2603e5519a17e41da69dbc6ccf0252d1610",
-          "size": 11225
+          "sha256": "c7895e6e5f68b2eae6383e2342841997a21f83ca1a7b317149ad5283cdcdd775",
+          "size": 12844
         },
         {
           "path": "prompts/submit-week.md",
-          "sha256": "4d627b48f762ce07f22adae6c966bcc37ef7e8a737ba45774a574ad179c8c87d",
-          "size": 9192
+          "sha256": "577408e30f4cc21a2a94558d529bb3837e4285bb85642f33dbe8615c4146c040",
+          "size": 10158
         }
       ]
     },

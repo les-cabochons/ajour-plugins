@@ -1186,10 +1186,10 @@ async function findDoneWorkItems(
 export async function syncAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[] = [],
-  options?: { sourceIds?: string[]; readOnly?: boolean },
+  options?: { sourceIds?: string[] },
 ): Promise<ConnectorPluginSyncResult> {
   const syncContext = await fetchAzureDevOpsSyncContext(config, options?.sourceIds);
-  const workItemUpdates = options?.readOnly ? [] : await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
   // Last, so the sync's earlier requests keep their order.
   const doneItems = await findDoneWorkItems(config, syncContext, workItems);
   return {

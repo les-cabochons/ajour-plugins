@@ -254,9 +254,10 @@ async function validateWorkItems(parsed: ConnectorFieldValues) {
 export async function syncConnection(
   connection: ConnectorPluginConnection,
   workItems: ConnectorSyncWorkItem[] = [],
+  options?: { sourceIds?: string[]; readOnly?: boolean },
 ) {
   const azureConfig = buildAzureConfig(connection.config, connection);
-  const result = await syncAzureDevOpsConnection(azureConfig, workItems);
+  const result = await syncAzureDevOpsConnection(azureConfig, workItems, options);
   return { ...result, ...(await findAzureCommentFacts(azureConfig, workItems)) };
 }
 

@@ -251,8 +251,8 @@ range whose start is above its end, and two levels whose ranges overlap.
 
 ### Refresh from Ajour
 
-Ajour can refresh the backlog or one open item without uploading local estimate
-changes. With a recent Ajour build, the item refresh fetches its Azure DevOps ID
+Ajour can refresh the backlog or one open item. A refresh syncs both ways: it
+uploads local estimate changes, like every sync. With a recent Ajour build, the item refresh fetches its Azure DevOps ID
 directly, even when it no longer matches the connection's assigned-items query.
 Ajour shows progress and the last successful sync time in the backlog and item
 views. A failed request leaves that successful time unchanged.

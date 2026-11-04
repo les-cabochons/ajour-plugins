@@ -86,6 +86,22 @@ export interface ProjectSourceTask {
   myHours?: number;
 }
 
+/**
+ * Ajour's bounds on a snapshot, as les-cabochons/ajour#558 shipped them. Text
+ * bounds are in characters; `projects` and `tasks` count one snapshot's.
+ */
+export const PROJECT_SOURCE_BOUNDS = {
+  label: 80,
+  remoteId: 100,
+  name: 240,
+  code: 120,
+  group: 120,
+  client: 240,
+  hoursNote: 300,
+  projects: 200,
+  tasks: 10_000,
+} as const;
+
 export interface ProjectSourceSyncRequest {
   /** The cursor the last sync returned, opaque to Ajour. An ETag for ChronOps. */
   cursor?: string;

@@ -126,6 +126,38 @@ describe("mapChronopsSnapshot", () => {
     expect(unconfigured.projects[0]).not.toHaveProperty("budget");
   });
 
+  it("cuts texts to Ajour's bounds, with an ellipsis", () => {
+    const [acme] = fixture.projects;
+    const long = (length: number) => "x".repeat(length);
+    const mapped = mapChronopsSnapshot({
+      ...fixture,
+      projects: [{ ...acme!, name: long(241), client: long(241), tasks: [{ ...acme!.tasks[0]!, name: long(241), phase: long(121) }] }],
+    });
+    const [project] = mapped.projects;
+    expect(project!.name).toHaveLength(240);
+    expect(project!.name.endsWith("\u2026")).toBe(true);
+    expect(project!.client).toHaveLength(240);
+    expect(project!.tasks[0]!.name).toHaveLength(240);
+    expect(project!.tasks[0]!.group).toHaveLength(120);
+    expect(mapChronopsSnapshot(fixture).projects[0]!.name).toBe("Acme - Support");
+  });
+
+  it("refuses an id longer than Ajour's remote id, since a cut id would drift", () => {
+    const [acme] = fixture.projects;
+    const code = "C".repeat(101);
+    expect(() => mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, code }] })).toThrow(/project code .* longer than 100/);
+    const tasks = [{ ...acme!.tasks[0]!, id: "T".repeat(101) }];
+    expect(() => mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks }] })).toThrow(/task id .* longer than 100/);
+  });
+
+  it("refuses more projects or tasks than Ajour takes in one snapshot", () => {
+    const [acme] = fixture.projects;
+    const projects = Array.from({ length: 201 }, (_, index) => ({ ...acme!, code: `P-${index}` }));
+    expect(() => mapChronopsSnapshot({ ...fixture, projects })).toThrow(/201 projects.*at most 200/);
+    const tasks = Array.from({ length: 10_001 }, (_, index) => ({ ...acme!.tasks[0]!, id: `${index}` }));
+    expect(() => mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks }] })).toThrow(/10001 tasks.*at most 10000/);
+  });
+
   it("says why my hours are missing when the user has no linked worker", () => {
     const unlinked = mapChronopsSnapshot({ ...fixture, me: { ...fixture.me, workerLinked: false } });
     expect(unlinked.me).toEqual({ hoursAvailable: false, hoursNote: HOURS_NOTE });

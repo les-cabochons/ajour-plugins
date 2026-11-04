@@ -115,7 +115,7 @@ test("the fake refuses an expired token with 401, as the Forwarder does", async 
   assert.equal((await fetch(`${alive.url}/integration/me`, { headers })).status, 200);
 });
 
-test("the fake refuses a write with a read token with 403, and allows it with a read-write token", async (t) => {
+test("the fake refuses a write with a read token with 403, and passes the scope check with a read-write token", async (t) => {
   const read = await withFake(t);
   const refused = await fetch(`${read.url}/integration/entries/timer/start`, { method: "POST", headers });
   assert.equal(refused.status, 403);

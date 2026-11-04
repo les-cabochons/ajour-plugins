@@ -42,6 +42,9 @@ describe("mapChronopsSnapshot", () => {
 
   it("names the source, dates the figures at reportAt and says whether my hours are known", () => {
     expect(snapshot.source).toEqual({ label: "ChronOps", url: CHRONOPS_HOME_URL });
+    // Ajour opens the links in the browser and refuses anything but absolute https.
+    expect(CHRONOPS_HOME_URL).toMatch(/^https:\/\//);
+    for (const project of snapshot.projects) expect(project.url).toMatch(/^https:\/\/[^/]+\/a\/wepoint-chronops-app\/timetracking\/projects\//);
     expect(snapshot.asOf).toBe("2026-10-31T23:59:59.000Z");
     expect(snapshot.me).toEqual({ hoursAvailable: true, hoursNote: HOURS_NOTE });
     expect(snapshot.projects).toHaveLength(2);
@@ -86,8 +89,8 @@ describe("mapChronopsSnapshot", () => {
   });
 
   it("maps an annual project to a money budget when ChronOps knows the money, else to hours", () => {
-    // The fixture's annual project has no money figures: hours, so the
-    // over-budget state still shows.
+    // The fixture's annual project has no money figures, so it stays in
+    // hours and the over-budget state still shows.
     const [, globex] = snapshot.projects;
     expect(globex!.budget).toEqual({ unit: "hours", total: 200, consumed: 212, remaining: -12, status: "over" });
 

@@ -65,7 +65,7 @@ export function answer(status: number, json?: unknown, headers: Record<string, s
 }
 
 /**
- * A responder that forwards to the fake MineHunter the way the broker would:
+ * A responder that forwards to the fake MineHunter the way the broker would,
  * with the personal token in X-ChronOps-Token, which the plugin never sees.
  */
 export function forwardTo(url: string, token: string | undefined = "personal-token"): Responder {
@@ -82,12 +82,17 @@ export function forwardTo(url: string, token: string | undefined = "personal-tok
   };
 }
 
+/** Header names lowercase, as Ajour hands them to the plugin. */
+function lowercaseHeaders(headers: Readonly<Record<string, string>> = {}) {
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
+}
+
 function toResponse(canned: CannedResponse): AjourResponse {
   const text = canned.body ?? "";
   return {
     status: canned.status,
     ok: canned.status >= 200 && canned.status < 300,
-    headers: Object.fromEntries(Object.entries(canned.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
+    headers: lowercaseHeaders(canned.headers),
     text: async () => text,
     json: async () => JSON.parse(text),
   };
@@ -105,7 +110,7 @@ export function createFakeAjour(respond: Responder): FakeAjour {
       const recorded: RecordedRequest = {
         method: request.method,
         path: request.path,
-        headers: Object.fromEntries(Object.entries(request.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
+        headers: lowercaseHeaders(request.headers),
       };
       requests.push(recorded);
       if (request.host !== undefined || request.connectionId !== connection.id) {

@@ -25,12 +25,21 @@ importers:
 
   plugins/chronops:
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.20.5
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.5
+        version: 4.1.12(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5))
 
   plugins/github:
     devDependencies:

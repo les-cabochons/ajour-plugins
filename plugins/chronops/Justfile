@@ -12,15 +12,24 @@ default: help
 help:
     just --list --unsorted
 
-[doc("Runs the contract tests")]
+[doc("Installs dependencies from the lockfile")]
+install:
+    corepack enable
+    {{PNPM}} install
+
+[doc("Runs the plugin tests, then the contract tests")]
 test:
     {{PNPM}} test
 
-[doc("Checks JavaScript syntax")]
+[doc("Runs only the contract tests, the schema and the fake MineHunter")]
+test-contract:
+    {{PNPM}} test:contract
+
+[doc("Type-checks the TypeScript source Ajour runs")]
 typecheck:
     {{PNPM}} typecheck
 
-[doc("Runs the complete local verification")]
+[doc("Runs the complete local CI verification")]
 verify:
     {{PNPM}} verify
 

@@ -8,7 +8,9 @@
 //   above, so the plugin can test its warnings.
 // - GET /integration/ajour/snapshot, fixture.json as is, with an ETag, and
 //   304 when If-None-Match matches.
-// Every request needs X-ChronOps-Token, any value, or gets 401. The real
+// Every request needs X-ChronOps-Token, any value, or gets 401, as does one
+// once the chosen expiry is past. A read token gets 403 on anything but GET,
+// so an integration can test the Forwarder's scope refusal. The real
 // Forwarder also needs X-ChronOps-Source: ajour and limits at 10 requests a
 // second; this fake does neither.
 import { createHash } from "node:crypto";
@@ -30,7 +32,7 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
     throw new Error(`scope must be one of ${SCOPES.join(", ")}, not ${JSON.stringify(scope)}.`);
   }
   const snapshot = readFileSync(new URL("./fixture.json", import.meta.url), "utf8");
-  // A strong ETag from the fixture's bytes: it changes when the fixture does.
+  // A strong ETag from the fixture's bytes. It changes when the fixture does.
   const etag = `"${createHash("sha256").update(snapshot).digest("hex").slice(0, 32)}"`;
   const email = JSON.parse(snapshot).me.email;
   const me = JSON.stringify({ email, login: email.split("@")[0], scope, expiresAt });
@@ -42,10 +44,15 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
     };
     const path = new URL(request.url, "http://localhost").pathname;
 
+    // The same statuses and bodies as the real Forwarder and ChronOps.
     if (request.headers["x-chronops-token"] === undefined) {
-      send(401, JSON.stringify({ error: "missing X-ChronOps-Token" }));
+      send(401, JSON.stringify({ error: "a personal token is required" }));
+    } else if (expiresAt !== null && Date.parse(expiresAt) <= Date.now()) {
+      send(401, JSON.stringify({ error: "expired personal token" }));
+    } else if (request.method !== "GET" && scope === "read") {
+      send(403, JSON.stringify({ error: "this personal token only reads" }));
     } else if (request.method !== "GET") {
-      send(405, JSON.stringify({ error: "method not allowed" }), { Allow: "GET" });
+      send(404, JSON.stringify({ error: "not found" }));
     } else if (path === "/integration/me") {
       send(200, me);
     } else if (path === "/integration/ajour/snapshot") {

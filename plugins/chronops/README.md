@@ -11,7 +11,7 @@ shape in [`contract/snapshot.schema.json`](contract/snapshot.schema.json).
 MineHunter implements that file. A change to the shape bumps its `version`,
 and the plugin refuses a version it does not know.
 
-The contract is between the plugin and MineHunter only. Ajour never sees it:
+The contract is between the plugin and MineHunter only. Ajour never sees it.
 the plugin maps it to Ajour's generic project source snapshot.
 
 What the plugin expects of MineHunter's Forwarder, from its ADR-0030:

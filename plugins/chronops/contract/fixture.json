@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "generatedAt": "2026-11-04T13:05:00.000Z",
   "reportAt": "2026-10-31T23:59:59.000Z",
   "me": {
@@ -60,7 +60,7 @@
       "code": "GLOBEX-INT",
       "name": "Globex - Interne",
       "client": null,
-      "complete": false,
+      "complete": null,
       "contractStart": null,
       "contractEnd": null,
       "budget": {
@@ -90,6 +90,35 @@
           "closed": false,
           "billable": false,
           "estimateHours": 20,
+          "assignedToMe": false,
+          "myHours": null
+        }
+      ]
+    },
+    {
+      "code": "INIT-ONB",
+      "name": "Initech - Onboarding",
+      "client": "Initech",
+      "complete": true,
+      "contractStart": "2026-03-01",
+      "contractEnd": "2026-06-30",
+      "budget": {
+        "mode": "monthly",
+        "capHours": null,
+        "maxBudget": null,
+        "consumedHours": 3.5,
+        "spentBudget": null,
+        "remainingHours": null,
+        "status": "Unconfigured"
+      },
+      "tasks": [
+        {
+          "id": "3001",
+          "phase": "Onboarding",
+          "name": "Accès et comptes",
+          "closed": true,
+          "billable": true,
+          "estimateHours": 4,
           "assignedToMe": false,
           "myHours": null
         }

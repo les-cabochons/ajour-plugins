@@ -24,9 +24,16 @@ What the plugin expects of MineHunter's Forwarder, from its ADR-0030:
   304 when `If-None-Match` matches.
 - The Forwarder limits each token to 10 requests a second.
 
-[`contract/fixture.json`](contract/fixture.json) is a valid snapshot: two
-projects, one monthly and one annual, with assigned, unassigned and closed
-tasks. The tests check it against the schema.
+[`contract/fixture.json`](contract/fixture.json) is a valid snapshot: three
+projects, monthly, annual and one without a cap, with assigned, unassigned
+and closed tasks. The tests check it against the schema.
+
+### Version history
+
+- Version 2. `complete`, `capHours` and `remainingHours` became nullable,
+  for what ChronOps cannot tell. `myHours` is the current month only, and
+  `assignedToMe` no longer depends on the worker link.
+- Version 1. First shape.
 
 ## Fake MineHunter
 

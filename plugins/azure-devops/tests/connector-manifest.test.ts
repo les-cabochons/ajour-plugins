@@ -88,6 +88,15 @@ describe("connector manifest packaging contract", () => {
     expect(() => assertConnectorPluginManifest(manifest)).toThrow(/settle/);
   });
 
+  it("declares the assign capability and rejects a non-boolean one", () => {
+    expect(validManifest.capabilities.connector.assign).toBe(true);
+
+    const manifest = cloneManifest();
+    manifest.capabilities.connector.assign = "yes";
+
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(/assign/);
+  });
+
   it("declares that it writes descriptions, with Azure DevOps' length limit, and rejects a bad one", () => {
     expect(validManifest.capabilities.connector.description).toEqual({ write: true, maxLength: 1_000_000 });
 

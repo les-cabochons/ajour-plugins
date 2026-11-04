@@ -45,14 +45,37 @@ stay in Ajour's local connector configuration.
 ## Settle support
 
 This package uses Ajour plugin API version 3. Its connector capability lists
-the item's work item type states and can write state and priority in one
-update. Set the connection's priority field to enable priority writes.
+the item's work item type states and can write state, priority and assignee
+in one update. Set the connection's priority field to enable priority writes.
 Writing requires work-item read and write permissions.
 
 Work item URLs must belong to the configured organization. Completed and
 Removed categories count as done. Resolved remains open. Sync reports items
 Ajour already tracks that reached a done category, even when the query no
 longer returns them.
+
+## Assignees
+
+The manifest declares `assign`, so Ajour's settle dialog can hand an item to
+someone else. Assignees go by `uniqueName`, the id `System.AssignedTo` takes,
+such as `ana@contoso.com`. Mentions keep the identity id.
+
+- Each sync sends a work item's assignee as `assignee`: the `uniqueName`, the
+  name and, when the `uniqueName` is one, the email. An unassigned item sends
+  none. `assignedTo` still carries the name.
+- `searchAssignees` asks the same sources as `searchItemPeople` (see
+  [Comments](#comments)) and returns at most 20 people, skipping anyone
+  without a `uniqueName`. An empty query gets the item's and the project's
+  people, which needs only Work Items (Read). A typed query also searches the
+  organization, which needs Identity (Read); without it, the search returns
+  what the other sources found. Someone the identities service finds gets
+  their account as `uniqueName`, or `DOMAIN\account` for a Windows account on
+  Azure DevOps Server.
+- `writeSettle` takes `assignee`. A `uniqueName` sets `System.AssignedTo` in
+  the same update as the state and priority, and `null` clears it with an
+  empty value, as Microsoft's "Reset an identity field" sample does. A settle
+  that only reassigns is a valid write. Assigning needs Work Items (Read &
+  write), as settle does.
 
 ## Descriptions
 

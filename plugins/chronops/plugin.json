@@ -1,0 +1,48 @@
+{
+  "id": "chronops",
+  "version": "0.1.0",
+  "apiVersion": 4,
+  "displayName": "ChronOps",
+  "description": "Bring your ChronOps projects, tasks and budgets into Ajour through MineHunter's ChronOps Forwarder. Read-only.",
+  "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#0F766E\"/><circle cx=\"12\" cy=\"12\" r=\"7.5\" fill=\"#F0FDFA\"/><path d=\"M12 7.5V12l3 2\" stroke=\"#0F766E\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"12\" cy=\"12\" r=\"1\" fill=\"#0F766E\"/></svg>",
+  "entrypoint": "src/plugin.ts",
+  "capabilities": {
+    "projectSource": {}
+  },
+  "connectionFields": [
+    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "ChronOps" },
+    { "id": "tenantLabel", "label": "Organization", "type": "text", "required": true, "placeholder": "Wepoint" },
+    {
+      "id": "forwarderUrl",
+      "label": "Forwarder URL",
+      "type": "url",
+      "required": true,
+      "defaultValue": "https://chronops-forwarder.minehunter.az.nventive.com",
+      "helpText": "MineHunter's ChronOps Forwarder. Keep the default unless you run your own MineHunter."
+    },
+    {
+      "id": "personalToken",
+      "label": "Personal token",
+      "type": "password",
+      "required": true,
+      "secret": true,
+      "placeholder": "A read token from your ChronOps profile",
+      "helpText": "Create it on your ChronOps profile with the read scope. Ajour only reads your projects, so a read-write token gives it more than it needs."
+    }
+  ],
+  "network": {
+    "auth": {
+      "scheme": "headerTemplate",
+      "header": "X-ChronOps-Token",
+      "template": "{secret}",
+      "secretField": "personalToken"
+    },
+    "baseAddress": { "field": "forwarderUrl", "allowOnPremises": true },
+    "endpoints": [
+      { "method": "GET", "path": "/integration/me" },
+      { "method": "GET", "path": "/integration/ajour/snapshot" }
+    ],
+    "requestHeaders": ["X-ChronOps-Source", "If-None-Match"]
+  },
+  "runtime": { "start": "whenNeeded" }
+}

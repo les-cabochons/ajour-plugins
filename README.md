@@ -14,6 +14,7 @@ Node's type stripping, so nothing is built.
 | --- | --- | --- | --- | --- |
 | [`plugins/azure-devops`](plugins/azure-devops) | `azure_devops` | Azure DevOps | Connector, code host | [ajc-azure-devops](https://github.com/les-cabochons/ajc-azure-devops) |
 | [`plugins/github`](plugins/github) | `github` | GitHub | Connector, code host | [ajc-github](https://github.com/les-cabochons/ajc-github) |
+| [`plugins/chronops`](plugins/chronops) | `chronops` | ChronOps | Project source | |
 | [`plugins/jira`](plugins/jira) | `jira` | Jira | Connector | [ajc-jira](https://github.com/les-cabochons/ajc-jira) |
 | [`plugins/ics`](plugins/ics) | `ics` | Calendar address (ICS) | Calendar | [ajc-ics](https://github.com/les-cabochons/ajc-ics) |
 | [`plugins/workday-agent`](plugins/workday-agent) | `workday-agent` | Workday (agent) | Agent task, project properties | [ajp-workday-agent](https://github.com/les-cabochons/ajp-workday-agent) |

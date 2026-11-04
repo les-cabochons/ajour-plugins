@@ -64,7 +64,7 @@ test("the fake refuses a request without X-ChronOps-Token with 401", async (t) =
   for (const path of ["/integration/me", "/integration/ajour/snapshot"]) {
     const response = await fetch(`${fake.url}${path}`, { headers: { "X-ChronOps-Source": "ajour" } });
     assert.equal(response.status, 401, path);
-    assert.deepEqual(await response.json(), { error: "missing X-ChronOps-Token" });
+    assert.deepEqual(await response.json(), { error: "a personal token is required" });
   }
 });
 
@@ -101,4 +101,27 @@ test("the fake answers 304 to a matching If-None-Match", async (t) => {
 
   const stale = await fetch(`${fake.url}/integration/ajour/snapshot`, { headers: { ...headers, "If-None-Match": '"stale"' } });
   assert.equal(stale.status, 200);
+});
+
+test("the fake refuses an expired token with 401, as the Forwarder does", async (t) => {
+  const expired = await withFake(t, { expiresAt: "2026-01-01T00:00:00.000Z" });
+  for (const path of ["/integration/me", "/integration/ajour/snapshot"]) {
+    const response = await fetch(`${expired.url}${path}`, { headers });
+    assert.equal(response.status, 401, path);
+    assert.deepEqual(await response.json(), { error: "expired personal token" });
+  }
+
+  const alive = await withFake(t, { expiresAt: "2999-01-01T00:00:00.000Z" });
+  assert.equal((await fetch(`${alive.url}/integration/me`, { headers })).status, 200);
+});
+
+test("the fake refuses a write with a read token with 403, and allows it with a read-write token", async (t) => {
+  const read = await withFake(t);
+  const refused = await fetch(`${read.url}/integration/entries/timer/start`, { method: "POST", headers });
+  assert.equal(refused.status, 403);
+  assert.deepEqual(await refused.json(), { error: "this personal token only reads" });
+
+  const readWrite = await withFake(t, { scope: "read-write" });
+  const allowed = await fetch(`${readWrite.url}/integration/entries/timer/start`, { method: "POST", headers });
+  assert.equal(allowed.status, 404);
 });

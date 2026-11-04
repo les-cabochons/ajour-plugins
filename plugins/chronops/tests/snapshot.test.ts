@@ -35,6 +35,26 @@ describe("parseChronopsSnapshot", () => {
     expect(() => parseChronopsSnapshot("not json")).toThrow(/snapshot/);
     expect(() => parseChronopsSnapshot({ ...fixture, me: { email: "a@b.c" } })).toThrow(/me\.workerLinked/);
   });
+
+  it("applies the schema's rules beyond types, as the JSON schema would", () => {
+    const [acme] = fixture.projects;
+    const task = acme!.tasks[0]!;
+    const cases: [unknown, RegExp][] = [
+      [withBudget({ consumedHours: -1 }), /budget\.consumedHours should be a number of 0 or more/],
+      [{ ...fixture, reportAt: "yesterday" }, /snapshot\.reportAt should be an ISO 8601/],
+      [{ ...fixture, projects: [{ ...acme!, contractStart: "2026-1-1" }] }, /projects\[0\]\.contractStart should be a date/],
+      [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, id: "" }] }] }, /tasks\[0\]\.id should be a non-empty string/],
+      [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, myHours: -2 }] }] }, /tasks\[0\]\.myHours/],
+      [{ ...fixture, extra: true }, /snapshot\.extra should be left out/],
+      [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, colour: "red" }] }] }, /tasks\[0\]\.colour should be left out/],
+      [{ ...fixture, me: { ...fixture.me, email: "not an email" } }, /me\.email/],
+    ];
+    for (const [body, message] of cases) {
+      expect(() => parseChronopsSnapshot(body)).toThrow(message);
+    }
+    // remainingHours is the one figure the contract lets go negative.
+    expect(parseChronopsSnapshot(withBudget({ remainingHours: -1 }))).toBeTruthy();
+  });
 });
 
 describe("mapChronopsSnapshot", () => {

@@ -62,11 +62,12 @@ function remoteId(id: string, what: string) {
 /**
  * A monthly budget is a cap in hours. An annual one is money when ChronOps
  * knows the money spent, hours otherwise, so an over-budget annual project
- * with no money figures still shows its state. A project ChronOps has not
- * configured has no budget to show.
+ * with no money figures still shows its state. A project without a cap, or
+ * without figures for the period, has no budget to show. ChronOps marks it
+ * Unconfigured and leaves capHours null, and either is enough here.
  */
 function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
-  if (budget.status === "Unconfigured") return undefined;
+  if (budget.status === "Unconfigured" || budget.capHours === null) return undefined;
   const status = BUDGET_STATUS[budget.status];
   if (budget.mode === "annual" && budget.spentBudget !== null) {
     return {
@@ -82,7 +83,7 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
     unit: "hours",
     total: budget.capHours,
     consumed: budget.consumedHours,
-    remaining: budget.remainingHours,
+    ...(budget.remainingHours !== null ? { remaining: budget.remainingHours } : {}),
     status,
   };
 }
@@ -111,7 +112,8 @@ function mapProject(project: ChronopsProject): ProjectSourceProject {
     name: cut(project.name, PROJECT_SOURCE_BOUNDS.name),
     ...(client !== undefined ? { client: cut(client, PROJECT_SOURCE_BOUNDS.client) } : {}),
     url: projectUrl(project.code),
-    complete: project.complete,
+    // ChronOps may not know. Ajour archives a complete project, so unknown stays open.
+    complete: project.complete ?? false,
     ...(project.contractStart !== null ? { startsOn: project.contractStart } : {}),
     ...(project.contractEnd !== null ? { endsOn: project.contractEnd } : {}),
     ...(budget ? { budget } : {}),

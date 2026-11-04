@@ -27,10 +27,12 @@ MineHunter's answer to Ajour's generic snapshot:
 | --- | --- |
 | project `code` | `remoteId` and `code`, and the link to the project in ChronOps |
 | `contractStart`, `contractEnd` | `startsOn`, `endsOn` |
+| `complete` | `complete`, and not complete when ChronOps cannot tell |
 | monthly budget | hours, `capHours` consumed and remaining |
 | annual budget | money, `maxBudget` and `spentBudget`, or hours when ChronOps has no money figures |
-| budget `status` Unconfigured | no budget |
+| no cap (`capHours` null, status Unconfigured) | no budget |
 | task `id`, `phase`, `assignedToMe` | `remoteId`, `group`, `assigned` |
+| `myHours` | `myHours`, the current month only |
 | `reportAt` | `asOf`, the moment the figures are from |
 | `me.workerLinked` | whether Ajour can compare your hours, with a note on linking your Workday name otherwise |
 

@@ -18,7 +18,7 @@ describe("parseChronopsSnapshot", () => {
   });
 
   it("refuses a snapshot version it does not know, naming both versions", () => {
-    expect(() => parseChronopsSnapshot({ ...fixture, version: 2 })).toThrow(/version 2.*version 1/);
+    expect(() => parseChronopsSnapshot({ ...fixture, version: 1 })).toThrow(/version 1.*version 2/);
   });
 
   it("names the field that breaks the contract", () => {
@@ -67,7 +67,7 @@ describe("mapChronopsSnapshot", () => {
     for (const project of snapshot.projects) expect(project.url).toMatch(/^https:\/\/[^/]+\/a\/wepoint-chronops-app\/timetracking\/projects\//);
     expect(snapshot.asOf).toBe("2026-10-31T23:59:59.000Z");
     expect(snapshot.me).toEqual({ hoursAvailable: true, hoursNote: HOURS_NOTE });
-    expect(snapshot.projects).toHaveLength(2);
+    expect(snapshot.projects).toHaveLength(3);
   });
 
   it("maps a monthly project to an hours budget, with its dates and client", () => {
@@ -93,6 +93,8 @@ describe("mapChronopsSnapshot", () => {
   it("leaves out what ChronOps does not know: client, dates, my hours, a blank phase", () => {
     const [, globex] = snapshot.projects;
     expect(globex).not.toHaveProperty("client");
+    // ChronOps cannot tell whether Globex is complete. Unknown stays open, since Ajour archives a complete project.
+    expect(globex!.complete).toBe(false);
     const [acme] = fixture.projects;
     const blank = mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, client: "  ", tasks: [{ ...acme!.tasks[0]!, phase: "" }] }] });
     expect(blank.projects[0]).not.toHaveProperty("client");
@@ -121,9 +123,25 @@ describe("mapChronopsSnapshot", () => {
     expect(noCap.projects[0]!.budget).toEqual({ unit: "money", consumed: 4725, status: "warning" });
   });
 
-  it("gives no budget to a project ChronOps has not configured", () => {
-    const unconfigured = mapChronopsSnapshot(withBudget({ status: "Unconfigured", capHours: 0, consumedHours: 3, remainingHours: -3 }));
+  it("gives no budget to a project without a cap, and maps the rest of it", () => {
+    // The fixture's third project: complete, no cap, one closed task nobody is assigned to.
+    const [, , initech] = snapshot.projects;
+    expect(initech).toEqual({
+      remoteId: "INIT-ONB",
+      code: "INIT-ONB",
+      name: "Initech - Onboarding",
+      client: "Initech",
+      url: `${CHRONOPS_HOME_URL}/timetracking/projects/INIT-ONB`,
+      complete: true,
+      startsOn: "2026-03-01",
+      endsOn: "2026-06-30",
+      tasks: [{ remoteId: "3001", name: "Accès et comptes", group: "Onboarding", closed: true, billable: true, estimateHours: 4, assigned: false }],
+    });
+    // A cap without figures for the period, or a status ChronOps did not set, gives none either.
+    const unconfigured = mapChronopsSnapshot(withBudget({ status: "Unconfigured" }));
     expect(unconfigured.projects[0]).not.toHaveProperty("budget");
+    const noCap = mapChronopsSnapshot(withBudget({ capHours: null, remainingHours: null }));
+    expect(noCap.projects[0]).not.toHaveProperty("budget");
   });
 
   it("cuts texts to Ajour's bounds, with an ellipsis", () => {

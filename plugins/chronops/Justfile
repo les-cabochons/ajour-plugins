@@ -1,0 +1,29 @@
+# ChronOps plugin command surface
+
+set quiet
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
+PNPM := "corepack pnpm"
+
+[private]
+default: help
+
+[doc("Displays available commands")]
+help:
+    just --list --unsorted
+
+[doc("Runs the contract tests")]
+test:
+    {{PNPM}} test
+
+[doc("Checks JavaScript syntax")]
+typecheck:
+    {{PNPM}} typecheck
+
+[doc("Runs the complete local verification")]
+verify:
+    {{PNPM}} verify
+
+[doc("Serves the fixture as MineHunter would, for example `just fake --scope read-write`")]
+fake *args:
+    node contract/fake-minehunter.mjs {{args}}

@@ -1,9 +1,16 @@
 // The mapping from ChronOps' snapshot to Ajour's generic project source
 // snapshot. Everything ChronOps-specific that Ajour shows comes from here:
 // the source label, the project links and the note on missing hours.
-import type { ChronopsBudget, ChronopsProject, ChronopsSnapshot, ChronopsTask } from "./chronops.ts";
+import type {
+  ChronopsBudget,
+  ChronopsBudgetStatus,
+  ChronopsProject,
+  ChronopsSnapshot,
+  ChronopsTask,
+} from "./chronops.ts";
 import type {
   ProjectSourceBudget,
+  ProjectSourceBudgetStatus,
   ProjectSourceProject,
   ProjectSourceSnapshot,
   ProjectSourceTask,
@@ -21,6 +28,19 @@ export function projectUrl(code: string) {
   return `${CHRONOPS_HOME_URL}/timetracking/projects/${encodeURIComponent(code)}`;
 }
 
+/** ChronOps' health colours in Ajour's words. */
+const BUDGET_STATUS: Record<Exclude<ChronopsBudgetStatus, "Unconfigured">, ProjectSourceBudgetStatus> = {
+  Green: "ok",
+  Yellow: "warning",
+  Red: "over",
+};
+
+/** Ajour refuses an empty text where it expects none, so blank becomes absent. */
+function nonBlank(text: string | null): string | undefined {
+  const trimmed = text?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 /**
  * A monthly budget is a cap in hours. An annual one is money when ChronOps
  * knows the money spent, hours otherwise, so an over-budget annual project
@@ -29,6 +49,7 @@ export function projectUrl(code: string) {
  */
 function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
   if (budget.status === "Unconfigured") return undefined;
+  const status = BUDGET_STATUS[budget.status];
   if (budget.mode === "annual" && budget.spentBudget !== null) {
     return {
       unit: "money",
@@ -36,7 +57,7 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
         ? { total: budget.maxBudget, remaining: budget.maxBudget - budget.spentBudget }
         : {}),
       consumed: budget.spentBudget,
-      status: budget.status,
+      status,
     };
   }
   return {
@@ -44,15 +65,16 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
     total: budget.capHours,
     consumed: budget.consumedHours,
     remaining: budget.remainingHours,
-    status: budget.status,
+    status,
   };
 }
 
 function mapTask(task: ChronopsTask): ProjectSourceTask {
+  const group = nonBlank(task.phase);
   return {
     remoteId: task.id,
     name: task.name,
-    group: task.phase,
+    ...(group !== undefined ? { group } : {}),
     closed: task.closed,
     billable: task.billable,
     estimateHours: task.estimateHours,
@@ -63,11 +85,12 @@ function mapTask(task: ChronopsTask): ProjectSourceTask {
 
 function mapProject(project: ChronopsProject): ProjectSourceProject {
   const budget = mapBudget(project.budget);
+  const client = nonBlank(project.client);
   return {
     remoteId: project.code,
     code: project.code,
     name: project.name,
-    ...(project.client !== null ? { client: project.client } : {}),
+    ...(client !== undefined ? { client } : {}),
     url: projectUrl(project.code),
     complete: project.complete,
     ...(project.contractStart !== null ? { startsOn: project.contractStart } : {}),

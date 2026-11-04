@@ -62,18 +62,22 @@ export interface ProjectSourceProject {
   tasks: ProjectSourceTask[];
 }
 
+/** The source's own health reading of a budget. */
+export type ProjectSourceBudgetStatus = "ok" | "warning" | "over" | "unknown";
+
 export interface ProjectSourceBudget {
   unit: "hours" | "money";
   total?: number;
   consumed: number;
+  /** May be negative. `status` says whether that is over. */
   remaining?: number;
-  /** The source's own health word, such as Green. */
-  status?: string;
+  status?: ProjectSourceBudgetStatus;
 }
 
 export interface ProjectSourceTask {
   remoteId: string;
   name: string;
+  /** How the source groups the project's tasks, such as a phase. */
   group?: string;
   closed: boolean;
   billable?: boolean;

@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-04T13:05:00.000Z",
+  "reportAt": "2026-10-31T23:59:59.000Z",
+  "me": {
+    "email": "marie.tremblay@example.com",
+    "workerLinked": true
+  },
+  "projects": [
+    {
+      "code": "ACME-SUP",
+      "name": "Acme - Support",
+      "client": "Acme inc.",
+      "complete": false,
+      "contractStart": "2026-01-01",
+      "contractEnd": "2026-12-31",
+      "budget": {
+        "mode": "monthly",
+        "capHours": 40,
+        "maxBudget": 6000,
+        "consumedHours": 31.5,
+        "spentBudget": 4725,
+        "remainingHours": 8.5,
+        "status": "Yellow"
+      },
+      "tasks": [
+        {
+          "id": "1001",
+          "phase": "Support",
+          "name": "Billet #101 - Login",
+          "closed": false,
+          "billable": true,
+          "estimateHours": 8,
+          "assignedToMe": true,
+          "myHours": 5.25
+        },
+        {
+          "id": "1002",
+          "phase": "Support",
+          "name": "Billet #102 - Export CSV",
+          "closed": false,
+          "billable": true,
+          "estimateHours": 4,
+          "assignedToMe": false,
+          "myHours": null
+        },
+        {
+          "id": "1003",
+          "phase": "Support",
+          "name": "Billet #099 - Fuseau horaire",
+          "closed": true,
+          "billable": true,
+          "estimateHours": 2,
+          "assignedToMe": true,
+          "myHours": 2
+        }
+      ]
+    },
+    {
+      "code": "GLOBEX-INT",
+      "name": "Globex - Interne",
+      "client": null,
+      "complete": false,
+      "contractStart": null,
+      "contractEnd": null,
+      "budget": {
+        "mode": "annual",
+        "capHours": 200,
+        "maxBudget": null,
+        "consumedHours": 212,
+        "spentBudget": null,
+        "remainingHours": -12,
+        "status": "Red"
+      },
+      "tasks": [
+        {
+          "id": "2001",
+          "phase": "Gestion",
+          "name": "Suivi hebdomadaire",
+          "closed": false,
+          "billable": false,
+          "estimateHours": 0,
+          "assignedToMe": true,
+          "myHours": 14
+        },
+        {
+          "id": "2002",
+          "phase": "Gestion",
+          "name": "Revue de code",
+          "closed": false,
+          "billable": false,
+          "estimateHours": 20,
+          "assignedToMe": false,
+          "myHours": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-// The chronops plugin's entrypoint: one function per project source
+// The chronops plugin's entrypoint, one function per project source
 // operation. Each reaches MineHunter's ChronOps Forwarder through `ajour.http`,
 // which attaches the personal token, so the plugin never holds it.
 import { parseChronopsMe, parseChronopsSnapshot } from "./chronops.ts";
@@ -95,7 +95,7 @@ function dateOf(instant: string) {
 
 /**
  * Asks the Forwarder who the token belongs to. The token's scope and expiry
- * come back on the connection page: a read-write token gets a warning,
+ * come back on the connection page. A read-write token gets a warning,
  * since Ajour only reads.
  */
 export async function validateConnection(

@@ -23,7 +23,7 @@ export interface PluginConnection {
   access: string[];
 }
 
-/** The second argument of `validateConnection`: the capabilities that are on. */
+/** The second argument of `validateConnection`, the capabilities that are on. */
 export interface ValidationContext {
   capabilities: string[];
 }

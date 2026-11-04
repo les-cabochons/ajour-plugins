@@ -103,7 +103,7 @@ describe("syncProjects against the fake MineHunter", () => {
     await syncProjects(connection, {});
     await syncProjects(connection, { cursor: '"stale"' });
     expect(ajour.logs).toHaveLength(2);
-    expect(ajour.logs[0]).toMatchObject({ level: "info", fields: { projects: 2, tasks: 5, unchanged: false, hoursAvailable: true } });
+    expect(ajour.logs[0]).toMatchObject({ level: "info", fields: { projects: 3, tasks: 6, unchanged: false, hoursAvailable: true } });
     expect(JSON.stringify(ajour.logs)).not.toMatch(/Acme|marie/);
   });
 });
@@ -138,8 +138,8 @@ describe("syncProjects when the Forwarder refuses or fails", () => {
   });
 
   it("refuses a body that breaks the contract, and one that is not JSON", async () => {
-    install(answer(200, { ...fixture, version: 2 }));
-    await expect(syncProjects(connection, {})).rejects.toThrow(/snapshot version 2/);
+    install(answer(200, { ...fixture, version: 1 }));
+    await expect(syncProjects(connection, {})).rejects.toThrow(/snapshot version 1/);
 
     const [acme] = fixture.projects;
     install(answer(200, { ...fixture, projects: [{ ...acme, budget: { ...acme!.budget, status: "Blue" } }] }));

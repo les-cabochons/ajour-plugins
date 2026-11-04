@@ -1,12 +1,12 @@
 // What MineHunter's ChronOps Forwarder answers, as contract/snapshot.schema.json
-// (version 1) and ADR-0030 describe it. This file is the plugin's reading of
+// (version 2) and ADR-0030 describe it. This file is the plugin's reading of
 // that contract. It holds the types, and a parser that applies the schema's
 // rules by hand (required fields, types, enums, minimums, date formats, no
 // unknown field) and refuses a body that strays from it, naming the field.
 // Ajour never sees these shapes.
 
 /** The snapshot version this plugin reads. A shape change bumps it. */
-export const CHRONOPS_SNAPSHOT_VERSION = 1;
+export const CHRONOPS_SNAPSHOT_VERSION = 2;
 
 /** `GET /integration/me`: the token's owner, scope and expiry. */
 export interface ChronopsMe {
@@ -19,7 +19,7 @@ export interface ChronopsMe {
 
 /** `GET /integration/ajour/snapshot`. */
 export interface ChronopsSnapshot {
-  version: 1;
+  version: 2;
   generatedAt: string;
   /** The moment the budget figures are computed for. */
   reportAt: string;
@@ -32,7 +32,8 @@ export interface ChronopsProject {
   code: string;
   name: string;
   client: string | null;
-  complete: boolean;
+  /** Null when ChronOps cannot tell. */
+  complete: boolean | null;
   /** YYYY-MM-DD. */
   contractStart: string | null;
   contractEnd: string | null;
@@ -44,12 +45,13 @@ export type ChronopsBudgetStatus = "Green" | "Yellow" | "Red" | "Unconfigured";
 
 export interface ChronopsBudget {
   mode: "monthly" | "annual";
-  capHours: number;
+  /** Null when the project has no cap, or no figures for the current period. Status is then Unconfigured. */
+  capHours: number | null;
   maxBudget: number | null;
   consumedHours: number;
   spentBudget: number | null;
-  /** capHours minus consumedHours, negative when over. */
-  remainingHours: number;
+  /** capHours minus consumedHours, negative when over. Null when capHours is null. */
+  remainingHours: number | null;
   status: ChronopsBudgetStatus;
 }
 
@@ -60,9 +62,9 @@ export interface ChronopsTask {
   closed: boolean;
   billable: boolean;
   estimateHours: number;
-  /** False for every task when me.workerLinked is false. */
+  /** ChronOps assigns by email, so this is known with or without a worker link. */
   assignedToMe: boolean;
-  /** Null when not assigned or not linked. */
+  /** The caller's hours on the task in the current month. Null when not assigned or not linked. */
   myHours: number | null;
 }
 
@@ -156,11 +158,11 @@ const readTask = object({
 
 const readBudget = object({
   mode: oneOf(["monthly", "annual"] as const),
-  capHours: nonNegative,
+  capHours: nullable(nonNegative),
   maxBudget: nullable(nonNegative),
   consumedHours: nonNegative,
   spentBudget: nullable(nonNegative),
-  remainingHours: number,
+  remainingHours: nullable(number),
   status: oneOf(["Green", "Yellow", "Red", "Unconfigured"] as const),
 });
 
@@ -168,7 +170,7 @@ const readProject = object({
   code: nonEmpty,
   name: nonEmpty,
   client: nullable(string),
-  complete: boolean,
+  complete: nullable(boolean),
   contractStart: nullable(date),
   contractEnd: nullable(date),
   budget: readBudget,

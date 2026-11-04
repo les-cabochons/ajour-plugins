@@ -58,7 +58,7 @@ describe("mapChronopsSnapshot", () => {
       complete: false,
       startsOn: "2026-01-01",
       endsOn: "2026-12-31",
-      budget: { unit: "hours", total: 40, consumed: 31.5, remaining: 8.5, status: "Yellow" },
+      budget: { unit: "hours", total: 40, consumed: 31.5, remaining: 8.5, status: "warning" },
       tasks: [
         { remoteId: "1001", name: "Billet #101 - Login", group: "Support", closed: false, billable: true, estimateHours: 8, assigned: true, myHours: 5.25 },
         { remoteId: "1002", name: "Billet #102 - Export CSV", group: "Support", closed: false, billable: true, estimateHours: 4, assigned: false },
@@ -67,26 +67,35 @@ describe("mapChronopsSnapshot", () => {
     });
   });
 
-  it("leaves out what ChronOps does not know: client, dates, my hours", () => {
+  it("leaves out what ChronOps does not know: client, dates, my hours, a blank phase", () => {
     const [, globex] = snapshot.projects;
     expect(globex).not.toHaveProperty("client");
+    const [acme] = fixture.projects;
+    const blank = mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, client: "  ", tasks: [{ ...acme!.tasks[0]!, phase: "" }] }] });
+    expect(blank.projects[0]).not.toHaveProperty("client");
+    expect(blank.projects[0]!.tasks[0]).not.toHaveProperty("group");
     expect(globex).not.toHaveProperty("startsOn");
     expect(globex).not.toHaveProperty("endsOn");
     expect(globex!.tasks[1]).not.toHaveProperty("myHours");
     expect(globex!.tasks[0]).toMatchObject({ remoteId: "2001", group: "Gestion", billable: false, estimateHours: 0, assigned: true, myHours: 14 });
   });
 
+  it("says a budget's health in Ajour's words", () => {
+    const statusOf = (status: "Green" | "Yellow" | "Red") => mapChronopsSnapshot(withBudget({ status })).projects[0]!.budget?.status;
+    expect([statusOf("Green"), statusOf("Yellow"), statusOf("Red")]).toEqual(["ok", "warning", "over"]);
+  });
+
   it("maps an annual project to a money budget when ChronOps knows the money, else to hours", () => {
     // The fixture's annual project has no money figures: hours, so the
     // over-budget state still shows.
     const [, globex] = snapshot.projects;
-    expect(globex!.budget).toEqual({ unit: "hours", total: 200, consumed: 212, remaining: -12, status: "Red" });
+    expect(globex!.budget).toEqual({ unit: "hours", total: 200, consumed: 212, remaining: -12, status: "over" });
 
     const money = mapChronopsSnapshot(withBudget({ mode: "annual", maxBudget: 6000, spentBudget: 4725 }));
-    expect(money.projects[0]!.budget).toEqual({ unit: "money", total: 6000, consumed: 4725, remaining: 1275, status: "Yellow" });
+    expect(money.projects[0]!.budget).toEqual({ unit: "money", total: 6000, consumed: 4725, remaining: 1275, status: "warning" });
 
     const noCap = mapChronopsSnapshot(withBudget({ mode: "annual", maxBudget: null, spentBudget: 4725 }));
-    expect(noCap.projects[0]!.budget).toEqual({ unit: "money", consumed: 4725, status: "Yellow" });
+    expect(noCap.projects[0]!.budget).toEqual({ unit: "money", consumed: 4725, status: "warning" });
   });
 
   it("gives no budget to a project ChronOps has not configured", () => {

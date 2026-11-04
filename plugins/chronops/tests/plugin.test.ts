@@ -52,13 +52,14 @@ describe("validateConnection against the fake MineHunter", () => {
     it("asks for a read-only token and says when this one expires", async () => {
       withFake();
       const result = await validateConnection(connection, { capabilities: [] });
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings?.[0]).toMatch(/read token/);
       expect(result.connectionSummary).toEqual({
         Email: "marie.tremblay@example.com",
         Scope: "Read and write",
         "Token expires": "2026-12-01",
+        Warning: result.warnings?.[0],
       });
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings?.[0]).toMatch(/read/i);
     });
   });
 

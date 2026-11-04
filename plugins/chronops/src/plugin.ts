@@ -112,6 +112,9 @@ export async function validateConnection(
     me.scope === "read-write"
       ? ["This token can also write time in ChronOps. Ajour only reads your projects, so create a read token on your ChronOps profile and use it here."]
       : [];
+  // Ajour has no warnings channel on validation yet (les-cabochons/ajour#502,
+  // story 2), so the summary carries the warning too, as a row people see today.
+  if (warnings[0] !== undefined) connectionSummary["Warning"] = warnings[0];
   return {
     normalizedConfig: connection.config,
     connectionSummary,

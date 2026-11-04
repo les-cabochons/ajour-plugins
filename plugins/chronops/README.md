@@ -34,6 +34,11 @@ MineHunter's answer to Ajour's generic snapshot:
 | `reportAt` | `asOf`, the moment the figures are from |
 | `me.workerLinked` | whether Ajour can compare your hours, with a note on linking your Workday name otherwise |
 
+A name, client or phase longer than Ajour accepts is cut, with an
+ellipsis. A project code or task id longer than 100 characters, more than
+200 projects or more than 10,000 tasks fail the sync with a message, since
+Ajour would refuse the snapshot.
+
 Each failure is one message on the connection page, with no retry: a
 revoked or expired token (401), a forbidden request (403, with the
 Forwarder's reason), the Forwarder's limit of 10 requests a second (429), a

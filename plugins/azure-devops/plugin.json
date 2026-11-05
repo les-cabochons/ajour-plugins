@@ -23,7 +23,10 @@
         ],
         "mentions": true
       },
-      "description": { "write": true, "maxLength": 1000000 }
+      "description": {
+        "write": true,
+        "maxLength": 1000000
+      }
     },
     "codeHost": {}
   },
@@ -66,7 +69,10 @@
       "required": true,
       "defaultValue": "assigned_to_me",
       "options": [
-        { "value": "assigned_to_me", "label": "Assigned to me" },
+        {
+          "value": "assigned_to_me",
+          "label": "Assigned to me"
+        },
         {
           "value": "project_open_tasks",
           "label": "Open tasks across organization"
@@ -82,9 +88,18 @@
       "defaultValue": "always",
       "helpText": "Choose whether imported tasks keep the connector icon or switch to the linked project icon.",
       "options": [
-        { "value": "always", "label": "Always show connector icon" },
-        { "value": "fallback", "label": "Use connector icon as fallback" },
-        { "value": "never", "label": "Never show connector icon" }
+        {
+          "value": "always",
+          "label": "Always show connector icon"
+        },
+        {
+          "value": "fallback",
+          "label": "Use connector icon as fallback"
+        },
+        {
+          "value": "never",
+          "label": "Never show connector icon"
+        }
       ]
     },
     {
@@ -362,6 +377,270 @@
             "access": "peopleSearch"
           }
         ]
+      },
+      {
+        "id": "organization",
+        "label": "Organization APIs for saved project URLs",
+        "forms": [
+          {
+            "whenHost": "dev.azure.com",
+            "host": "{host}",
+            "keepBasePath": false
+          },
+          {
+            "whenHost": "*.visualstudio.com",
+            "host": "{host}",
+            "keepBasePath": false
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/_apis/connectionData"
+          },
+          {
+            "method": "POST",
+            "path": "/_apis/wit/wiql",
+            "access": "readBacklog"
+          },
+          {
+            "method": "POST",
+            "path": "/*/_apis/wit/wiql",
+            "access": "readBacklog"
+          },
+          {
+            "method": "POST",
+            "path": "/_apis/wit/workitemsbatch",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/wit/workitems/*",
+            "access": "readBacklog"
+          },
+          {
+            "method": "PATCH",
+            "path": "/_apis/wit/workitems/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workitemtypes/*/states",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workitemtypes/*/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workItems/*/comments",
+            "access": "readBacklog"
+          },
+          {
+            "method": "POST",
+            "path": "/*/_apis/wit/workItems/*/comments",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workItems/*/comments/*",
+            "access": "readBacklog"
+          },
+          {
+            "method": "PATCH",
+            "path": "/*/_apis/wit/workItems/*/comments/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "DELETE",
+            "path": "/*/_apis/wit/workItems/*/comments/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "PUT",
+            "path": "/*/_apis/wit/workItems/*/comments/*/reactions/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "DELETE",
+            "path": "/*/_apis/wit/workItems/*/comments/*/reactions/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/git/repositories",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/git/pullrequests",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/pullrequests",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/git/pullrequests/*",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/threads",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/policy/evaluations",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/teams",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/connectionData"
+          },
+          {
+            "method": "POST",
+            "path": "/*/*/_apis/wit/wiql",
+            "access": "readBacklog"
+          },
+          {
+            "method": "POST",
+            "path": "/*/_apis/wit/workitemsbatch",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workitems/*",
+            "access": "readBacklog"
+          },
+          {
+            "method": "PATCH",
+            "path": "/*/_apis/wit/workitems/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/wit/workitemtypes/*/states",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/wit/workitemtypes/*/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/wit/workItems/*/comments",
+            "access": "readBacklog"
+          },
+          {
+            "method": "POST",
+            "path": "/*/*/_apis/wit/workItems/*/comments",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/wit/workItems/*/comments/*",
+            "access": "readBacklog"
+          },
+          {
+            "method": "PATCH",
+            "path": "/*/*/_apis/wit/workItems/*/comments/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "DELETE",
+            "path": "/*/*/_apis/wit/workItems/*/comments/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "PUT",
+            "path": "/*/*/_apis/wit/workItems/*/comments/*/reactions/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "DELETE",
+            "path": "/*/*/_apis/wit/workItems/*/comments/*/reactions/*",
+            "access": "editWorkItems"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/repositories",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/git/pullrequests",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/pullrequests/*",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/threads",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/policy/evaluations",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/teams",
+            "access": "pullRequests"
+          }
+        ]
+      },
+      {
+        "id": "organizationIdentities",
+        "label": "People search for saved project URLs",
+        "forms": [
+          {
+            "whenHost": "dev.azure.com",
+            "host": "vssps.{host}",
+            "keepBasePath": false
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/*/_apis/identities",
+            "access": "peopleSearch"
+          }
+        ]
       }
     ],
     "requestHeaders": ["Accept", "Content-Type"]
@@ -421,5 +700,7 @@
       "operations": ["searchItemPeople", "searchAssignees"]
     }
   ],
-  "runtime": { "start": "whenNeeded" }
+  "runtime": {
+    "start": "whenNeeded"
+  }
 }

@@ -88,8 +88,7 @@ function buildAzureConfig(
   ) {
     throw new Error('Azure DevOps field "organizationUrl" is required.');
   }
-  // The broker sends every request under the saved address, so it must name
-  // the organization or collection, not a project.
+  // Validate the address without changing the API 3 source-ID prefix.
   organizationRootUrl(parsed.organizationUrl);
 
   if (
@@ -188,7 +187,10 @@ function splitFields(values: ConnectorFieldValues, ids: ReadonlySet<string>) {
 
 async function validatePullRequests(connection: PluginConnection) {
   const config = buildPullRequestConfig(connection);
-  const client = new AzureReposClient(config.connectionId);
+  const client = new AzureReposClient(
+    config.connectionId,
+    config.savedOrganizationUrl,
+  );
   const viewer = await fetchViewer(client);
   // connectionData answers any valid token. Listing repositories proves Code
   // (Read), once the connection's access lets it read pull requests at all.
@@ -197,7 +199,10 @@ async function validatePullRequests(connection: PluginConnection) {
   }
   return {
     normalizedConfig: {
-      organizationUrl: config.organizationUrl,
+      organizationUrl: String(connection.config.organizationUrl).replace(
+        /\/+$/,
+        "",
+      ),
       pullRequestsInclude: formatScopes(config.include),
       pullRequestsExclude: formatScopes(config.exclude),
       hideDraftPullRequests: config.hideDrafts,

@@ -38,10 +38,12 @@ export class AzureReposNotFoundError extends Error {
  */
 export class AzureReposClient {
   private readonly connectionId: string;
+  private readonly organizationUrl?: string;
 
   /** `connectionId` is the connection `ajour.http` sends through. */
-  constructor(connectionId: string) {
+  constructor(connectionId: string, organizationUrl?: string) {
     this.connectionId = connectionId;
+    this.organizationUrl = organizationUrl;
   }
 
   async get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
@@ -51,7 +53,7 @@ export class AzureReposClient {
     }
 
     const response = await sendAzureDevOps(
-      { id: this.connectionId },
+      { id: this.connectionId, organizationUrl: this.organizationUrl },
       path,
       Object.keys(query).length > 0 ? { query } : {},
     );
@@ -587,7 +589,7 @@ export async function syncPullRequests(
   config: PullRequestConfig,
   tracked: CodeHostPullRequestRef[],
 ): Promise<CodeHostSyncResult> {
-  const client = new AzureReposClient(config.connectionId);
+  const client = new AzureReposClient(config.connectionId, config.savedOrganizationUrl);
   const viewer = await fetchViewer(client);
   const viewerTeams = config.includeTeamRequests ? await fetchViewerTeams(client) : new Set<string>();
 

@@ -197,7 +197,7 @@ describe("network declaration", () => {
   });
 
   it("derives the people search host: vssps.{host} for dev.azure.com, {org}.vssps.visualstudio.com, the collection on a server", () => {
-    expect(validManifest.network.derivedHosts).toEqual([
+    expect(validManifest.network.derivedHosts.slice(0, 1)).toEqual([
       {
         id: "identities",
         label: "People search",
@@ -309,6 +309,53 @@ describe("network declaration", () => {
   });
 });
 
+describe("saved cloud project URL routing", () => {
+  it("declares host-root forms only for the Azure cloud hosts, with the original access choices", () => {
+    const organization = validManifest.network.derivedHosts.find(
+      (host: any) => host.id === "organization",
+    );
+    expect(organization.forms).toEqual([
+      { whenHost: "dev.azure.com", host: "{host}", keepBasePath: false },
+      { whenHost: "*.visualstudio.com", host: "{host}", keepBasePath: false },
+    ]);
+    const expectedEndpoints = [
+      ...validManifest.network.endpoints,
+      ...validManifest.network.endpoints.map((endpoint: any) => ({
+        ...endpoint,
+        path: "/*" + endpoint.path,
+      })),
+    ];
+    expect(organization.endpoints).toEqual(
+      expectedEndpoints.filter(
+        (endpoint: any, index: number) =>
+          expectedEndpoints.findIndex(
+            (candidate: any) =>
+              candidate.method === endpoint.method &&
+              candidate.path === endpoint.path,
+          ) === index,
+      ),
+    );
+    expect(
+      validManifest.network.derivedHosts.find(
+        (host: any) => host.id === "organizationIdentities",
+      ),
+    ).toEqual({
+      id: "organizationIdentities",
+      label: "People search for saved project URLs",
+      forms: [
+        {
+          whenHost: "dev.azure.com",
+          host: "vssps.{host}",
+          keepBasePath: false,
+        },
+      ],
+      endpoints: [
+        { method: "GET", path: "/*/_apis/identities", access: "peopleSearch" },
+      ],
+    });
+  });
+});
+
 describe("connection access", () => {
   // The same choices as Ajour's own table for this plugin on API 3
   // (packages/shared/connection-access.ts), so a migrated connection keeps its choices.
@@ -361,10 +408,12 @@ describe("connection access", () => {
         endpoint.method !== "GET" && endpoint.access !== "editWorkItems",
     );
     // Reads that POST a query or a list of ids.
-    expect(endpointsOf(writes)).toEqual([
+    expect([...new Set(endpointsOf(writes))]).toEqual([
       "POST /_apis/wit/wiql [readBacklog]",
       "POST /*/_apis/wit/wiql [readBacklog]",
       "POST /_apis/wit/workitemsbatch [readBacklog]",
+      "POST /*/*/_apis/wit/wiql [readBacklog]",
+      "POST /*/_apis/wit/workitemsbatch [readBacklog]",
     ]);
   });
 

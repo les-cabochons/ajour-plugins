@@ -131,13 +131,29 @@ describe("validateConnection with pull requests", () => {
     expect(calls).toEqual([`${ORG}/_apis/connectionData`]);
   });
 
-  it("refuses a project's URL, which Ajour would send every request under", async () => {
-    const calls = stubFetch({});
-
+  it("accepts a saved project URL with only pull requests enabled and retains it", async () => {
+    const savedUrl = `${ORG}/Fabrikam/`;
+    const calls: string[] = [];
+    stubAzureFetch(
+      async (url) => {
+        calls.push(url);
+        return url.includes("connectionData")
+          ? json(connectionData)
+          : json({ value: [] });
+      },
+      { baseAddress: savedUrl },
+    );
     await expect(
-      validateConnection(connection({ organizationUrl: `${ORG}/Fabrikam/` }), { capabilities: ["codeHost"] }),
-    ).rejects.toThrow(`must be the organization's URL, ${ORG}, not a project's`);
-    expect(calls).toHaveLength(0);
+      validateConnection(connection({ organizationUrl: savedUrl }), {
+        capabilities: ["codeHost"],
+      }),
+    ).resolves.toMatchObject({
+      normalizedConfig: { organizationUrl: `${ORG}/Fabrikam` },
+    });
+    expect(calls).toEqual([
+      `${ORG}/_apis/connectionData`,
+      `${ORG}/_apis/git/repositories?api-version=7.1`,
+    ]);
   });
 
   it("keeps pull request values unchecked while pull requests are off", async () => {

@@ -78,10 +78,13 @@ only.
 `https://dev.azure.com/your-org` or `https://your-org.visualstudio.com`, or an
 Azure DevOps Server collection, such as
 `https://ado.contoso.com/tfs/DefaultCollection`. Ajour sends every request
-under the URL as saved and never above its path, so a project's URL under
-`dev.azure.com` or `visualstudio.com` is refused with the organization's URL to
-enter instead. Mark an Azure DevOps Server connection as on-premises when the
-server is on a private network or uses `http`.
+through the saved address or a manifest-declared derived host. Existing cloud
+project and repository URLs, including `visualstudio.com/DefaultCollection`
+forms, remain accepted. The plugin derives the organization for API calls and
+keeps the saved address for work item source IDs. Project URLs keep their
+project query scope. No connection migration is needed. Mark an Azure DevOps
+Server connection as on-premises when the server is on a private network or
+uses `http`.
 
 ### Access
 

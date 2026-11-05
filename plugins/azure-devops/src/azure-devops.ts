@@ -1,3 +1,4 @@
+import { organizationRootUrl } from "./pull-request-config.ts";
 import type {} from "@ajour/plugin-sdk/globals";
 import type {
   AzureDevOpsQueryScope,
@@ -27,8 +28,8 @@ export interface AzureDevOpsConnectionInput {
   tenantLabel: string;
   /**
    * The Organization URL the user saved, which Ajour's broker builds every
-   * request's address from: an organization, or an Azure DevOps Server
-   * collection. Request paths are relative to it.
+   * request's address from. API 3 project URLs remain valid and retain their
+   * source-ID prefix; cloud requests can use a derived organization root.
    */
   organizationUrl: string;
   project?: string;
@@ -383,15 +384,33 @@ export function isRejectedToken(response: Pick<AzureResponse, "status">) {
  * body.
  */
 export async function sendAzureDevOps(
-  config: Pick<AzureDevOpsConnectionInput, "id">,
+  config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
   path: string,
   init: AzureRequestInit = {},
 ): Promise<AzureResponse> {
   const hasBody = init.body !== undefined;
+  let host = init.host;
+  if (config.organizationUrl) {
+    const saved = new URL(config.organizationUrl);
+    const root = new URL(organizationRootUrl(config.organizationUrl));
+    if (
+      saved.pathname.replace(/\/+$/, "") !== root.pathname.replace(/\/+$/, "")
+    ) {
+      // These manifest forms start at the cloud host root. The saved URL
+      // remains the source-ID prefix, so existing tracked items still match.
+      if (host === undefined) {
+        host = "organization";
+        path = root.pathname.replace(/\/+$/, "") + path;
+      } else if (host === "identities" && saved.hostname === "dev.azure.com") {
+        host = "organizationIdentities";
+        path = root.pathname.replace(/\/+$/, "") + path;
+      }
+    }
+  }
   try {
     return await ajour.http({
       connectionId: config.id,
-      ...(init.host !== undefined ? { host: init.host } : {}),
+      ...(host !== undefined ? { host } : {}),
       method: init.method ?? "GET",
       path,
       ...(init.query !== undefined ? { query: init.query } : {}),
@@ -412,7 +431,7 @@ export async function sendAzureDevOps(
 }
 
 export async function requestAzureDevOps<T>(
-  config: Pick<AzureDevOpsConnectionInput, "id">,
+  config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
   path: string,
   init?: AzureRequestInit,
 ): Promise<T> {
@@ -450,13 +469,29 @@ export async function requestAzureDevOps<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** Preserve a saved project's query scope while other endpoints name their own project. */
+function projectQueryPath(organizationUrl: string) {
+  const saved = new URL(organizationUrl);
+  const root = new URL(organizationRootUrl(organizationUrl));
+  const suffix = saved.pathname
+    .slice(root.pathname.replace(/\/+$/, "").length)
+    .split("/")
+    .filter(Boolean);
+  if (
+    saved.hostname.endsWith(".visualstudio.com") &&
+    suffix[0]?.toLowerCase() === "defaultcollection"
+  )
+    suffix.shift();
+  return suffix[0] ? `/${suffix[0]}/_apis/wit/wiql` : "/_apis/wit/wiql";
+}
+
 async function executeWiqlQuery(
   config: AzureDevOpsConnectionInput,
   query: string,
 ): Promise<number[]> {
   const response = await requestAzureDevOps<AzureWiqlResponse>(
     config,
-    "/_apis/wit/wiql",
+    projectQueryPath(config.organizationUrl),
     {
       method: "POST",
       query: { $top: 200, "api-version": "7.1" },

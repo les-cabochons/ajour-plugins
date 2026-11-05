@@ -1,39 +1,26 @@
+import type {} from "@ajour/plugin-sdk/globals";
+import type { PluginModule } from "@ajour/plugin-sdk";
 import { buildGitHubConfig } from "./config.ts";
-import {
-  parseConnectorFieldValues,
-  type BacklogReadDescriptionRequest,
-  type BacklogReadDescriptionResult,
-  type BacklogWriteDescriptionRequest,
-  type BacklogWriteDescriptionResult,
-  type CodeHostSyncRequest,
-  type CodeHostSyncResult,
-  type ConnectorFieldValues,
-  type ConnectorPluginConnection,
-  type ConnectorPluginSyncResult,
-  type ConnectorPluginValidationResult,
-  type ConnectorSettleStatesRequest,
-  type ConnectorSettleStatesResult,
-  type ConnectorSettleWriteRequest,
-  type ConnectorSettleWriteResult,
-  type ConnectorSyncWorkItem,
-} from "./contract.ts";
 import { readIssueDescription, writeIssueDescription } from "./description-source.ts";
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 
+/*
+ * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
+ * (plugin API 4). Each export is one operation. The connection an operation
+ * receives holds no token: it stays with Ajour's broker, which attaches it as a
+ * bearer credential to every `ajour.http` request.
+ */
+
 /** Both issues and pull requests need only a token GitHub accepts. */
-export async function validateConnection(
-  values: ConnectorFieldValues,
-): Promise<ConnectorPluginValidationResult> {
-  const parsed = parseConnectorFieldValues(values);
-  const config = buildGitHubConfig(parsed);
-  const viewer = await fetchViewer(new GitHubClient(config.apiUrl, config.token));
+export const validateConnection: NonNullable<PluginModule["validateConnection"]> = async (connection) => {
+  const config = buildGitHubConfig(connection);
+  const viewer = await fetchViewer(new GitHubClient(config.connectionId));
 
   return {
     normalizedConfig: {
-      ...parsed,
+      ...connection.config,
       hostUrl: config.hostUrl,
-      token: config.token,
       include: config.include
         .map((scope) => (scope.repository ? `${scope.owner}/${scope.repository}` : scope.owner))
         .join(", "),
@@ -48,49 +35,25 @@ export async function validateConnection(
       host: new URL(config.hostUrl).host,
     },
   };
-}
+};
 
-export async function syncPullRequests(
-  connection: ConnectorPluginConnection,
-  request: CodeHostSyncRequest,
-): Promise<CodeHostSyncResult> {
-  return await syncGitHubPullRequests(buildGitHubConfig(connection.config), request.tracked);
-}
+export const syncPullRequests: NonNullable<PluginModule["syncPullRequests"]> = async (connection, request) =>
+  await syncGitHubPullRequests(buildGitHubConfig(connection), request.tracked);
 
 /** Issues assigned to you, as backlog items. */
-export async function syncConnection(
-  connection: ConnectorPluginConnection,
-  workItems: ConnectorSyncWorkItem[] = [],
-): Promise<ConnectorPluginSyncResult> {
-  return await syncIssues(buildGitHubConfig(connection.config), connection, workItems);
-}
+export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>
+  await syncIssues(buildGitHubConfig(connection), connection, workItems);
 
-export async function listSettleStates(
-  connection: ConnectorPluginConnection,
-  request: ConnectorSettleStatesRequest,
-): Promise<ConnectorSettleStatesResult> {
-  return await listIssueSettleStates(buildGitHubConfig(connection.config), request.sourceId);
-}
+export const listSettleStates: NonNullable<PluginModule["listSettleStates"]> = async (connection, request) =>
+  await listIssueSettleStates(buildGitHubConfig(connection), request.sourceId);
 
-export async function writeSettle(
-  connection: ConnectorPluginConnection,
-  request: ConnectorSettleWriteRequest,
-): Promise<ConnectorSettleWriteResult> {
-  return await writeIssueSettle(buildGitHubConfig(connection.config), request);
-}
+export const writeSettle: NonNullable<PluginModule["writeSettle"]> = async (connection, request) =>
+  await writeIssueSettle(buildGitHubConfig(connection), request);
 
 /** The issue's current body, read when the user edits its description in Ajour. */
-export async function readDescription(
-  connection: ConnectorPluginConnection,
-  request: BacklogReadDescriptionRequest,
-): Promise<BacklogReadDescriptionResult> {
-  return await readIssueDescription(buildGitHubConfig(connection.config), request);
-}
+export const readDescription: NonNullable<PluginModule["readDescription"]> = async (connection, request) =>
+  await readIssueDescription(buildGitHubConfig(connection), request);
 
 /** Writes the user's edit, unless the issue's body changed since it was read. */
-export async function writeDescription(
-  connection: ConnectorPluginConnection,
-  request: BacklogWriteDescriptionRequest,
-): Promise<BacklogWriteDescriptionResult> {
-  return await writeIssueDescription(buildGitHubConfig(connection.config), request);
-}
+export const writeDescription: NonNullable<PluginModule["writeDescription"]> = async (connection, request) =>
+  await writeIssueDescription(buildGitHubConfig(connection), request);

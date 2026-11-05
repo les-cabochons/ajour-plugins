@@ -196,7 +196,7 @@ export async function syncIssues(
   connection: Pick<ConnectorPluginConnection, "id" | "label" | "tenantLabel">,
   workItems: ConnectorSyncWorkItem[],
 ): Promise<ConnectorPluginSyncResult> {
-  const client = new GitHubClient(config.apiUrl, config.token);
+  const client = new GitHubClient(config.connectionId);
   const assigned = (await searchAssignedIssues(client)).filter((issue) =>
     repositoryInScope(config, issue.repository.nameWithOwner),
   );
@@ -248,7 +248,7 @@ export async function writeIssueSettle(
     throw new Error(`"${request.state}" is not a GitHub issue state.`);
   }
 
-  const client = new GitHubClient(config.apiUrl, config.token);
+  const client = new GitHubClient(config.connectionId);
   let issue = await fetchIssue(client, ref);
   const target = request.state;
   if (target !== undefined && target !== stateOf(issue).state) {

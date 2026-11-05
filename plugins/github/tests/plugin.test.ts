@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitHubClient, mentions } from "../src/github.ts";
 import { syncPullRequests, validateConnection } from "../src/plugin.ts";
+import { installAjour, json, pluginConnection, stubGitHub } from "./support/github-ajour.ts";
 
 const viewer = {
   __typename: "User",
@@ -40,44 +41,11 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-interface GraphQLCall {
-  query: string;
-  variables: Record<string, unknown>;
-}
-
-function stubGitHub(handler: (call: GraphQLCall) => unknown) {
-  const calls: GraphQLCall[] = [];
-  const fetch = vi.fn(async (_url: string, init: RequestInit) => {
-    if (!init.body) return new Response("[]", { status: 200 });
-    const call = JSON.parse(String(init.body)) as GraphQLCall;
-    calls.push(call);
-    const data = handler(call);
-    return new Response(
-      JSON.stringify(data instanceof Error ? { errors: [{ message: data.message }] } : { data }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  });
-  vi.stubGlobal("fetch", fetch);
-  return { calls, fetch };
-}
-
 function searchResult(nodes: unknown[]) {
   return { search: { issueCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes } };
 }
 
-const connection = {
-  id: "connection-1",
-  pluginId: "github",
-  label: "Work",
-  tenantLabel: "Acme",
-  autoSync: true,
-  autoSyncIntervalMinutes: 5,
-  connectedAt: 1,
-  config: { hostUrl: "https://github.com", token: "secret", includeTeamRequests: true },
-};
+const connection = pluginConnection({ includeTeamRequests: true });
 
 describe("GitHub plugin", () => {
   afterEach(() => {
@@ -85,21 +53,18 @@ describe("GitHub plugin", () => {
     vi.restoreAllMocks();
   });
 
-  it("validates a token and summarizes the account", async () => {
-    const { fetch } = stubGitHub(() => ({ viewer }));
+  it("validates the connection and summarizes the account, returning no token", async () => {
+    const { requests } = stubGitHub(() => ({ viewer }));
 
     await expect(
-      validateConnection({
-        label: "Work",
-        hostUrl: "https://github.com/",
-        token: " secret ",
-        include: "Acme",
-      }),
+      validateConnection(
+        pluginConnection({ label: "Work", hostUrl: "https://github.com/", include: "Acme" }),
+        { capabilities: ["connector", "codeHost"] },
+      ),
     ).resolves.toEqual({
       normalizedConfig: {
         label: "Work",
         hostUrl: "https://github.com",
-        token: "secret",
         include: "acme",
         exclude: "",
         hideDrafts: false,
@@ -107,12 +72,14 @@ describe("GitHub plugin", () => {
       },
       connectionSummary: { account: "octocat", host: "github.com" },
     });
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.github.com/graphql",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer secret" }),
-      }),
-    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      host: "graphql",
+      method: "POST",
+      path: "/graphql",
+      contentType: "application/json",
+      body: { variables: {} },
+    });
   });
 
   it("returns direct and team re-request events with their actors and times", async () => {
@@ -139,12 +106,11 @@ describe("GitHub plugin", () => {
   });
 
   it("explains a rejected token", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("", { status: 401 })),
-    );
+    installAjour(() => ({ status: 401, body: "" }));
 
-    await expect(validateConnection({ token: "expired" })).rejects.toThrow("GitHub rejected the token");
+    await expect(validateConnection(connection, { capabilities: [] })).rejects.toThrow(
+      "GitHub rejected the token. Check that it is valid and not expired.",
+    );
   });
 
   it("reports mentions in review bodies without storing their text", async () => {
@@ -156,26 +122,36 @@ describe("GitHub plugin", () => {
 
   it.each(["push", "force_push"])("attributes a %s to the pusher and actual push time on a fork branch", async (activity_type) => {
     const pr = pullRequest({ reviews: { nodes: [{ id: "r", state: "CHANGES_REQUESTED", submittedAt: "2026-10-01T13:00:00Z", author: viewer }] } });
-    const mocked = stubGitHub((call) => call.query.includes("search(") ? searchResult([pr]) : call.query.includes("organizations") ? { viewer: { organizations: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } : { viewer });
-    const graphql = mocked.fetch.getMockImplementation()!;
-    mocked.fetch.mockImplementation(async (url, init) => init.body ? graphql(url, init) : new Response(JSON.stringify([
+    const activities = [
       { after: "unrelated", ref: "refs/heads/change/rate-limits", activity_type, timestamp: "2026-10-02T11:00:00Z", actor: { login: "someone", type: "User" } },
       { after: "abc123", ref: "refs/heads/change/rate-limits", activity_type, timestamp: "2026-10-02T10:00:00Z", actor: { login: "octocat", type: "User" } },
-    ]), { status: 200 }));
+    ];
+    const { requests } = stubGitHub(
+      (call) => call.query.includes("search(") ? searchResult([pr]) : call.query.includes("organizations") ? { viewer: { organizations: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } : { viewer },
+      () => json(activities),
+    );
     const result = await syncPullRequests(connection, { tracked: [] });
     expect(result.pullRequests[0]).toMatchObject({ lastPushedAt: Date.parse("2026-10-02T10:00:00Z"), lastPushActor: { login: "octocat", isBot: false } });
-    const request = mocked.fetch.mock.calls.find(([, init]) => !init.body)!;
-    const url = new URL(String(request[0]));
-    expect(url.pathname).toBe("/repos/alice/api/activity");
-    expect(url.searchParams.get("ref")).toBe("refs/heads/change/rate-limits");
+    const request = requests.find((seen) => seen.host === "rest")!;
+    expect(request).toMatchObject({
+      method: "GET",
+      path: "/repos/alice/api/activity",
+      query: { ref: "refs/heads/change/rate-limits", per_page: 100, direction: "desc" },
+      headers: {
+        accept: "application/vnd.github+json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "ajour-github-plugin",
+      },
+    });
+    expect(request.contentType).toBeUndefined();
+    expect(request.body).toBeUndefined();
   });
 
-  it("uses the Enterprise REST URL and tolerates unavailable push attribution", async () => {
-    const fetch = vi.fn(async () => new Response("", { status: 403 }));
-    vi.stubGlobal("fetch", fetch);
-    const client = new GitHubClient("https://github.acme.test/api/graphql", "secret");
+  it("tolerates unavailable push attribution, as when the token lacks Contents access", async () => {
+    const { requests } = installAjour(() => ({ status: 403, body: "" }));
+    const client = new GitHubClient("connection-1");
     await expect(client.latestPush("acme/api", "feature", "abc")).resolves.toBeUndefined();
-    expect(String(fetch.mock.calls[0]?.[0])).toContain("https://github.acme.test/api/v3/repos/acme/api/activity?");
+    expect(requests.map((request) => request.label)).toEqual(["GET rest /repos/acme/api/activity"]);
   });
 
   it("discovers unseen pull requests beyond the fourth search page", async () => {
@@ -194,7 +170,7 @@ describe("GitHub plugin", () => {
       };
     });
     const result = await syncPullRequests(
-      { ...connection, config: { token: "t", includeTeamRequests: false } },
+      { ...connection, config: { includeTeamRequests: false } },
       { tracked: [] },
     );
     expect(result.pullRequests).toHaveLength(125);
@@ -216,7 +192,7 @@ describe("GitHub plugin", () => {
     );
     await expect(
       syncPullRequests(
-        { ...connection, config: { token: "t", includeTeamRequests: false } },
+        { ...connection, config: { includeTeamRequests: false } },
         { tracked: [] },
       ),
     ).rejects.toThrow(/1,000|1000/);
@@ -476,7 +452,7 @@ describe("GitHub plugin", () => {
     const result = await syncPullRequests(
       {
         ...connection,
-        config: { token: "t", exclude: "acme/legacy", hideDrafts: true, includeTeamRequests: false },
+        config: { exclude: "acme/legacy", hideDrafts: true, includeTeamRequests: false },
       },
       { tracked: [{ repository: "acme/legacy", number: 5 }] },
     );
@@ -502,7 +478,7 @@ describe("GitHub plugin", () => {
     });
 
     const result = await syncPullRequests(
-      { ...connection, config: { token: "t", includeTeamRequests: false } },
+      { ...connection, config: { includeTeamRequests: false } },
       { tracked: [] },
     );
 

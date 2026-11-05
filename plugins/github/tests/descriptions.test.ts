@@ -1,23 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readDescription, syncConnection, writeDescription } from "../src/plugin.ts";
+import { installAjour, json, pluginConnection } from "./support/github-ajour.ts";
 
 const ISSUE_URL = "https://github.com/acme/api/issues/7";
-const REST_ISSUE = "https://api.github.com/repos/acme/api/issues/7";
+const REST_ISSUE = "/repos/acme/api/issues/7";
 
-const connection = {
-  id: "connection-1",
-  pluginId: "github",
-  label: "Work",
-  tenantLabel: "Acme",
-  autoSync: true,
-  autoSyncIntervalMinutes: 5,
-  connectedAt: 1,
-  config: { hostUrl: "https://github.com", token: "secret" },
-};
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
+const connection = pluginConnection();
 
 /** An issue as GitHub's GraphQL search returns it. */
 function graphqlIssue(body: string) {
@@ -36,13 +24,14 @@ function graphqlIssue(body: string) {
 
 interface Call {
   method: string;
-  url: string;
+  host: string | undefined;
+  path: string;
   body?: Record<string, unknown>;
 }
 
 /**
- * GitHub with one issue, routed by method and URL: GraphQL search for a sync,
- * REST for reading and updating the issue.
+ * GitHub with one issue, routed by derived host, method and path: GraphQL
+ * search for a sync, REST for reading and updating the issue.
  */
 function stubGitHub(body: string, options: { pullRequest?: boolean; patchStatus?: number } = {}) {
   const issue: Record<string, unknown> = {
@@ -51,42 +40,34 @@ function stubGitHub(body: string, options: { pullRequest?: boolean; patchStatus?
     body,
     ...(options.pullRequest ? { pull_request: { url: "https://api.github.com/repos/acme/api/pulls/7" } } : {}),
   };
-  const calls: Call[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: unknown, init: RequestInit = {}) => {
-      const call: Call = {
-        method: init.method ?? "GET",
-        url: String(input),
-        ...(init.body ? { body: JSON.parse(String(init.body)) } : {}),
-      };
-      calls.push(call);
-      if (call.url === "https://api.github.com/graphql") {
-        return json({
-          data: {
-            search: {
-              issueCount: 1,
-              pageInfo: { hasNextPage: false, endCursor: null },
-              nodes: [graphqlIssue(issue.body as string)],
-            },
+  const { requests } = installAjour((request) => {
+    if (request.host === "graphql") {
+      return json({
+        data: {
+          search: {
+            issueCount: 1,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [graphqlIssue(issue.body as string)],
           },
-        });
+        },
+      });
+    }
+    if (request.path === REST_ISSUE && request.method === "GET") {
+      return json(issue);
+    }
+    if (request.path === REST_ISSUE && request.method === "PATCH") {
+      if (options.patchStatus) {
+        return json({ message: "Resource not accessible by personal access token" }, options.patchStatus);
       }
-      if (call.url === REST_ISSUE && call.method === "GET") {
-        return json(issue);
-      }
-      if (call.url === REST_ISSUE && call.method === "PATCH") {
-        if (options.patchStatus) {
-          return json({ message: "Resource not accessible by personal access token" }, options.patchStatus);
-        }
-        issue.body = call.body?.body;
-        return json(issue);
-      }
-      return json({ message: "Not Found" }, 404);
-    }),
-  );
+      issue.body = request.body?.body;
+      return json(issue);
+    }
+    return json({ message: "Not Found" }, 404);
+  });
+  const calls = requests as unknown as Call[];
   return {
     calls,
+    requests,
     issue,
     patches: () => calls.filter((call) => call.method === "PATCH"),
   };
@@ -165,7 +146,7 @@ describe("readDescription", () => {
     await expect(readDescription(connection, { sourceId: ISSUE_URL })).resolves.toEqual({
       description: { text: "Now with @octocat" },
     });
-    expect(calls).toEqual([{ method: "GET", url: REST_ISSUE }]);
+    expect(calls).toMatchObject([{ method: "GET", host: "rest", path: REST_ISSUE }]);
   });
 
   it("refuses a pull request, which is not a backlog item", async () => {
@@ -186,7 +167,7 @@ describe("readDescription", () => {
 
 describe("writeDescription", () => {
   it("writes the text as it is, reading the issue just before", async () => {
-    const { calls, issue } = stubGitHub("Steps\n\n- [ ] Reproduce");
+    const { calls, requests, issue } = stubGitHub("Steps\n\n- [ ] Reproduce");
 
     await expect(
       writeDescription(connection, {
@@ -195,10 +176,17 @@ describe("writeDescription", () => {
         expected: "Steps\n\n- [ ] Reproduce",
       }),
     ).resolves.toEqual({ outcome: "written", description: { text: "Steps for @octocat\n\n- [x] Reproduce" } });
-    expect(calls).toEqual([
-      { method: "GET", url: REST_ISSUE },
-      { method: "PATCH", url: REST_ISSUE, body: { body: "Steps for @octocat\n\n- [x] Reproduce" } },
+    expect(calls).toMatchObject([
+      { method: "GET", host: "rest", path: REST_ISSUE },
+      { method: "PATCH", host: "rest", path: REST_ISSUE, body: { body: "Steps for @octocat\n\n- [x] Reproduce" } },
     ]);
+    const [read, write] = requests;
+    expect(write).toMatchObject({
+      contentType: "application/json",
+      headers: { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "ajour-github-plugin" },
+    });
+    expect(read!.contentType).toBeUndefined();
+    expect(read!.body).toBeUndefined();
     expect(issue.body).toBe("Steps for @octocat\n\n- [x] Reproduce");
   });
 

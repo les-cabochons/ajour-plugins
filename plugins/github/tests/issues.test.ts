@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildGitHubConfig } from "../src/config.ts";
+import { pluginConnection, stubGitHub as stubGraphQL } from "./support/github-ajour.ts";
 import { ISSUE_SETTLE_STATES, parseIssueUrl, syncIssues, writeIssueSettle } from "../src/issues.ts";
 
-const config = buildGitHubConfig({ hostUrl: "https://github.com", token: "secret", exclude: "acme/legacy" });
+const config = buildGitHubConfig(pluginConnection({ exclude: "acme/legacy" }));
 const connection = { id: "connection-1", label: "Work", tenantLabel: "Acme" };
 
 function issue(number: number, overrides: Record<string, unknown> = {}) {
@@ -20,26 +21,8 @@ function issue(number: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
-interface GraphQLCall {
-  query: string;
-  variables: Record<string, unknown>;
-}
-
-function stubGitHub(handler: (call: GraphQLCall) => unknown) {
-  const calls: GraphQLCall[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (_url: string, init: RequestInit) => {
-      const call = JSON.parse(String(init.body)) as GraphQLCall;
-      calls.push(call);
-      const data = handler(call);
-      return new Response(
-        JSON.stringify(data instanceof Error ? { errors: [{ message: data.message }] } : { data }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    }),
-  );
-  return calls;
+function stubGitHub(handler: (call: { query: string; variables: Record<string, unknown> }) => unknown) {
+  return stubGraphQL(handler).calls;
 }
 
 function searchResult(nodes: unknown[]) {
@@ -116,6 +99,24 @@ describe("syncIssues", () => {
         selectable: false,
       }),
     ]);
+  });
+
+  it("posts each query to the graphql host as JSON, with the headers the manifest lists and no credential", async () => {
+    const { requests } = stubGraphQL(() => searchResult([issue(1)]));
+
+    await syncIssues(config, connection, []);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      host: "graphql",
+      method: "POST",
+      path: "/graphql",
+      contentType: "application/json",
+      headers: { accept: "application/vnd.github+json", "user-agent": "ajour-github-plugin" },
+      body: { variables: { q: "is:issue is:open assignee:@me archived:false" } },
+    });
+    expect(requests[0]!.query).toBeUndefined();
+    expect(Object.keys(requests[0]!.headers).sort()).toEqual(["accept", "content-type", "user-agent"]);
   });
 
   it("refuses a search over GitHub's result limit", async () => {

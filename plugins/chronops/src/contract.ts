@@ -101,6 +101,8 @@ export const PROJECT_SOURCE_BOUNDS = {
   url: 500,
   projects: 200,
   tasks: 10_000,
+  /** The cursor `syncProjects` returns. Ajour refuses an empty or longer one. */
+  cursor: 2_000,
 } as const;
 
 export interface ProjectSourceSyncRequest {

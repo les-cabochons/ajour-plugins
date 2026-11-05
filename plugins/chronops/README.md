@@ -37,7 +37,10 @@ MineHunter's answer to Ajour's generic snapshot:
 | `me.workerLinked` | whether Ajour can compare your hours, with a note on linking your Workday name otherwise |
 
 A name, client or phase longer than Ajour accepts is cut, with an
-ellipsis. A project code or task id longer than 100 characters, more than
+ellipsis. A blank project name falls back to the code, and a blank task
+name to the task id. A blank project code or task id fails the sync, since
+Ajour links by them. An `ETag` that is empty or longer than 2,000
+characters is not kept as the cursor, so the next sync reads everything. A project code or task id longer than 100 characters, more than
 200 projects or more than 10,000 tasks fail the sync with a message, since
 Ajour would refuse the snapshot.
 A project whose ChronOps link would pass Ajour's 500 characters, which only

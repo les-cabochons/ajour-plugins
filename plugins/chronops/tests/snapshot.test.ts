@@ -109,6 +109,25 @@ describe("mapChronopsSnapshot", () => {
     expect(globex!.tasks[0]).toMatchObject({ remoteId: "2001", group: "Gestion", billable: false, estimateHours: 0, assigned: true, myHours: 14 });
   });
 
+  it("trims names and codes, and names a blank project by its code and a blank task by its id", () => {
+    // Ajour trims every name and refuses an empty one, which would fail the whole sync.
+    const [acme] = fixture.projects;
+    const spaced = mapChronopsSnapshot({
+      ...fixture,
+      projects: [{ ...acme!, code: " ACME-SUP ", name: "   ", tasks: [{ ...acme!.tasks[0]!, id: " 1001 ", name: " 	 " }] }],
+    });
+    expect(spaced.projects[0]).toMatchObject({ remoteId: "ACME-SUP", code: "ACME-SUP", name: "ACME-SUP" });
+    expect(spaced.projects[0]!.tasks[0]).toMatchObject({ remoteId: "1001", name: "1001" });
+  });
+
+  it("fails the sync with a message for a blank project code or task id, which Ajour links by", () => {
+    const [acme] = fixture.projects;
+    expect(() => mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, code: "  " }] })).toThrow(/blank project code/);
+    expect(() =>
+      mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks: [{ ...acme!.tasks[0]!, id: " " }] }] }),
+    ).toThrow(/blank task id/);
+  });
+
   it("says a budget's health in Ajour's words", () => {
     const statusOf = (status: "Green" | "Yellow" | "Red") => mapChronopsSnapshot(withBudget({ status })).projects[0]!.budget?.status;
     expect([statusOf("Green"), statusOf("Yellow"), statusOf("Red")]).toEqual(["ok", "warning", "over"]);

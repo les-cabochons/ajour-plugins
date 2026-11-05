@@ -1,6 +1,6 @@
 {
   "name": "@les-cabochons/ajp-chronops",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,7 @@
       "spdxId": "MIT"
     },
     "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
-    "status": "coming-soon",
+    "status": "available",
     "files": [
       "plugin.json",
       "package.json",

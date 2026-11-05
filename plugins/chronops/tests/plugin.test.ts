@@ -111,6 +111,17 @@ describe("syncProjects against the fake MineHunter", () => {
   });
 });
 
+describe("syncProjects with an ETag Ajour would refuse as a cursor", () => {
+  it.each([
+    ["empty", ""],
+    ["longer than 2,000 characters", `"${"x".repeat(2_000)}"`],
+  ])("returns the snapshot without a cursor when the ETag is %s", async (_case, etag) => {
+    install(answer(200, fixture, { etag }));
+    const result = await syncProjects(connection, {});
+    expect(result).toEqual({ snapshot: mapChronopsSnapshot(fixture) });
+  });
+});
+
 describe("syncProjects when the Forwarder refuses or fails", () => {
   it("says the token was revoked or expired on 401", async () => {
     install(answer(401, { error: "unknown or revoked personal token" }));

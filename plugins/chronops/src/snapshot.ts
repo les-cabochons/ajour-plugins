@@ -56,9 +56,14 @@ function cut(text: string, max: number) {
 /**
  * An id is never cut, since a cut one would name something else next time.
  * The contract puts no bound on ChronOps ids, so this is the one place the
- * two sides can disagree.
+ * two sides can disagree. Ajour trims it and links by it, so a blank one
+ * stops the sync with the reason.
  */
-function remoteId(id: string, what: string) {
+function remoteId(rawId: string, what: string) {
+  const id = rawId.trim();
+  if (!id) {
+    throw new Error(`ChronOps sent a blank ${what}. Ajour links projects and tasks by it, so the sync stops here.`);
+  }
   if (id.length > PROJECT_SOURCE_BOUNDS.remoteId) {
     throw new Error(`ChronOps ${what} "${id.slice(0, 20)}\u2026" is longer than ${PROJECT_SOURCE_BOUNDS.remoteId} characters, the most Ajour accepts.`);
   }
@@ -96,9 +101,11 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
 
 function mapTask(task: ChronopsTask): ProjectSourceTask {
   const group = nonBlank(task.phase);
+  const id = remoteId(task.id, "task id");
   return {
-    remoteId: remoteId(task.id, "task id"),
-    name: cut(task.name, PROJECT_SOURCE_BOUNDS.name),
+    remoteId: id,
+    // Ajour refuses a blank name, so a task ChronOps left unnamed goes by its id.
+    name: cut(nonBlank(task.name) ?? id, PROJECT_SOURCE_BOUNDS.name),
     ...(group !== undefined ? { group: cut(group, PROJECT_SOURCE_BOUNDS.group) } : {}),
     closed: task.closed,
     billable: task.billable,
@@ -111,12 +118,14 @@ function mapTask(task: ChronopsTask): ProjectSourceTask {
 function mapProject(project: ChronopsProject): ProjectSourceProject {
   const budget = mapBudget(project.budget);
   const client = nonBlank(project.client);
-  const url = projectUrl(project.code);
   // The code is the remote id, so the remote id's bound, the tighter of the two, applies.
+  const code = remoteId(project.code, "project code");
+  const url = projectUrl(code);
   return {
-    remoteId: remoteId(project.code, "project code"),
-    code: project.code,
-    name: cut(project.name, PROJECT_SOURCE_BOUNDS.name),
+    remoteId: code,
+    code,
+    // Ajour refuses a blank name, so a project ChronOps left unnamed goes by its code.
+    name: cut(nonBlank(project.name) ?? code, PROJECT_SOURCE_BOUNDS.name),
     ...(client !== undefined ? { client: cut(client, PROJECT_SOURCE_BOUNDS.client) } : {}),
     ...(url !== undefined ? { url } : {}),
     // ChronOps may not know. Ajour archives a complete project, so unknown stays open.

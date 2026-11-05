@@ -33,9 +33,24 @@ It never presses a Submit button in Workday.
 1. In Ajour, Settings > Plugins, install Workday (agent) from the official plugin source. To try a local copy instead, run `just package workday-agent` from the repository root, then choose Install from file and select `plugins/workday-agent/package/workday-agent-<version>.ajour-connector`.
 2. In Settings > Agents, pick an agent. In Settings > Plugins > Workday (agent), fill "Workday timesheet URL" and, if you want, "Sign-in username".
 3. If a project has another name or code in Workday, set them in Ajour: open the project, then the Workday section of its properties.
+   If a local task commits as a different Workday task, pick that task in its Workday properties. The prompts use that mapping and keep the local task name in the comment.
 4. On the Commit page, click "Commit to Workday". Once the week is committed, click "Check Workday and submit".
 
-Requires an Ajour build with agent tasks, plugin API 3. Version 0.4.1 needs an Ajour whose `mark_entries_committed` takes `changes` with versions. Version 0.5.0 also needs an Ajour with `get_week_status`, `submit_week` and the `submit-week` placement.
+Requires an Ajour build with plugin API 4 agent tasks, which declare their MCP tools and get only those. Version 0.7.0 is the first on API 4; Ajour admits API 4 packages only in development builds until the release that switches every plugin to API 4, and earlier versions (API 3) keep working on the builds that still run API 3. Version 0.4.1 needs an Ajour whose `mark_entries_committed` takes `changes` with versions. Version 0.5.0 also needs an Ajour with `get_week_status`, `submit_week` and the `submit-week` placement.
+
+## Plugin API 4 and the tools each task gets
+
+The manifest declares `apiVersion: 4`. It has no `entrypoint`, no `runtime`, no `network` and no connection fields: the plugin has no code, so there is no sandboxed renderer to start, and the agent reaches Workday through the browser, not through Ajour's broker. Each task lists, in `tools`, the Ajour MCP tools its run may call. A run's MCP client gets only those, plus the session tools that every run has (`begin_session`, `update_session`, `end_session`, `ask` and `wait_for_answer`). A call to any other tool is refused.
+
+| Task                     | Declared tools           | Why                                                                     |
+| ------------------------ | ------------------------ | ----------------------------------------------------------------------- |
+| Commit to Workday        | `get_week_changes`       | Reads the added, updated and deleted entries of the week.               |
+|                          | `mark_entries_committed` | Marks each change once Workday saved it.                                |
+|                          | `get_week_status`        | Looks up an entry after Ajour refuses a mark, to make Workday match it. |
+| Check Workday and submit | `get_week_status`        | Reads the pace, the committed entries and the week's version.           |
+|                          | `submit_week`            | Submits and locks the week in Ajour.                                    |
+
+Check Workday and submit declares no write tool for entries: its prompt never marks changes. `tests/manifest.test.mjs` fails when a prompt names an Ajour tool its task does not declare, or a declared tool it never uses.
 
 ## Development
 
@@ -46,7 +61,9 @@ just install
 just verify
 ```
 
-The plugin has no code: Ajour reads `plugin.json` and the prompts as they are, and `just verify` checks them. It is released through the repository's `ajour.json`. When you change it, bump the version in `plugin.json` and `package.json`. See [Releases](../../README.md#releases).
+The plugin has no code: Ajour reads `plugin.json` and the prompts as they are, and `just verify` checks them. `tests/manifest.test.mjs` also checks that it publishes only the manifest and the prompts, and declares no entrypoint, network or credential.
+
+`tests/sdk-manifest.test.mjs` checks `plugin.json` against the `PluginManifest` type of `@ajour/plugin-sdk` with TypeScript. The SDK is not on npm yet, so the repository vendors it at `vendor/ajour-plugin-sdk-0.1.0.tgz` (see [`vendor/README.md`](../../vendor/README.md)) and `package.json` depends on it with `file:`. Refresh the vendored copy whenever Ajour's MCP tools or manifest contract change, or this test checks against a stale list. It is released through the repository's `ajour.json`. When you change it, bump the version in `plugin.json` and `package.json`. See [Releases](../../README.md#releases).
 
 ## License
 

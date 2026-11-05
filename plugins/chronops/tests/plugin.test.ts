@@ -47,7 +47,10 @@ describe("validateConnection against the fake MineHunter", () => {
   });
 
   describe("with a read-write token that expires", () => {
-    const withFake = useFake({ scope: "read-write", expiresAt: "2026-12-01T05:00:00.000Z" });
+    // The fake compares the expiry with its own clock, so the date is computed
+    // from now rather than fixed, or the test would start failing on that day.
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const withFake = useFake({ scope: "read-write", expiresAt });
 
     it("asks for a read-only token and says when this one expires", async () => {
       withFake();
@@ -57,7 +60,7 @@ describe("validateConnection against the fake MineHunter", () => {
       expect(result.connectionSummary).toEqual({
         Email: "marie.tremblay@example.com",
         Scope: "Read and write",
-        "Token expires": "2026-12-01",
+        "Token expires": expiresAt.slice(0, 10),
         Warning: result.warnings?.[0],
       });
     });

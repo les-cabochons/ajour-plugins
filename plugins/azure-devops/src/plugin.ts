@@ -1,6 +1,7 @@
 import type {
   BacklogReadDescriptionRequest,
   BacklogWriteDescriptionRequest,
+  BacklogSearchAssigneesRequest,
   BacklogSearchItemPeopleRequest,
   BacklogDeleteItemCommentRequest,
   BacklogEditItemCommentRequest,
@@ -34,6 +35,7 @@ import {
   findAzureCommentFacts,
   listAzureItemComments,
   postAzureItemComment,
+  searchAzureAssignees,
   searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "./comments.ts";
@@ -254,9 +256,10 @@ async function validateWorkItems(parsed: ConnectorFieldValues) {
 export async function syncConnection(
   connection: ConnectorPluginConnection,
   workItems: ConnectorSyncWorkItem[] = [],
+  options?: { sourceIds?: string[] },
 ) {
   const azureConfig = buildAzureConfig(connection.config, connection);
-  const result = await syncAzureDevOpsConnection(azureConfig, workItems);
+  const result = await syncAzureDevOpsConnection(azureConfig, workItems, options);
   return { ...result, ...(await findAzureCommentFacts(azureConfig, workItems)) };
 }
 
@@ -336,6 +339,14 @@ export async function searchItemPeople(
   request: BacklogSearchItemPeopleRequest,
 ) {
   return await searchAzureItemPeople(buildAzureConfig(connection.config, connection), request);
+}
+
+/** People to assign the item to, by uniqueName, for the settle dialog. */
+export async function searchAssignees(
+  connection: ConnectorPluginConnection,
+  request: BacklogSearchAssigneesRequest,
+) {
+  return await searchAzureAssignees(buildAzureConfig(connection.config, connection), request);
 }
 
 export async function syncPullRequests(

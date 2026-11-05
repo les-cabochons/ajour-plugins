@@ -73,10 +73,12 @@ test("the fake serves /integration/me with the chosen scope and expiry", async (
   const defaults = await (await fetch(`${byDefault.url}/integration/me`, { headers })).json();
   assert.deepEqual(defaults, { email: "marie.tremblay@example.com", login: "marie.tremblay", scope: "read", expiresAt: null });
 
-  const chosen = await withFake(t, { scope: "read-write", expiresAt: "2026-12-01T00:00:00.000Z" });
+  // The fake refuses an expired token, so the expiry is a month from now, not a fixed date.
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const chosen = await withFake(t, { scope: "read-write", expiresAt });
   const me = await (await fetch(`${chosen.url}/integration/me`, { headers })).json();
   assert.equal(me.scope, "read-write");
-  assert.equal(me.expiresAt, "2026-12-01T00:00:00.000Z");
+  assert.equal(me.expiresAt, expiresAt);
 });
 
 test("the fake serves the fixture as the snapshot, with an ETag", async (t) => {

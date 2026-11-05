@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -9,16 +9,55 @@
   "capabilities": {
     "connector": {
       "settle": true,
-      "comments": { "edit": true, "delete": true, "reactions": ["like", "dislike", "heart", "hooray", "laugh", "confused"], "mentions": true },
+      "assign": true,
+      "comments": {
+        "edit": true,
+        "delete": true,
+        "reactions": [
+          "like",
+          "dislike",
+          "heart",
+          "hooray",
+          "laugh",
+          "confused"
+        ],
+        "mentions": true
+      },
       "description": { "write": true, "maxLength": 1000000 }
     },
     "codeHost": {}
   },
   "connectionFields": [
-    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Contoso Platform" },
-    { "id": "tenantLabel", "label": "Tenant", "type": "text", "required": true, "placeholder": "Contoso Entra" },
-    { "id": "organizationUrl", "label": "Organization URL", "type": "url", "required": true, "placeholder": "https://dev.azure.com/your-org" },
-    { "id": "personalAccessToken", "label": "Personal Access Token", "type": "password", "required": true, "secret": true, "placeholder": "PAT with Work Items and Code access", "helpText": "Work items need Work Items (Read, or Read & write to write back and to post comments), and mentions need Identity (Read) to suggest anyone beyond the people on the item. Pull requests need Code (Read), and Project and Team (Read) for team review requests." },
+    {
+      "id": "label",
+      "label": "Connection label",
+      "type": "text",
+      "required": true,
+      "placeholder": "Contoso Platform"
+    },
+    {
+      "id": "tenantLabel",
+      "label": "Tenant",
+      "type": "text",
+      "required": true,
+      "placeholder": "Contoso Entra"
+    },
+    {
+      "id": "organizationUrl",
+      "label": "Organization URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "https://dev.azure.com/your-org"
+    },
+    {
+      "id": "personalAccessToken",
+      "label": "Personal Access Token",
+      "type": "password",
+      "required": true,
+      "secret": true,
+      "placeholder": "PAT with Work Items and Code access",
+      "helpText": "Work items need Work Items (Read, or Read & write to write back, assign and post comments), and mentions and assignees need Identity (Read) to suggest anyone beyond the people on the item. Pull requests need Code (Read), and Project and Team (Read) for team review requests."
+    },
     {
       "id": "queryScope",
       "label": "Import scope",
@@ -28,7 +67,10 @@
       "defaultValue": "assigned_to_me",
       "options": [
         { "value": "assigned_to_me", "label": "Assigned to me" },
-        { "value": "project_open_tasks", "label": "Open tasks across organization" }
+        {
+          "value": "project_open_tasks",
+          "label": "Open tasks across organization"
+        }
       ]
     },
     {
@@ -45,22 +87,126 @@
         { "value": "never", "label": "Never show connector icon" }
       ]
     },
-    { "id": "priorityFieldName", "capability": "connector", "label": "Priority field", "type": "text", "placeholder": "MS Priority or Microsoft.VSTS.Common.Priority" },
-    { "id": "priorityUrgent", "capability": "connector", "label": "Urgent priority values", "type": "text", "defaultValue": "1", "placeholder": "1", "helpText": "Priority field values that mean Urgent. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values." },
-    { "id": "priorityHigh", "capability": "connector", "label": "High priority values", "type": "text", "defaultValue": "2", "placeholder": "2", "helpText": "Priority field values that mean High. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values." },
-    { "id": "priorityMedium", "capability": "connector", "label": "Medium priority values", "type": "text", "defaultValue": "3", "placeholder": "3", "helpText": "Priority field values that mean Medium. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values." },
-    { "id": "priorityLow", "capability": "connector", "label": "Low priority values", "type": "text", "defaultValue": "4", "placeholder": "4", "helpText": "Priority field values that mean Low. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values." },
-    { "id": "originalEstimateFieldName", "capability": "connector", "label": "Original estimate field", "type": "text", "placeholder": "Original estimate field name" },
-    { "id": "remainingEstimateFieldName", "capability": "connector", "label": "Remaining field", "type": "text", "placeholder": "Remaining estimate field name" },
-    { "id": "completedEstimateFieldName", "capability": "connector", "label": "Completed field", "type": "text", "placeholder": "Completed estimate field name" },
-    { "id": "autoSync", "label": "Auto sync to backlog", "capability": "connector", "type": "checkbox", "defaultValue": false, "helpText": "Import work items directly to backlog while the app is open." },
-    { "id": "pullRequestAutoSync", "capability": "codeHost", "label": "Sync pull requests automatically", "type": "checkbox", "defaultValue": true, "helpText": "Sync pull requests on the interval while the app is open." },
-    { "id": "pullRequestsInclude", "capability": "codeHost", "label": "Only these projects or repositories", "type": "text", "placeholder": "Optional: Fabrikam, Contoso/api", "helpText": "Comma-separated. An entry with a slash is a project/repository, otherwise a project." },
-    { "id": "pullRequestsExclude", "capability": "codeHost", "label": "Never these projects or repositories", "type": "text", "placeholder": "Optional: Contoso/legacy" },
-    { "id": "hideDraftPullRequests", "capability": "codeHost", "label": "Hide draft pull requests", "type": "checkbox", "defaultValue": false },
-    { "id": "includeTeamReviewRequests", "capability": "codeHost", "label": "Include team review requests", "type": "checkbox", "defaultValue": true, "helpText": "Show pull requests where one of your teams was added as a reviewer." },
-    { "id": "autoSyncIntervalMinutes", "label": "Sync interval (minutes)", "type": "number", "defaultValue": 15, "min": 1, "max": 1440, "step": 1 }
-  ],
+    {
+      "id": "priorityFieldName",
+      "capability": "connector",
+      "label": "Priority field",
+      "type": "text",
+      "placeholder": "MS Priority or Microsoft.VSTS.Common.Priority"
+    },
+    {
+      "id": "priorityUrgent",
+      "capability": "connector",
+      "label": "Urgent priority values",
+      "type": "text",
+      "defaultValue": "1",
+      "placeholder": "1",
+      "helpText": "Priority field values that mean Urgent. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values."
+    },
+    {
+      "id": "priorityHigh",
+      "capability": "connector",
+      "label": "High priority values",
+      "type": "text",
+      "defaultValue": "2",
+      "placeholder": "2",
+      "helpText": "Priority field values that mean High. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values."
+    },
+    {
+      "id": "priorityMedium",
+      "capability": "connector",
+      "label": "Medium priority values",
+      "type": "text",
+      "defaultValue": "3",
+      "placeholder": "3",
+      "helpText": "Priority field values that mean Medium. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values."
+    },
+    {
+      "id": "priorityLow",
+      "capability": "connector",
+      "label": "Low priority values",
+      "type": "text",
+      "defaultValue": "4",
+      "placeholder": "4",
+      "helpText": "Priority field values that mean Low. Enter one number such as \"1\" or a range such as \"1-3\". Leave empty to give this level no values."
+    },
+    {
+      "id": "originalEstimateFieldName",
+      "capability": "connector",
+      "label": "Original estimate field",
+      "type": "text",
+      "placeholder": "Original estimate field name"
+    },
+    {
+      "id": "remainingEstimateFieldName",
+      "capability": "connector",
+      "label": "Remaining field",
+      "type": "text",
+      "placeholder": "Remaining estimate field name"
+    },
+    {
+      "id": "completedEstimateFieldName",
+      "capability": "connector",
+      "label": "Completed field",
+      "type": "text",
+      "placeholder": "Completed estimate field name"
+    },
+    {
+      "id": "autoSync",
+      "label": "Auto sync to backlog",
+      "capability": "connector",
+      "type": "checkbox",
+      "defaultValue": false,
+      "helpText": "Import work items directly to backlog while the app is open."
+    },
+    {
+      "id": "pullRequestAutoSync",
+      "capability": "codeHost",
+      "label": "Sync pull requests automatically",
+      "type": "checkbox",
+      "defaultValue": true,
+      "helpText": "Sync pull requests on the interval while the app is open."
+    },
+    {
+      "id": "pullRequestsInclude",
+      "capability": "codeHost",
+      "label": "Only these projects or repositories",
+      "type": "text",
+      "placeholder": "Optional: Fabrikam, Contoso/api",
+      "helpText": "Comma-separated. An entry with a slash is a project/repository, otherwise a project."
+    },
+    {
+      "id": "pullRequestsExclude",
+      "capability": "codeHost",
+      "label": "Never these projects or repositories",
+      "type": "text",
+      "placeholder": "Optional: Contoso/legacy"
+    },
+    {
+      "id": "hideDraftPullRequests",
+      "capability": "codeHost",
+      "label": "Hide draft pull requests",
+      "type": "checkbox",
+      "defaultValue": false
+    },
+    {
+      "id": "includeTeamReviewRequests",
+      "capability": "codeHost",
+      "label": "Include team review requests",
+      "type": "checkbox",
+      "defaultValue": true,
+      "helpText": "Show pull requests where one of your teams was added as a reviewer."
+    },
+    {
+      "id": "autoSyncIntervalMinutes",
+      "label": "Sync interval (minutes)",
+      "type": "number",
+      "defaultValue": 15,
+      "min": 1,
+      "max": 1440,
+      "step": 1
+    }
+  ],
   "network": {
     "auth": {
       "scheme": "patBasic",
@@ -218,10 +364,7 @@
         ]
       }
     ],
-    "requestHeaders": [
-      "Accept",
-      "Content-Type"
-    ]
+    "requestHeaders": ["Accept", "Content-Type"]
   },
   "connectionAccess": [
     {
@@ -272,12 +415,10 @@
     {
       "id": "peopleSearch",
       "label": "Search people across the organisation",
-      "description": "Suggest anyone in the organisation for @mentions, not only the people on your items.",
+      "description": "Suggest anyone in the organisation for @mentions and assignments, not only the people on your items.",
       "tokenScope": "Identity (Read)",
       "always": false,
-      "operations": [
-        "searchItemPeople"
-      ]
+      "operations": ["searchItemPeople", "searchAssignees"]
     }
   ],
   "runtime": { "start": "whenNeeded" }

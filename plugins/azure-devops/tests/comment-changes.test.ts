@@ -3,14 +3,21 @@ import type { AzureDevOpsConnectionInput } from "../src/azure-devops.ts";
 import {
   deleteAzureItemComment,
   editAzureItemComment,
+  searchAzureAssignees,
   searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "../src/comments.ts";
+import { searchAssignees } from "../src/plugin.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
-import { ALL_ACCESS, deriveAddress, manifest, stubAzureFetch } from "./support/azure-ajour.ts";
+import {
+  ALL_ACCESS,
+  deriveAddress,
+  manifest,
+  stubAzureFetch,
+} from "./support/azure-ajour.ts";
 
 const ORG = "https://dev.azure.com/contoso";
 const ANA = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
@@ -40,10 +47,14 @@ function json(body: unknown, status = 200) {
 /** Records each comment request; `answer` replies to everything but the project lookup. */
 function fakeAzure(answer: (method: string, url: URL) => Response) {
   const calls: Array<{ method: string; url: URL; body?: unknown }> = [];
-  stubAzureFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  stubAzureFetch(
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/_apis/wit/workitems/4821")) {
-        return json({ id: 4821, fields: { "System.TeamProject": "Contoso Portal" } });
+        return json({
+          id: 4821,
+          fields: { "System.TeamProject": "Contoso Portal" },
+        });
       }
       const method = init?.method ?? "GET";
       calls.push({
@@ -134,9 +145,7 @@ describe("changing Azure DevOps comments", () => {
       reacted: false,
     });
 
-    expect(
-      calls.map((call) => [call.method, call.url.pathname]),
-    ).toEqual([
+    expect(calls.map((call) => [call.method, call.url.pathname])).toEqual([
       ["PUT", `${COMMENT}/reactions/smile`],
       ["GET", COMMENT],
       ["DELETE", `${COMMENT}/reactions/like`],
@@ -160,7 +169,10 @@ describe("changing Azure DevOps comments", () => {
       }),
     ).rejects.toThrow('Azure DevOps has no "rocket" reaction.');
     await expect(
-      deleteAzureItemComment(config(), { sourceId: SOURCE_ID, commentId: "7/../8" }),
+      deleteAzureItemComment(config(), {
+        sourceId: SOURCE_ID,
+        commentId: "7/../8",
+      }),
     ).rejects.toThrow("is not an Azure DevOps comment");
   });
 });
@@ -203,7 +215,8 @@ describe("searching Azure DevOps people", () => {
         : typeof answer === "function"
           ? answer(project)
           : (answer ?? json(empty));
-    stubAzureFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    stubAzureFetch(
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith("/_apis/identities")) {
           searches.push(url);
@@ -217,16 +230,25 @@ describe("searching Azure DevOps people", () => {
         if (wiql) {
           const project = decodeURIComponent(wiql[1]!);
           projectQueries.push({ project, ...JSON.parse(String(init?.body)) });
-          return reply(answers.projectItems, { workItems: [] }, init?.signal, project);
+          return reply(
+            answers.projectItems,
+            { workItems: [] },
+            init?.signal,
+            project,
+          );
         }
         if (url.pathname.endsWith("/_apis/wit/workitemsbatch")) {
           return reply(answers.projectPeople, { value: [] }, init?.signal);
         }
         if (url.pathname.endsWith("/_apis/wit/workitems/4821")) {
-          return reply(answers.item, {
-            id: 4821,
-            fields: { "System.TeamProject": "Contoso Portal" },
-          }, init?.signal);
+          return reply(
+            answers.item,
+            {
+              id: 4821,
+              fields: { "System.TeamProject": "Contoso Portal" },
+            },
+            init?.signal,
+          );
         }
         throw new Error(`Unexpected request: ${url}`);
       }),
@@ -239,18 +261,43 @@ describe("searching Azure DevOps people", () => {
       id: 4821,
       fields: {
         "System.TeamProject": "Contoso Portal",
-        "System.AssignedTo": { id: ANA.toUpperCase(), displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
-        "System.CreatedBy": { id: ME, displayName: "Alex Martin", uniqueName: "alex@contoso.com" },
-        "System.ChangedBy": { id: ME, displayName: "Alex Martin", uniqueName: "alex@contoso.com" },
+        "System.AssignedTo": {
+          id: ANA.toUpperCase(),
+          displayName: "Ana Silva",
+          uniqueName: "ana@contoso.com",
+        },
+        "System.CreatedBy": {
+          id: ME,
+          displayName: "Alex Martin",
+          uniqueName: "alex@contoso.com",
+        },
+        "System.ChangedBy": {
+          id: ME,
+          displayName: "Alex Martin",
+          uniqueName: "alex@contoso.com",
+        },
       },
     });
-  const ANA_SUGGESTION = { id: ANA, displayName: "Ana Silva", email: "ana@contoso.com" };
+  const ANA_SUGGESTION = {
+    id: ANA,
+    displayName: "Ana Silva",
+    email: "ana@contoso.com",
+  };
   const brunoComments = () =>
-    json({ comments: [{ id: 9, createdBy: { id: BRUNO, displayName: "Bruno Côté" } }] });
+    json({
+      comments: [
+        { id: 9, createdBy: { id: BRUNO, displayName: "Bruno Côté" } },
+      ],
+    });
 
   async function search(query: string) {
-    return (await searchAzureItemPeople(config(), { sourceId: SOURCE_ID, query, limit: 8 }))
-      .people;
+    return (
+      await searchAzureItemPeople(config(), {
+        sourceId: SOURCE_ID,
+        query,
+        limit: 8,
+      })
+    ).people;
   }
 
   it("finds active users on the identities host and skips groups", async () => {
@@ -259,7 +306,11 @@ describe("searching Azure DevOps people", () => {
         value: [
           { id: ANA.toUpperCase(), providerDisplayName: "Ana Silva" },
           { id: ME, providerDisplayName: "Andrew Lee", isActive: false },
-          { id: "22222222-2222-2222-2222-222222222222", providerDisplayName: "[Contoso]\Analysts", isContainer: true },
+          {
+            id: "22222222-2222-2222-2222-222222222222",
+            providerDisplayName: "[Contoso]\Analysts",
+            isContainer: true,
+          },
         ],
       }),
     });
@@ -272,14 +323,21 @@ describe("searching Azure DevOps people", () => {
   });
 
   it("finds the item's people by their last name, a full name or the start of their account", async () => {
-    const searches = fakePeople({ item: itemWithPeople, comments: brunoComments });
+    const searches = fakePeople({
+      item: itemWithPeople,
+      comments: brunoComments,
+    });
 
     expect(await search("silva")).toEqual([ANA_SUGGESTION]);
-    expect(await search("  bru   cote ")).toEqual([{ id: BRUNO, displayName: "Bruno Côté" }]);
+    expect(await search("  bru   cote ")).toEqual([
+      { id: BRUNO, displayName: "Bruno Côté" },
+    ]);
     expect(await search("ana@con")).toEqual([ANA_SUGGESTION]);
     expect(await search("Ana Silva")).toEqual([ANA_SUGGESTION]);
     expect(await search("ana costa")).toEqual([]);
-    expect(searches.map((url) => url.searchParams.get("filterValue"))).toContain("bru cote");
+    expect(
+      searches.map((url) => url.searchParams.get("filterValue")),
+    ).toContain("bru cote");
   });
 
   it("lists the item's people first and each person once", async () => {
@@ -287,7 +345,10 @@ describe("searching Azure DevOps people", () => {
       item: itemWithPeople,
       identities: json({
         value: [
-          { id: "44444444-4444-4444-4444-444444444444", providerDisplayName: "Alba Reyes" },
+          {
+            id: "44444444-4444-4444-4444-444444444444",
+            providerDisplayName: "Alba Reyes",
+          },
           { id: ME, providerDisplayName: "Alex Martin" },
         ],
       }),
@@ -306,11 +367,16 @@ describe("searching Azure DevOps people", () => {
       identities: () => new Response("Unauthorized", { status: 401 }),
     });
 
-    expect(await search("côté")).toEqual([{ id: BRUNO, displayName: "Bruno Côté" }]);
+    expect(await search("côté")).toEqual([
+      { id: BRUNO, displayName: "Bruno Côté" },
+    ]);
   });
 
   it("keeps the item's fields' people when its comments fail", async () => {
-    fakePeople({ item: itemWithPeople, comments: () => json({ message: "Busy" }, 503) });
+    fakePeople({
+      item: itemWithPeople,
+      comments: () => json({ message: "Busy" }, 503),
+    });
 
     expect(await search("silva")).toEqual([ANA_SUGGESTION]);
   });
@@ -331,7 +397,10 @@ describe("searching Azure DevOps people", () => {
   });
 
   it("answers a bare @ with the item's people, without searching the organization", async () => {
-    const searches = fakePeople({ item: itemWithPeople, comments: brunoComments });
+    const searches = fakePeople({
+      item: itemWithPeople,
+      comments: brunoComments,
+    });
 
     expect(await search("")).toEqual([
       ANA_SUGGESTION,
@@ -347,7 +416,9 @@ describe("searching Azure DevOps people", () => {
       projectItems: () => json({ message: "No access" }, 401),
     });
 
-    await expect(search("")).rejects.toThrow("Azure DevOps request failed (401)");
+    await expect(search("")).rejects.toThrow(
+      "Azure DevOps request failed (401)",
+    );
   });
 
   it("gives the organization's users their email", async () => {
@@ -357,7 +428,9 @@ describe("searching Azure DevOps people", () => {
           {
             id: "44444444-4444-4444-4444-444444444444",
             providerDisplayName: "Alba Reyes",
-            properties: { Mail: { $type: "System.String", $value: "alba@contoso.com" } },
+            properties: {
+              Mail: { $type: "System.String", $value: "alba@contoso.com" },
+            },
           },
           {
             id: "55555555-5555-5555-5555-555555555555",
@@ -369,7 +442,11 @@ describe("searching Azure DevOps people", () => {
     });
 
     expect(await search("al")).toEqual([
-      { id: "44444444-4444-4444-4444-444444444444", displayName: "Alba Reyes", email: "alba@contoso.com" },
+      {
+        id: "44444444-4444-4444-4444-444444444444",
+        displayName: "Alba Reyes",
+        email: "alba@contoso.com",
+      },
       { id: "55555555-5555-5555-5555-555555555555", displayName: "Alan Build" },
     ]);
   });
@@ -382,11 +459,28 @@ describe("searching Azure DevOps people", () => {
         {
           id: 7,
           fields: {
-            "System.AssignedTo": { id: CARLA, displayName: "Carla Diaz", uniqueName: "carla@contoso.com" },
-            "System.CreatedBy": { id: ANA, displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
+            "System.AssignedTo": {
+              id: CARLA,
+              displayName: "Carla Diaz",
+              uniqueName: "carla@contoso.com",
+            },
+            "System.CreatedBy": {
+              id: ANA,
+              displayName: "Ana Silva",
+              uniqueName: "ana@contoso.com",
+            },
           },
         },
-        { id: 8, fields: { "System.ChangedBy": { id: CARLA, displayName: "Carla Diaz", uniqueName: "carla@contoso.com" } } },
+        {
+          id: 8,
+          fields: {
+            "System.ChangedBy": {
+              id: CARLA,
+              displayName: "Carla Diaz",
+              uniqueName: "carla@contoso.com",
+            },
+          },
+        },
       ],
     });
 
@@ -414,7 +508,11 @@ describe("searching Azure DevOps people", () => {
 
   it("asks for the project's people alongside the item, from the project in the source id", async () => {
     // The item never answers in time, yet the project's people still come.
-    fakePeople({ item: "stall", projectItems: projectWithCarla, projectPeople: carlaAndAna });
+    fakePeople({
+      item: "stall",
+      projectItems: projectWithCarla,
+      projectPeople: carlaAndAna,
+    });
 
     const result = await searchAzureItemPeople(
       config(),
@@ -433,11 +531,17 @@ describe("searching Azure DevOps people", () => {
           id: 4821,
           fields: {
             "System.TeamProject": "Contoso Mobile",
-            "System.AssignedTo": { id: ANA, displayName: "Ana Silva", uniqueName: "ana@contoso.com" },
+            "System.AssignedTo": {
+              id: ANA,
+              displayName: "Ana Silva",
+              uniqueName: "ana@contoso.com",
+            },
           },
         }),
       projectItems: (project) =>
-        project === "Contoso Mobile" ? projectWithCarla() : json({ workItems: [] }),
+        project === "Contoso Mobile"
+          ? projectWithCarla()
+          : json({ workItems: [] }),
       projectPeople: carlaAndAna,
     });
 
@@ -448,7 +552,10 @@ describe("searching Azure DevOps people", () => {
       "Contoso Portal",
       "Contoso Mobile",
     ]);
-    expect(searches.commentProjects).toEqual(["Contoso Portal", "Contoso Mobile"]);
+    expect(searches.commentProjects).toEqual([
+      "Contoso Portal",
+      "Contoso Mobile",
+    ]);
   });
 
   it("fails only when every search fails", async () => {
@@ -458,19 +565,177 @@ describe("searching Azure DevOps people", () => {
       identities: () => new Response("Unauthorized", { status: 401 }),
     });
 
-    await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401)");
+    await expect(search("ana")).rejects.toThrow(
+      "Azure DevOps request failed (401)",
+    );
+  });
+
+  describe("for the settle dialog's Assignee field", () => {
+    const ANA_ASSIGNEE = {
+      id: "ana@contoso.com",
+      displayName: "Ana Silva",
+      email: "ana@contoso.com",
+    };
+    const ALEX_ASSIGNEE = {
+      id: "alex@contoso.com",
+      displayName: "Alex Martin",
+      email: "alex@contoso.com",
+    };
+    const CARLA_ASSIGNEE = {
+      id: "carla@contoso.com",
+      displayName: "Carla Diaz",
+      email: "carla@contoso.com",
+    };
+
+    async function assignees(query: string, limit = 8) {
+      return (
+        await searchAzureAssignees(config(), {
+          sourceId: SOURCE_ID,
+          query,
+          limit,
+        })
+      ).people;
+    }
+
+    it("answers a bare search with the item's and the project's people by uniqueName, skipping anyone without one", async () => {
+      const searches = fakePeople({
+        item: itemWithPeople,
+        comments: brunoComments,
+        projectItems: projectWithCarla,
+        projectPeople: carlaAndAna,
+      });
+      const connection = {
+        id: "connection-1",
+        pluginId: "azure_devops",
+        label: "Main connection",
+        tenantLabel: "Contoso",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        connectedAt: 0,
+        access: ALL_ACCESS,
+        config: { organizationUrl: ORG, queryScope: "assigned_to_me" },
+      };
+
+      // Bruno's comment names him without a uniqueName, so he can't be assigned.
+      await expect(
+        searchAssignees(connection, {
+          sourceId: SOURCE_ID,
+          query: "",
+          limit: 8,
+        }),
+      ).resolves.toEqual({
+        people: [ANA_ASSIGNEE, ALEX_ASSIGNEE, CARLA_ASSIGNEE],
+      });
+      expect(searches).toHaveLength(0);
+    });
+
+    it("searches the organization for a typed query, while mentions keep identity ids", async () => {
+      const searches = fakePeople({
+        item: itemWithPeople,
+        identities: () =>
+          json({
+            value: [
+              {
+                id: "44444444-4444-4444-4444-444444444444",
+                providerDisplayName: "Alba Reyes",
+                properties: {
+                  Domain: { $value: "7a394543-62fd-4274-a7d2-8fac775942b6" },
+                  Account: { $value: "alba@contoso.com" },
+                  Mail: { $value: "alba@contoso.com" },
+                },
+              },
+              {
+                id: ME,
+                providerDisplayName: "Alex Martin",
+                properties: { Account: { $value: "alex@contoso.com" } },
+              },
+              {
+                id: "55555555-5555-5555-5555-555555555555",
+                providerDisplayName: "Alan Dupont",
+                properties: {
+                  Domain: { $value: "CONTOSO" },
+                  Account: { $value: "adupont" },
+                },
+              },
+              {
+                id: "77777777-7777-7777-7777-777777777777",
+                providerDisplayName: "Alfred Nobody",
+              },
+            ],
+          }),
+      });
+
+      expect(await assignees("al")).toEqual([
+        ALEX_ASSIGNEE,
+        {
+          id: "alba@contoso.com",
+          displayName: "Alba Reyes",
+          email: "alba@contoso.com",
+        },
+        { id: "CONTOSO\\adupont", displayName: "Alan Dupont" },
+      ]);
+      expect(
+        searches.map((url) => url.searchParams.get("filterValue")),
+      ).toEqual(["al"]);
+      // Alfred has no account to assign by, but can still be mentioned.
+      expect((await search("al")).map((person) => person.id)).toEqual([
+        ME,
+        "44444444-4444-4444-4444-444444444444",
+        "55555555-5555-5555-5555-555555555555",
+        "77777777-7777-7777-7777-777777777777",
+      ]);
+    });
+
+    it("finds the item's and the project's people when the token can't search identities", async () => {
+      fakePeople({
+        item: itemWithPeople,
+        projectItems: projectWithCarla,
+        projectPeople: carlaAndAna,
+        identities: () => new Response("Unauthorized", { status: 401 }),
+      });
+
+      expect(await assignees("silva")).toEqual([ANA_ASSIGNEE]);
+      expect(await assignees("diaz")).toEqual([CARLA_ASSIGNEE]);
+    });
+
+    it("returns at most the limit, and never more than 20", async () => {
+      fakePeople({
+        projectItems: projectWithCarla,
+        projectPeople: () =>
+          json({
+            value: Array.from({ length: 25 }, (_, index) => ({
+              id: index + 1,
+              fields: {
+                "System.AssignedTo": {
+                  id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
+                  displayName: `Person ${index}`,
+                  uniqueName: `person${index}@contoso.com`,
+                },
+              },
+            })),
+          }),
+      });
+
+      expect(await assignees("", 3)).toHaveLength(3);
+      expect(await assignees("", 50)).toHaveLength(20);
+    });
   });
 
   it("searches people on the identities host Ajour derives for each kind of organization URL", () => {
-    const identities = manifest.network!.derivedHosts!.find((host) => host.id === "identities")!;
-    expect(deriveAddress(identities.forms, "https://dev.azure.com/contoso/")).toBe(
-      "https://vssps.dev.azure.com/contoso",
-    );
-    expect(deriveAddress(identities.forms, "https://contoso.visualstudio.com")).toBe(
-      "https://contoso.vssps.visualstudio.com",
-    );
-    expect(deriveAddress(identities.forms, "https://tfs.contoso.local/DefaultCollection")).toBe(
-      "https://tfs.contoso.local/DefaultCollection",
-    );
+    const identities = manifest.network!.derivedHosts!.find(
+      (host) => host.id === "identities",
+    )!;
+    expect(
+      deriveAddress(identities.forms, "https://dev.azure.com/contoso/"),
+    ).toBe("https://vssps.dev.azure.com/contoso");
+    expect(
+      deriveAddress(identities.forms, "https://contoso.visualstudio.com"),
+    ).toBe("https://contoso.vssps.visualstudio.com");
+    expect(
+      deriveAddress(
+        identities.forms,
+        "https://tfs.contoso.local/DefaultCollection",
+      ),
+    ).toBe("https://tfs.contoso.local/DefaultCollection");
   });
 });

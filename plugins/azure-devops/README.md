@@ -91,12 +91,12 @@ runs, and its broker refuses a request to an endpoint whose choice is off. The
 ids are the ones Ajour gave this plugin on API 3, so a connection keeps its
 choices.
 
-| Choice | Token scope | Unlocks |
-| ------ | ----------- | ------- |
-| Read the backlog (always on) | Work Items (Read) | Sync, WIQL queries and batch reads, comments, descriptions, the item's and the project's people |
-| Edit work items | Work Items (Read & write) | Estimate uploads (`pushEstimates`), settle, description writes, posting, editing and deleting comments, reactions |
-| Pull requests | Code (Read), and Project and Team (Read) for teams | Pull request sync and the other code host operations |
-| Search people across the organisation | Identity (Read) | `@` suggestions from the organization's identities, for a typed query |
+| Choice                                | Token scope                                        | Unlocks                                                                                                           |
+| ------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Read the backlog (always on)          | Work Items (Read)                                  | Sync, WIQL queries and batch reads, comments, descriptions, the item's and the project's people                   |
+| Edit work items                       | Work Items (Read & write)                          | Estimate uploads (`pushEstimates`), settle, description writes, posting, editing and deleting comments, reactions |
+| Pull requests                         | Code (Read), and Project and Team (Read) for teams | Pull request sync and the other code host operations                                                              |
+| Search people across the organisation | Identity (Read)                                    | Mention and assignee suggestions from the organization's identities, for a typed query                            |
 
 A sync on a connection that can't edit work items still reads everything:
 Ajour holds the estimates it would upload for the user to review, so the
@@ -111,22 +111,22 @@ and its broker refuses anything else. Paths are under the Organization URL;
 `api-version`, are not part of a path. The plugin loads when needed
 (`runtime.start`).
 
-| Method | Path | Access |
-| ------ | ---- | ------ |
-| GET | `/_apis/connectionData` | any |
-| POST | `/_apis/wit/wiql`, `/*/_apis/wit/wiql` | Read the backlog |
-| POST | `/_apis/wit/workitemsbatch` | Read the backlog |
-| GET | `/_apis/wit/fields`, `/_apis/wit/workitems/*` | Read the backlog |
-| GET | `/*/_apis/wit/workitemtypes/*/states`, `/*/_apis/wit/workitemtypes/*/fields` | Read the backlog |
-| GET | `/*/_apis/wit/workItems/*/comments`, `/*/_apis/wit/workItems/*/comments/*` | Read the backlog |
-| PATCH | `/_apis/wit/workitems/*` (as `application/json-patch+json`) | Edit work items |
-| POST | `/*/_apis/wit/workItems/*/comments` | Edit work items |
-| PATCH, DELETE | `/*/_apis/wit/workItems/*/comments/*` | Edit work items |
-| PUT, DELETE | `/*/_apis/wit/workItems/*/comments/*/reactions/*` | Edit work items |
-| GET | `/_apis/git/repositories`, `/_apis/git/pullrequests`, `/*/_apis/git/pullrequests`, `/_apis/git/pullrequests/*` | Pull requests |
-| GET | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations` | Pull requests |
-| GET | `/*/_apis/policy/evaluations`, `/_apis/teams` | Pull requests |
-| GET | `/_apis/identities` on the `identities` host | Search people across the organisation |
+| Method        | Path                                                                                                           | Access                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| GET           | `/_apis/connectionData`                                                                                        | any                                   |
+| POST          | `/_apis/wit/wiql`, `/*/_apis/wit/wiql`                                                                         | Read the backlog                      |
+| POST          | `/_apis/wit/workitemsbatch`                                                                                    | Read the backlog                      |
+| GET           | `/_apis/wit/fields`, `/_apis/wit/workitems/*`                                                                  | Read the backlog                      |
+| GET           | `/*/_apis/wit/workitemtypes/*/states`, `/*/_apis/wit/workitemtypes/*/fields`                                   | Read the backlog                      |
+| GET           | `/*/_apis/wit/workItems/*/comments`, `/*/_apis/wit/workItems/*/comments/*`                                     | Read the backlog                      |
+| PATCH         | `/_apis/wit/workitems/*` (as `application/json-patch+json`)                                                    | Edit work items                       |
+| POST          | `/*/_apis/wit/workItems/*/comments`                                                                            | Edit work items                       |
+| PATCH, DELETE | `/*/_apis/wit/workItems/*/comments/*`                                                                          | Edit work items                       |
+| PUT, DELETE   | `/*/_apis/wit/workItems/*/comments/*/reactions/*`                                                              | Edit work items                       |
+| GET           | `/_apis/git/repositories`, `/_apis/git/pullrequests`, `/*/_apis/git/pullrequests`, `/_apis/git/pullrequests/*` | Pull requests                         |
+| GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`                                         | Pull requests                         |
+| GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
+| GET           | `/_apis/identities` on the `identities` host                                                                   | Search people across the organisation |
 
 The `identities` host is derived from the Organization URL:
 `vssps.dev.azure.com/{org}` for `dev.azure.com/{org}`,
@@ -140,15 +140,37 @@ the plugin still tells the user the token was rejected.
 
 ## Settle support
 
-Its connector capability lists
-the item's work item type states and can write state and priority in one
-update. Set the connection's priority field to enable priority writes.
+Its connector capability lists the item's work item type states and can write state, priority and assignee
+in one update. Set the connection's priority field to enable priority writes.
 Writing requires work-item read and write permissions.
 
 Work item URLs must belong to the configured organization. Completed and
 Removed categories count as done. Resolved remains open. Sync reports items
 Ajour already tracks that reached a done category, even when the query no
 longer returns them.
+
+## Assignees
+
+The manifest declares `assign`, so Ajour's settle dialog can hand an item to
+someone else. Assignees go by `uniqueName`, the id `System.AssignedTo` takes,
+such as `ana@contoso.com`. Mentions keep the identity id.
+
+- Each sync sends a work item's assignee as `assignee`: the `uniqueName`, the
+  name and, when the `uniqueName` is one, the email. An unassigned item sends
+  none. `assignedTo` still carries the name.
+- `searchAssignees` asks the same sources as `searchItemPeople` (see
+  [Comments](#comments)) and returns at most 20 people, skipping anyone
+  without a `uniqueName`. An empty query gets the item's and the project's
+  people, which needs only Work Items (Read). A typed query also searches the
+  organization, which needs Identity (Read); without it, the search returns
+  what the other sources found. Someone the identities service finds gets
+  their account as `uniqueName`, or `DOMAIN\account` for a Windows account on
+  Azure DevOps Server.
+- `writeSettle` takes `assignee`. A `uniqueName` sets `System.AssignedTo` in
+  the same update as the state and priority, and `null` clears it with an
+  empty value, as Microsoft's "Reset an identity field" sample does. A settle
+  that only reassigns is a valid write. Assigning needs Work Items (Read &
+  write), as settle does.
 
 ## Descriptions
 
@@ -304,15 +326,15 @@ returns for something the token cannot see, the plugin searches each project
 among the repositories the token can read. Pull requests sync on the interval while **Sync
 pull requests automatically** is on, separately from **Auto sync to backlog**.
 
-| Ajour fact              | Azure DevOps source                                                                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ajour fact              | Azure DevOps source                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Review requests         | Reviewers who have not voted or declined. A team reviewer includes you when you are a member of the team.                                                      |
-| Review request events   | `ReviewersUpdate` system threads: who added which reviewers, and when.                                                                                           |
+| Review request events   | `ReviewersUpdate` system threads: who added which reviewers, and when.                                                                                         |
 | Reviews                 | `VoteUpdate` system threads. Approved and approved with suggestions are approvals; waiting for author and rejected request changes; a reset vote is dismissed. |
-| Comments                | Text comments in every thread. Mentions are `@<your identity id>`.                                                                                               |
-| Last push and its actor | The latest pull request iteration and who pushed it.                                                                                                             |
-| Checks                  | Build and Status policy evaluations.                                                                                                                             |
-| Mergeability            | The pull request's merge status.                                                                                                                                 |
+| Comments                | Text comments in every thread. Mentions are `@<your identity id>`.                                                                                             |
+| Last push and its actor | The latest pull request iteration and who pushed it.                                                                                                           |
+| Checks                  | Build and Status policy evaluations.                                                                                                                           |
+| Mergeability            | The pull request's merge status.                                                                                                                               |
 
 Comment and review text is never returned to Ajour. Pull requests need the
 **Code (Read)** scope, and **Project and Team (Read)** to find your teams.
@@ -346,3 +368,21 @@ range whose start is above its end, and two levels whose ranges overlap.
 ## License
 
 [MIT](LICENSE)
+
+### Refresh from Ajour
+
+Ajour can refresh the backlog or one open item. A refresh syncs both ways: it
+uploads local estimate changes, like every sync. With a recent Ajour build, the item refresh fetches its Azure DevOps ID
+directly, even when it no longer matches the connection's assigned-items query.
+Ajour shows progress and the last successful sync time in the backlog and item
+views. A failed request leaves that successful time unchanged.
+
+## API 4 release
+
+Version 2.0.0 requires Ajour's API 4 host. The major version marks that host
+compatibility change and supersedes main's 1.2.0 and the port's unreleased 1.2.0.
+It retains main's individual item refresh, estimate uploads during refresh,
+and assignee sync, suggestions and settle writes. Refresh passes `sourceIds`
+to sync, reads those items outside the configured query, and uses the same
+estimate conflict checks and access controls as a full sync. Local source IDs
+remain stable when a project's URL changes.

@@ -1,6 +1,7 @@
 import type {} from "@ajour/plugin-sdk/globals";
 import type {
   AzureDevOpsQueryScope,
+  BacklogPerson,
   ConnectorImportCandidateInput,
   ConnectorPluginSyncResult,
   ConnectorSyncFieldUpdate,
@@ -10,7 +11,10 @@ import type {
 import { resolveEstimateSyncAction } from "./estimate-sync.ts";
 import { htmlToMarkdown } from "./html-markdown.ts";
 import { describeWorkItem } from "./description.ts";
-import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.ts";
+import {
+  priorityLevelForValue,
+  type PriorityLevelRanges,
+} from "./priority-levels.ts";
 import {
   createStateCategoryResolver,
   type AzureStateInfo,
@@ -49,7 +53,10 @@ const BACKLOG_PARENT_WORK_ITEM_TYPES = [
   "Issue",
   "Bug",
 ] as const;
-const RELEVANT_WORK_ITEM_TYPES = [TASK_WORK_ITEM_TYPE, ...BACKLOG_PARENT_WORK_ITEM_TYPES];
+const RELEVANT_WORK_ITEM_TYPES = [
+  TASK_WORK_ITEM_TYPE,
+  ...BACKLOG_PARENT_WORK_ITEM_TYPES,
+];
 const MAX_CANDIDATE_NOTE_LENGTH = 4000;
 
 interface AzureWiqlResponse {
@@ -137,7 +144,6 @@ function normalizeOrganizationUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
-
 export function normalizeDisplayValue(value: unknown): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -146,16 +152,63 @@ export function normalizeDisplayValue(value: unknown): string | undefined {
 
   if (value && typeof value === "object") {
     const displayName =
-      "displayName" in value ? normalizeDisplayValue(value.displayName) : undefined;
+      "displayName" in value
+        ? normalizeDisplayValue(value.displayName)
+        : undefined;
     const uniqueName =
-      "uniqueName" in value ? normalizeDisplayValue(value.uniqueName) : undefined;
+      "uniqueName" in value
+        ? normalizeDisplayValue(value.uniqueName)
+        : undefined;
     return displayName ?? uniqueName;
   }
 
   return undefined;
 }
 
-function normalizeDescriptionValue(value: unknown, format: unknown): string | undefined {
+/** An account name that is an email, as Azure DevOps names most users. */
+export function emailOf(...candidates: unknown[]) {
+  for (const candidate of candidates) {
+    if (
+      typeof candidate === "string" &&
+      /^[^\s@]+@[^\s@]+$/.test(candidate.trim())
+    ) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
+/** The longest id, name or email Ajour takes for an assignee. */
+const MAX_ASSIGNEE_TEXT = 400;
+
+/**
+ * An identity as an assignee, by its uniqueName, the id `System.AssignedTo`
+ * takes on write. None without a uniqueName, or with one too long for Ajour.
+ */
+export function assigneeOf(
+  identity: unknown,
+  email?: string,
+): BacklogPerson | undefined {
+  if (!identity || typeof identity !== "object") return undefined;
+  const { uniqueName, displayName } = identity as {
+    uniqueName?: unknown;
+    displayName?: unknown;
+  };
+  const id = typeof uniqueName === "string" ? uniqueName.trim() : "";
+  if (!id || id.length > MAX_ASSIGNEE_TEXT) return undefined;
+  const name = (typeof displayName === "string" && displayName.trim()) || id;
+  const mail = email ?? emailOf(id);
+  return {
+    id,
+    displayName: name.slice(0, MAX_ASSIGNEE_TEXT),
+    ...(mail && mail.length <= MAX_ASSIGNEE_TEXT ? { email: mail } : {}),
+  };
+}
+
+function normalizeDescriptionValue(
+  value: unknown,
+  format: unknown,
+): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -170,7 +223,9 @@ function normalizeDescriptionValue(value: unknown, format: unknown): string | un
   return htmlToMarkdown(value);
 }
 
-function normalizeConfiguredFieldName(value: string | undefined): string | undefined {
+function normalizeConfiguredFieldName(
+  value: string | undefined,
+): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
@@ -237,7 +292,9 @@ export function getProjectName(workItem: AzureWorkItem) {
   return normalizeDisplayValue(workItem.fields?.["System.TeamProject"]);
 }
 
-function parseRelatedWorkItemId(relation: AzureWorkItemRelation | undefined): number | null {
+function parseRelatedWorkItemId(
+  relation: AzureWorkItemRelation | undefined,
+): number | null {
   const url = relation?.url;
   if (!url) {
     return null;
@@ -256,7 +313,12 @@ function isTask(workItemType: string | undefined) {
 }
 
 function isBacklogParentType(workItemType: string | undefined) {
-  return Boolean(workItemType && BACKLOG_PARENT_WORK_ITEM_TYPES.includes(workItemType as (typeof BACKLOG_PARENT_WORK_ITEM_TYPES)[number]));
+  return Boolean(
+    workItemType &&
+    BACKLOG_PARENT_WORK_ITEM_TYPES.includes(
+      workItemType as (typeof BACKLOG_PARENT_WORK_ITEM_TYPES)[number],
+    ),
+  );
 }
 
 function buildWorkItemTypeFilter() {
@@ -265,7 +327,9 @@ function buildWorkItemTypeFilter() {
   ).join("\n      OR ");
 }
 
-function buildBaseWiqlQuery(queryScope: AzureDevOpsConnectionInput["queryScope"]) {
+function buildBaseWiqlQuery(
+  queryScope: AzureDevOpsConnectionInput["queryScope"],
+) {
   const assignedClause =
     queryScope === "assigned_to_me" ? "\n  AND [System.AssignedTo] = @Me" : "";
 
@@ -333,7 +397,9 @@ export async function sendAzureDevOps(
       ...(init.query !== undefined ? { query: init.query } : {}),
       headers: {
         Accept: "application/json",
-        ...(hasBody ? { "Content-Type": init.contentType ?? "application/json" } : {}),
+        ...(hasBody
+          ? { "Content-Type": init.contentType ?? "application/json" }
+          : {}),
       },
       ...(hasBody ? { body: init.body } : {}),
       ...(init.signal !== undefined ? { signal: init.signal } : {}),
@@ -353,7 +419,10 @@ export async function requestAzureDevOps<T>(
   const response = await sendAzureDevOps(config, path, init);
 
   // A 203 sign-in page or a redirect to sign in is not the answer asked for.
-  if (response.status === 203 || (response.status >= 300 && response.status < 400)) {
+  if (
+    response.status === 203 ||
+    (response.status >= 300 && response.status < 400)
+  ) {
     throw new Error(TOKEN_REJECTED);
   }
 
@@ -361,14 +430,19 @@ export async function requestAzureDevOps<T>(
     let detail = "Request failed";
     try {
       const payload = (await response.json()) as { message?: string };
-      if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+      if (
+        typeof payload.message === "string" &&
+        payload.message.trim().length > 0
+      ) {
         detail = payload.message.trim();
       }
     } catch {
       // Ignore non-JSON error responses.
     }
 
-    throw new Error(`Azure DevOps request failed (${response.status}): ${detail}`);
+    throw new Error(
+      `Azure DevOps request failed (${response.status}): ${detail}`,
+    );
   }
 
   // A delete answers 204 with no body.
@@ -427,12 +501,15 @@ export async function resolveAzureFieldMetadata(
   config: AzureDevOpsConnectionInput,
   configuredFieldName: string | undefined,
 ): Promise<AzureResolvedFieldMetadata | undefined> {
-  const normalizedConfiguredFieldName = normalizeConfiguredFieldName(configuredFieldName);
+  const normalizedConfiguredFieldName =
+    normalizeConfiguredFieldName(configuredFieldName);
   if (!normalizedConfiguredFieldName) {
     return undefined;
   }
 
-  const normalizedLookupValue = normalizeLookupValue(normalizedConfiguredFieldName);
+  const normalizedLookupValue = normalizeLookupValue(
+    normalizedConfiguredFieldName,
+  );
   const response = await requestAzureDevOps<AzureFieldListResponse>(
     config,
     "/_apis/wit/fields",
@@ -443,14 +520,16 @@ export async function resolveAzureFieldMetadata(
   const referenceNameMatch = requireSingleFieldMatch(
     normalizedConfiguredFieldName,
     fields.filter(
-      (field) => normalizeLookupValue(field.referenceName) === normalizedLookupValue,
+      (field) =>
+        normalizeLookupValue(field.referenceName) === normalizedLookupValue,
     ),
     "reference name",
   );
   if (referenceNameMatch?.referenceName) {
     return {
       configuredName: normalizedConfiguredFieldName,
-      resolvedName: referenceNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedName:
+        referenceNameMatch.name?.trim() || normalizedConfiguredFieldName,
       resolvedReferenceName: referenceNameMatch.referenceName,
       type: referenceNameMatch.type?.trim() || undefined,
       isQueryable: referenceNameMatch.isQueryable,
@@ -459,13 +538,16 @@ export async function resolveAzureFieldMetadata(
 
   const displayNameMatch = requireSingleFieldMatch(
     normalizedConfiguredFieldName,
-    fields.filter((field) => normalizeLookupValue(field.name) === normalizedLookupValue),
+    fields.filter(
+      (field) => normalizeLookupValue(field.name) === normalizedLookupValue,
+    ),
     "display name",
   );
   if (displayNameMatch?.referenceName) {
     return {
       configuredName: normalizedConfiguredFieldName,
-      resolvedName: displayNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedName:
+        displayNameMatch.name?.trim() || normalizedConfiguredFieldName,
       resolvedReferenceName: displayNameMatch.referenceName,
       type: displayNameMatch.type?.trim() || undefined,
       isQueryable: displayNameMatch.isQueryable,
@@ -483,7 +565,9 @@ function mergeWorkItemBatchResponses(
   relationItems: AzureWorkItem[],
 ): AzureWorkItem[] {
   const fieldItemsById = new Map(fieldItems.map((item) => [item.id, item]));
-  const relationItemsById = new Map(relationItems.map((item) => [item.id, item]));
+  const relationItemsById = new Map(
+    relationItems.map((item) => [item.id, item]),
+  );
 
   return ids.flatMap((id) => {
     const fieldItem = fieldItemsById.get(id);
@@ -519,10 +603,7 @@ async function fetchWorkItems(
   }
 
   const requestedFields = Array.from(
-    new Set([
-      ...BASE_REQUESTED_WORK_ITEM_FIELDS,
-      ...additionalFields,
-    ]),
+    new Set([...BASE_REQUESTED_WORK_ITEM_FIELDS, ...additionalFields]),
   );
 
   const results = await Promise.all(
@@ -607,28 +688,37 @@ async function fetchWorkItemTypeFieldReferences(
   );
 
   if (!Array.isArray(response.value)) {
-    throw new Error("Azure DevOps returned invalid work item type field metadata.");
+    throw new Error(
+      "Azure DevOps returned invalid work item type field metadata.",
+    );
   }
 
   const fields = response.value;
-  return new Set(fields.flatMap((field) => {
-    if (!field || typeof field.referenceName !== "string") {
-      return [];
-    }
+  return new Set(
+    fields.flatMap((field) => {
+      if (!field || typeof field.referenceName !== "string") {
+        return [];
+      }
 
-    const normalizedReferenceName = normalizeLookupValue(field.referenceName);
-    return normalizedReferenceName ? [normalizedReferenceName] : [];
-  }));
+      const normalizedReferenceName = normalizeLookupValue(field.referenceName);
+      return normalizedReferenceName ? [normalizedReferenceName] : [];
+    }),
+  );
 }
 
 function workItemTypeFieldCacheKey(projectName: string, workItemType: string) {
   return `${normalizeLookupValue(projectName)}\u0000${normalizeLookupValue(workItemType)}`;
 }
 
-function buildSourceUrl(config: AzureDevOpsConnectionInput, workItem: AzureWorkItem) {
+function buildSourceUrl(
+  config: AzureDevOpsConnectionInput,
+  workItem: AzureWorkItem,
+) {
   const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
   const projectName = getProjectName(workItem) ?? config.project;
-  const projectSegment = projectName ? `/${encodeURIComponent(projectName)}` : "";
+  const projectSegment = projectName
+    ? `/${encodeURIComponent(projectName)}`
+    : "";
   return `${organizationUrl}${projectSegment}/_workitems/edit/${workItem.id}`;
 }
 
@@ -678,7 +768,9 @@ function getParentId(workItem: AzureWorkItem): number | null {
 
 function getChildIds(workItem: AzureWorkItem): number[] {
   return (workItem.relations ?? [])
-    .filter((candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Forward")
+    .filter(
+      (candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Forward",
+    )
     .map((candidate) => parseRelatedWorkItemId(candidate))
     .filter((candidate): candidate is number => candidate !== null);
 }
@@ -699,24 +791,44 @@ function mapWorkItemToCandidate(
 ): ConnectorImportCandidateInput | null {
   const title = normalizeDisplayValue(workItem.fields?.["System.Title"]);
   const state = normalizeDisplayValue(workItem.fields?.["System.State"]);
-  const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
-  const assignedTo = normalizeDisplayValue(workItem.fields?.["System.AssignedTo"]);
+  const workItemType = normalizeDisplayValue(
+    workItem.fields?.["System.WorkItemType"],
+  );
+  const assignedTo = normalizeDisplayValue(
+    workItem.fields?.["System.AssignedTo"],
+  );
+  const assignee = assigneeOf(workItem.fields?.["System.AssignedTo"]);
   const projectName = getProjectName(workItem);
   const priority = fieldReferences?.priorityFieldReferenceName
     ? priorityLevelForValue(
         config.priorityLevels,
-        parsePriorityValue(workItem.fields?.[fieldReferences.priorityFieldReferenceName]),
+        parsePriorityValue(
+          workItem.fields?.[fieldReferences.priorityFieldReferenceName],
+        ),
       )
     : undefined;
-  const originalEstimateHours = fieldReferences?.originalEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName])
-    : undefined;
-  const remainingEstimateHours = fieldReferences?.remainingEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.remainingEstimateFieldReferenceName])
-    : undefined;
-  const completedEstimateHours = fieldReferences?.completedEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.completedEstimateFieldReferenceName])
-    : undefined;
+  const originalEstimateHours =
+    fieldReferences?.originalEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName],
+        )
+      : undefined;
+  const remainingEstimateHours =
+    fieldReferences?.remainingEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[
+            fieldReferences.remainingEstimateFieldReferenceName
+          ],
+        )
+      : undefined;
+  const completedEstimateHours =
+    fieldReferences?.completedEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[
+            fieldReferences.completedEstimateFieldReferenceName
+          ],
+        )
+      : undefined;
 
   const isOpen = (item: AzureWorkItem) => !stateInfo.get(item.id)?.done;
   if (!title || !workItemType || !isOpen(workItem)) {
@@ -733,7 +845,9 @@ function mapWorkItemToCandidate(
     const parentId = getParentId(workItem);
     const parent = parentId ? allItems.get(parentId) : undefined;
     const parentTitle = normalizeDisplayValue(parent?.fields?.["System.Title"]);
-    const hasImportableParent = Boolean(parent && parentTitle && isOpen(parent));
+    const hasImportableParent = Boolean(
+      parent && parentTitle && isOpen(parent),
+    );
 
     return {
       source: "azure_devops",
@@ -752,12 +866,15 @@ function mapWorkItemToCandidate(
       stateCategory,
       stateDone: false,
       assignedTo,
+      ...(assignee ? { assignee } : {}),
       priority,
       originalEstimateHours,
       remainingEstimateHours,
       completedEstimateHours,
       parentSourceId:
-        hasImportableParent && parent ? resolveSourceId(config, parent, localSourceIds) : undefined,
+        hasImportableParent && parent
+          ? resolveSourceId(config, parent, localSourceIds)
+          : undefined,
       parentTitle: hasImportableParent ? parentTitle : undefined,
       depth: hasImportableParent ? 1 : 0,
       selectable,
@@ -776,7 +893,9 @@ function mapWorkItemToCandidate(
     }
 
     const child = allItems.get(childId);
-    const childType = normalizeDisplayValue(child?.fields?.["System.WorkItemType"]);
+    const childType = normalizeDisplayValue(
+      child?.fields?.["System.WorkItemType"],
+    );
     return Boolean(child && isTask(childType) && isOpen(child));
   }).length;
 
@@ -801,6 +920,7 @@ function mapWorkItemToCandidate(
     stateCategory,
     stateDone: false,
     assignedTo,
+    ...(assignee ? { assignee } : {}),
     priority,
     originalEstimateHours,
     remainingEstimateHours,
@@ -833,13 +953,35 @@ async function describeWorkItemStates(
 async function fetchAzureDevOpsSyncContext(
   config: AzureDevOpsConnectionInput,
   localSourceIds: ReadonlyMap<number, string> = new Map(),
+  sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
-  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
-  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
-  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
-  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
-  const baseIds = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+  const priorityField = await resolveAzureFieldMetadata(
+    config,
+    config.priorityFieldName,
+  );
+  const originalEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.originalEstimateFieldName,
+  );
+  const remainingEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.remainingEstimateFieldName,
+  );
+  const completedEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.completedEstimateFieldName,
+  );
+  const baseIds = sourceIds
+    ? sourceIds.map((sourceId) => {
+        const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
+        if (id === null)
+          throw new Error(
+            "The item does not belong to this Azure DevOps connection.",
+          );
+        return id;
+      })
+    : await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
   if (baseIds.length === 0) {
     return {
       items: [],
@@ -867,7 +1009,9 @@ async function fetchAzureDevOpsSyncContext(
 
   const parentContextIds = new Set<number>();
   for (const workItem of baseItems) {
-    const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
+    const workItemType = normalizeDisplayValue(
+      workItem.fields?.["System.WorkItemType"],
+    );
     if (!isTask(workItemType)) {
       continue;
     }
@@ -878,9 +1022,15 @@ async function fetchAzureDevOpsSyncContext(
     }
   }
 
-  const parentContextItems = await fetchWorkItems(config, Array.from(parentContextIds), additionalFields);
+  const parentContextItems = await fetchWorkItems(
+    config,
+    Array.from(parentContextIds),
+    additionalFields,
+  );
   const allItems = new Map<number, AzureWorkItem>(
-    [...baseItems, ...parentContextItems].map((item) => [item.id, item] as const),
+    [...baseItems, ...parentContextItems].map(
+      (item) => [item.id, item] as const,
+    ),
   );
 
   const stateInfo = await describeWorkItemStates(resolver, allItems.values());
@@ -895,9 +1045,12 @@ async function fetchAzureDevOpsSyncContext(
       localSourceIds,
       {
         priorityFieldReferenceName: priorityField?.resolvedReferenceName,
-        originalEstimateFieldReferenceName: originalEstimateField?.resolvedReferenceName,
-        remainingEstimateFieldReferenceName: remainingEstimateField?.resolvedReferenceName,
-        completedEstimateFieldReferenceName: completedEstimateField?.resolvedReferenceName,
+        originalEstimateFieldReferenceName:
+          originalEstimateField?.resolvedReferenceName,
+        remainingEstimateFieldReferenceName:
+          remainingEstimateField?.resolvedReferenceName,
+        completedEstimateFieldReferenceName:
+          completedEstimateField?.resolvedReferenceName,
       },
     );
     if (!candidate) {
@@ -907,25 +1060,31 @@ async function fetchAzureDevOpsSyncContext(
     candidatesBySourceId.set(candidate.sourceId, candidate);
   }
 
-  const items = Array.from(candidatesBySourceId.values()).sort((left, right) => {
-    if (left.connectionId !== right.connectionId) {
-      return left.connectionId.localeCompare(right.connectionId);
-    }
+  const items = Array.from(candidatesBySourceId.values()).sort(
+    (left, right) => {
+      if (left.connectionId !== right.connectionId) {
+        return left.connectionId.localeCompare(right.connectionId);
+      }
 
-    if (left.depth !== right.depth) {
-      return left.depth - right.depth;
-    }
+      if (left.depth !== right.depth) {
+        return left.depth - right.depth;
+      }
 
-    if ((left.parentSourceId ?? "") !== (right.parentSourceId ?? "")) {
-      return (left.parentSourceId ?? "").localeCompare(right.parentSourceId ?? "");
-    }
+      if ((left.parentSourceId ?? "") !== (right.parentSourceId ?? "")) {
+        return (left.parentSourceId ?? "").localeCompare(
+          right.parentSourceId ?? "",
+        );
+      }
 
-    return left.title.localeCompare(right.title);
-  });
+      return left.title.localeCompare(right.title);
+    },
+  );
 
   return {
     items,
-    itemsBySourceId: new Map(items.map((item) => [item.sourceId, item] as const)),
+    itemsBySourceId: new Map(
+      items.map((item) => [item.sourceId, item] as const),
+    ),
     allItems,
     stateInfo,
     resolver,
@@ -941,7 +1100,10 @@ async function fetchAzureDevOpsSyncContext(
 function buildAzureEstimateFieldUpdate(
   localWorkItem: ConnectorSyncWorkItem,
   remoteItem: ConnectorImportCandidateInput,
-  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  fieldKey:
+    | "originalEstimateHours"
+    | "remainingEstimateHours"
+    | "completedEstimateHours",
   allowMissingRemoteValue = false,
 ): ConnectorSyncFieldUpdate | null {
   const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
@@ -971,14 +1133,18 @@ function buildAzureEstimateFieldUpdate(
     localValue: action.localValue,
     remoteValue: action.remoteValue,
     baselineValue: action.baselineValue,
-    nextBaselineValue: "nextBaselineValue" in action ? action.nextBaselineValue : undefined,
+    nextBaselineValue:
+      "nextBaselineValue" in action ? action.nextBaselineValue : undefined,
   };
 }
 
 function needsWorkItemTypeFieldSupportCheck(
   localWorkItem: ConnectorSyncWorkItem,
   remoteItem: ConnectorImportCandidateInput,
-  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  fieldKey:
+    | "originalEstimateHours"
+    | "remainingEstimateHours"
+    | "completedEstimateHours",
 ) {
   if (remoteItem[fieldKey] !== undefined) {
     return false;
@@ -1000,9 +1166,12 @@ async function buildAzureWorkItemUpdates(
 ): Promise<ConnectorSyncWorkItemUpdate[]> {
   const updates: ConnectorSyncWorkItemUpdate[] = [];
   const mappedFieldNames = {
-    originalEstimateHours: syncContext.fields.originalEstimateField?.resolvedReferenceName,
-    remainingEstimateHours: syncContext.fields.remainingEstimateField?.resolvedReferenceName,
-    completedEstimateHours: syncContext.fields.completedEstimateField?.resolvedReferenceName,
+    originalEstimateHours:
+      syncContext.fields.originalEstimateField?.resolvedReferenceName,
+    remainingEstimateHours:
+      syncContext.fields.remainingEstimateField?.resolvedReferenceName,
+    completedEstimateHours:
+      syncContext.fields.completedEstimateField?.resolvedReferenceName,
   } as const;
 
   const fieldSupportRequests = new Map<
@@ -1015,7 +1184,9 @@ async function buildAzureWorkItemUpdates(
       continue;
     }
 
-    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<
+      keyof typeof mappedFieldNames
+    >) {
       if (
         !mappedFieldNames[fieldKey] ||
         !needsWorkItemTypeFieldSupportCheck(workItem, remoteItem, fieldKey)
@@ -1026,10 +1197,13 @@ async function buildAzureWorkItemUpdates(
       const projectName = remoteItem.projectName ?? config.project;
       const workItemType = remoteItem.workItemType;
       if (projectName && workItemType) {
-        fieldSupportRequests.set(workItemTypeFieldCacheKey(projectName, workItemType), {
-          projectName,
-          workItemType,
-        });
+        fieldSupportRequests.set(
+          workItemTypeFieldCacheKey(projectName, workItemType),
+          {
+            projectName,
+            workItemType,
+          },
+        );
       }
     }
   }
@@ -1038,16 +1212,24 @@ async function buildAzureWorkItemUpdates(
     string,
     { fields?: Set<string>; error?: string }
   >();
-  for (const [cacheKey, { projectName, workItemType }] of fieldSupportRequests) {
+  for (const [
+    cacheKey,
+    { projectName, workItemType },
+  ] of fieldSupportRequests) {
     try {
       workItemTypeFieldResults.set(cacheKey, {
-        fields: await fetchWorkItemTypeFieldReferences(config, projectName, workItemType),
+        fields: await fetchWorkItemTypeFieldReferences(
+          config,
+          projectName,
+          workItemType,
+        ),
       });
     } catch (error) {
       workItemTypeFieldResults.set(cacheKey, {
-        error: error instanceof Error
-          ? error.message
-          : "Unable to inspect Azure DevOps work item type fields.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to inspect Azure DevOps work item type fields.",
       });
     }
   }
@@ -1060,7 +1242,9 @@ async function buildAzureWorkItemUpdates(
 
     const fieldUpdates: ConnectorSyncWorkItemUpdate["fields"] = {};
 
-    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<
+      keyof typeof mappedFieldNames
+    >) {
       const mappedFieldName = mappedFieldNames[fieldKey];
       if (!mappedFieldName) {
         continue;
@@ -1080,10 +1264,12 @@ async function buildAzureWorkItemUpdates(
           const cacheKey = workItemTypeFieldCacheKey(projectName, workItemType);
           const fieldSupportResult = workItemTypeFieldResults.get(cacheKey);
           fieldSupportError = fieldSupportResult?.error;
-          const normalizedMappedFieldName = normalizeLookupValue(mappedFieldName);
+          const normalizedMappedFieldName =
+            normalizeLookupValue(mappedFieldName);
           if (normalizedMappedFieldName) {
             allowMissingRemoteValue =
-              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ?? false;
+              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ??
+              false;
           }
         }
       }
@@ -1117,7 +1303,9 @@ async function buildAzureWorkItemUpdates(
       continue;
     }
 
-    for (const fieldKey of Object.keys(fieldUpdates) as Array<keyof typeof fieldUpdates>) {
+    for (const fieldKey of Object.keys(fieldUpdates) as Array<
+      keyof typeof fieldUpdates
+    >) {
       const mappedFieldName = mappedFieldNames[fieldKey];
       const fieldUpdate = fieldUpdates[fieldKey];
       const localValue = workItem[fieldKey];
@@ -1135,7 +1323,10 @@ async function buildAzureWorkItemUpdates(
           [mappedFieldName]: localValue,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to update Azure DevOps work item.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to update Azure DevOps work item.";
         const failedFieldUpdate: ConnectorSyncFieldUpdate = {
           ...fieldUpdate,
           status: "error",
@@ -1156,12 +1347,29 @@ async function buildAzureWorkItemUpdates(
   return updates;
 }
 
-export async function validateAzureDevOpsConnection(config: AzureDevOpsConnectionInput) {
-  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
-  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
-  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
-  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
-  const ids = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+export async function validateAzureDevOpsConnection(
+  config: AzureDevOpsConnectionInput,
+) {
+  const priorityField = await resolveAzureFieldMetadata(
+    config,
+    config.priorityFieldName,
+  );
+  const originalEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.originalEstimateFieldName,
+  );
+  const remainingEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.remainingEstimateFieldName,
+  );
+  const completedEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.completedEstimateFieldName,
+  );
+  const ids = await executeWiqlQuery(
+    config,
+    buildBaseWiqlQuery(config.queryScope),
+  );
   if (!Array.isArray(ids)) {
     throw new Error(
       `Azure DevOps query did not return a valid work item list for ${normalizeOrganizationUrl(config.organizationUrl)}.`,
@@ -1190,16 +1398,20 @@ export function parseAzureWorkItemId(
 ): number | null {
   try {
     const source = new URL(sourceId);
-    if (source.protocol !== "https:" && source.protocol !== "http:") return null;
+    if (source.protocol !== "https:" && source.protocol !== "http:")
+      return null;
     if (source.username || source.password) return null;
     if (organizationUrl) {
       const organization = new URL(normalizeOrganizationUrl(organizationUrl));
       if (
         source.origin !== organization.origin ||
-        !source.pathname.toLowerCase().startsWith(
-          organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
-        )
-      ) return null;
+        !source.pathname
+          .toLowerCase()
+          .startsWith(
+            organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
+          )
+      )
+        return null;
     }
     const match = /\/_workitems\/edit\/([1-9]\d*)\/?$/.exec(source.pathname);
     const id = match ? Number(match[1]) : NaN;
@@ -1257,10 +1469,12 @@ async function findDoneWorkItems(
       sourceId,
       externalId: String(id),
       sourceUrl: buildSourceUrl(config, workItem),
-      title: normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
+      title:
+        normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
       projectName: getProjectName(workItem),
       workItemType:
-        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ?? "Work item",
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ??
+        "Work item",
       state: normalizeDisplayValue(workItem.fields?.["System.State"]),
       stateCategory: info.category,
       stateDone: true,
@@ -1276,12 +1490,18 @@ async function findDoneWorkItems(
 export async function syncAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[] = [],
+  options?: { sourceIds?: string[] },
 ): Promise<ConnectorPluginSyncResult> {
   const syncContext = await fetchAzureDevOpsSyncContext(
     config,
     indexLocalSourceIds(config, workItems),
+    options?.sourceIds,
   );
-  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  const workItemUpdates = await buildAzureWorkItemUpdates(
+    config,
+    syncContext,
+    workItems,
+  );
   // Last, so the sync's earlier requests keep their order.
   const doneItems = await findDoneWorkItems(config, syncContext, workItems);
   return {

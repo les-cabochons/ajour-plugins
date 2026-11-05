@@ -1,4 +1,6 @@
 import {
+  assigneeOf,
+  emailOf,
   getProjectName,
   parseAzureWorkItemId,
   requestAzureDevOps,
@@ -20,6 +22,8 @@ import type {
   BacklogPostItemCommentRequest,
   BacklogPostItemCommentResult,
   BacklogReaction,
+  BacklogSearchAssigneesRequest,
+  BacklogSearchAssigneesResult,
   BacklogSearchItemPeopleRequest,
   BacklogSearchItemPeopleResult,
   BacklogSetItemCommentReactionRequest,
@@ -63,7 +67,11 @@ interface AzureComment {
   createdDate?: string;
   modifiedDate?: string;
   isDeleted?: boolean;
-  reactions?: { type?: string; count?: number; isCurrentUserEngaged?: boolean }[];
+  reactions?: {
+    type?: string;
+    count?: number;
+    isCurrentUserEngaged?: boolean;
+  }[];
 }
 
 interface AzureCommentList {
@@ -92,7 +100,8 @@ function isMarkdown(format: AzureComment["format"]) {
 }
 
 function mentionLink(name: string, id: string) {
-  const label = name.replace(/^@/, "").replace(/[[\]]/g, "").trim() || "someone";
+  const label =
+    name.replace(/^@/, "").replace(/[[\]]/g, "").trim() || "someone";
   return `[@${label}](mention:${id.toLowerCase()})`;
 }
 
@@ -114,32 +123,45 @@ export function commentBodyToMarkdown(comment: AzureComment) {
   if (isMarkdown(comment.format)) {
     // The rendered HTML names the people the Markdown mentions by id.
     const names = mentionNames(comment.renderedText);
-    return (comment.text ?? "").replace(MARKDOWN_MENTION, (_match, id: string) =>
-      mentionLink(names.get(id.toLowerCase()) ?? "someone", id),
+    return (comment.text ?? "").replace(
+      MARKDOWN_MENTION,
+      (_match, id: string) =>
+        mentionLink(names.get(id.toLowerCase()) ?? "someone", id),
     );
   }
 
   // Swap mentions for markers the converter keeps, then put links back.
   const mentions: string[] = [];
-  const html = (comment.text ?? "").replace(HTML_MENTION, (_match, id: string, inner: string) => {
-    const name = decodeHtmlEntities(inner.replace(/<[^>]*>/g, ""));
-    mentions.push(mentionLink(name, id));
-    return `AJOURMENTION${mentions.length - 1}X`;
-  });
+  const html = (comment.text ?? "").replace(
+    HTML_MENTION,
+    (_match, id: string, inner: string) => {
+      const name = decodeHtmlEntities(inner.replace(/<[^>]*>/g, ""));
+      mentions.push(mentionLink(name, id));
+      return `AJOURMENTION${mentions.length - 1}X`;
+    },
+  );
   const markdown = htmlToMarkdown(html) ?? "";
-  return markdown.replace(/AJOURMENTION(\d+)X/g, (_match, index: string) => mentions[Number(index)] ?? "");
+  return markdown.replace(
+    /AJOURMENTION(\d+)X/g,
+    (_match, index: string) => mentions[Number(index)] ?? "",
+  );
 }
 
 function person(identity: AzureIdentity | undefined): BacklogPerson {
   return {
     id: identity?.id?.toLowerCase() ?? "unknown",
-    displayName: identity?.displayName?.trim() || identity?.uniqueName?.trim() || "Someone",
+    displayName:
+      identity?.displayName?.trim() ||
+      identity?.uniqueName?.trim() ||
+      "Someone",
   };
 }
 
 export function toBacklogComment(comment: AzureComment): BacklogComment {
   const reactions = (comment.reactions ?? []).flatMap((reaction) => {
-    const name = reaction.type ? REACTIONS[reaction.type.toLowerCase()] : undefined;
+    const name = reaction.type
+      ? REACTIONS[reaction.type.toLowerCase()]
+      : undefined;
     return name && (reaction.count ?? 0) > 0
       ? [
           {
@@ -174,15 +196,24 @@ async function fetchViewer(
   );
   const user = data.authenticatedUser;
   if (!user?.id) {
-    throw new Error("Azure DevOps did not name the token's account. Check the organization URL.");
+    throw new Error(
+      "Azure DevOps did not name the token's account. Check the organization URL.",
+    );
   }
   return {
     id: user.id.toLowerCase(),
-    displayName: (user.customDisplayName || user.providerDisplayName || "").trim(),
+    displayName: (
+      user.customDisplayName ||
+      user.providerDisplayName ||
+      ""
+    ).trim(),
   };
 }
 
-async function fetchProjectName(config: AzureDevOpsConnectionInput, id: number) {
+async function fetchProjectName(
+  config: AzureDevOpsConnectionInput,
+  id: number,
+) {
   const workItem = await requestAzureDevOps<AzureWorkItem>(
     config,
     `/_apis/wit/workitems/${id}`,
@@ -195,7 +226,10 @@ async function fetchProjectName(config: AzureDevOpsConnectionInput, id: number) 
   return project;
 }
 
-function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {
+function requireWorkItemId(
+  config: AzureDevOpsConnectionInput,
+  sourceId: string,
+) {
   const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
   if (id === null) {
     throw new Error(`"${sourceId}" is not an Azure DevOps work item.`);
@@ -208,7 +242,11 @@ const AJOUR_MENTION = /\[@[^\]]*\]\(mention:([0-9a-fA-F-]{36})\)/g;
 
 /** Ajour's Markdown as an Azure DevOps Markdown comment. */
 export function toAzureMarkdown(body: string) {
-  return replaceOutsideCode(body, AJOUR_MENTION, (_match, id: string) => `@<${id}>`);
+  return replaceOutsideCode(
+    body,
+    AJOUR_MENTION,
+    (_match, id: string) => `@<${id}>`,
+  );
 }
 
 /** A page of the item's comments: the newest `limit` before the cursor, oldest first. */
@@ -241,7 +279,9 @@ export async function listAzureItemComments(
     viewer,
     comments,
     ...(typeof page.totalCount === "number" ? { total: page.totalCount } : {}),
-    ...(page.continuationToken ? { earlierCursor: page.continuationToken } : {}),
+    ...(page.continuationToken
+      ? { earlierCursor: page.continuationToken }
+      : {}),
   };
 }
 
@@ -337,11 +377,10 @@ export async function setAzureItemCommentReaction(
     throw new Error(`Azure DevOps has no "${request.reaction}" reaction.`);
   }
   const path = await commentPath(config, request);
-  await requestAzureDevOps<unknown>(
-    config,
-    `${path}/reactions/${type}`,
-    { method: request.reacted ? "PUT" : "DELETE", query: { "api-version": "7.1-preview.1" } },
-  );
+  await requestAzureDevOps<unknown>(config, `${path}/reactions/${type}`, {
+    method: request.reacted ? "PUT" : "DELETE",
+    query: { "api-version": "7.1-preview.1" },
+  });
   const comment = await requestAzureDevOps<AzureComment>(config, path, {
     query: { $expand: "reactions", "api-version": COMMENTS_API_VERSION },
   });
@@ -357,20 +396,44 @@ interface AzureIdentity2 {
   properties?: Record<string, { $value?: unknown } | undefined>;
 }
 
-/** An account name that is an email, as Azure DevOps names most users. */
-function emailOf(...candidates: unknown[]) {
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && /^[^\s@]+@[^\s@]+$/.test(candidate.trim())) {
-      return candidate.trim();
-    }
-  }
-  return undefined;
+/**
+ * Someone a people search found, by identity id, the id mentions take. The
+ * uniqueName is the one `System.AssignedTo` takes.
+ */
+interface FoundPerson extends BacklogPerson {
+  uniqueName?: string;
 }
 
-/** A person for the @ suggestions, with their email when there is one. */
-function suggestion(identity: AzureIdentity): BacklogPerson {
+/** Someone on the item or in its project, with their email when there is one. */
+function suggestion(identity: AzureIdentity): FoundPerson {
   const email = emailOf(identity.uniqueName);
-  return { ...person(identity), ...(email ? { email } : {}) };
+  const uniqueName = identity.uniqueName?.trim();
+  return {
+    ...person(identity),
+    ...(email ? { email } : {}),
+    ...(uniqueName ? { uniqueName } : {}),
+  };
+}
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The uniqueName work item fields give someone the identities service found.
+ * An Entra ID or Microsoft account's is its account, an email. A Windows
+ * account's on Azure DevOps Server is `DOMAIN\account`.
+ */
+function uniqueNameOf(identity: AzureIdentity2) {
+  const text = (name: string) => {
+    const value = identity.properties?.[name]?.$value;
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const account = text("Account");
+  const domain = text("Domain");
+  if (!account) return undefined;
+  // Entra ID names the tenant by its id as the domain.
+  return domain && !account.includes("@") && !GUID.test(domain)
+    ? `${domain}\\${account}`
+    : account;
 }
 
 /**
@@ -385,7 +448,11 @@ export const IDENTITIES_HOST = "identities";
 export const PEOPLE_SEARCH_ACCESS = "peopleSearch";
 
 /** The item's fields that name a person. */
-const PEOPLE_FIELDS = ["System.AssignedTo", "System.CreatedBy", "System.ChangedBy"];
+const PEOPLE_FIELDS = [
+  "System.AssignedTo",
+  "System.CreatedBy",
+  "System.ChangedBy",
+];
 /** How many of the item's newest comments name their authors as suggestions. */
 const PEOPLE_COMMENT_PAGE = 100;
 /** How long each request of a people search may take, so one stuck request
@@ -404,7 +471,9 @@ function nameWords(text: string) {
 
 /** Whether every word of the query starts a word of the person's name or account. */
 function matchesQuery(identity: AzureIdentity, query: string[]) {
-  const words = nameWords(`${identity.displayName ?? ""} ${identity.uniqueName ?? ""}`);
+  const words = nameWords(
+    `${identity.displayName ?? ""} ${identity.uniqueName ?? ""}`,
+  );
   return query.every((part) => words.some((word) => word.startsWith(part)));
 }
 
@@ -425,7 +494,11 @@ async function fetchItemPeople(
       config,
       `/${encodeURIComponent(project)}/_apis/wit/workItems/${id}/comments`,
       {
-        query: { $top: PEOPLE_COMMENT_PAGE, order: "desc", "api-version": COMMENTS_API_VERSION },
+        query: {
+          $top: PEOPLE_COMMENT_PAGE,
+          order: "desc",
+          "api-version": COMMENTS_API_VERSION,
+        },
         signal: AbortSignal.timeout(timeoutMs),
       },
     ).catch((): AzureCommentList => ({}));
@@ -434,30 +507,52 @@ async function fetchItemPeople(
     config,
     `/_apis/wit/workitems/${id}`,
     {
-      query: { fields: ["System.TeamProject", ...PEOPLE_FIELDS].join(","), "api-version": "7.1" },
+      query: {
+        fields: ["System.TeamProject", ...PEOPLE_FIELDS].join(","),
+        "api-version": "7.1",
+      },
       signal: AbortSignal.timeout(timeoutMs),
     },
   );
   const project = getProjectName(workItem) ?? knownProject;
-  const people: unknown[] = PEOPLE_FIELDS.map((field) => workItem.fields?.[field]);
+  const people: unknown[] = PEOPLE_FIELDS.map(
+    (field) => workItem.fields?.[field],
+  );
   // An item moved to another project keeps the old one in its source id.
   const page =
-    early && sameProject(project, knownProject) ? early : project ? comments(project) : undefined;
-  if (page) people.push(...((await page).comments ?? []).map((comment) => comment.createdBy));
+    early && sameProject(project, knownProject)
+      ? early
+      : project
+        ? comments(project)
+        : undefined;
+  if (page)
+    people.push(
+      ...((await page).comments ?? []).map((comment) => comment.createdBy),
+    );
   return { project, people: people.filter(isIdentity) };
 }
 
 function sameProject(one: string | undefined, other: string | undefined) {
-  return one !== undefined && other !== undefined && one.toLowerCase() === other.toLowerCase();
+  return (
+    one !== undefined &&
+    other !== undefined &&
+    one.toLowerCase() === other.toLowerCase()
+  );
 }
 
 /**
  * The project a source id names, as Ajour stores work items:
  * `{organization}/{project}/_workitems/edit/{id}`.
  */
-function projectOfSourceId(config: AzureDevOpsConnectionInput, sourceId: string) {
+function projectOfSourceId(
+  config: AzureDevOpsConnectionInput,
+  sourceId: string,
+) {
   try {
-    const organizationPath = new URL(config.organizationUrl).pathname.replace(/\/+$/, "");
+    const organizationPath = new URL(config.organizationUrl).pathname.replace(
+      /\/+$/,
+      "",
+    );
     const path = new URL(sourceId).pathname.slice(organizationPath.length);
     const match = /^\/([^/]+)\/_workitems\/edit\/\d+\/?$/.exec(path);
     return match ? decodeURIComponent(match[1]!) : undefined;
@@ -467,7 +562,11 @@ function projectOfSourceId(config: AzureDevOpsConnectionInput, sourceId: string)
 }
 
 function isIdentity(value: unknown): value is AzureIdentity {
-  return typeof value === "object" && value !== null && Boolean((value as AzureIdentity).id);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Boolean((value as AzureIdentity).id)
+  );
 }
 
 /** How far back, and over how many work items, the project's people come from. */
@@ -498,7 +597,9 @@ async function fetchProjectPeople(
       signal: AbortSignal.timeout(timeoutMs),
     },
   );
-  const ids = (found.workItems ?? []).map((workItem) => workItem.id).slice(0, PROJECT_PEOPLE_ITEMS);
+  const ids = (found.workItems ?? [])
+    .map((workItem) => workItem.id)
+    .slice(0, PROJECT_PEOPLE_ITEMS);
   if (ids.length === 0) return [];
   const batch = await requestAzureDevOps<{ value?: AzureWorkItem[] }>(
     config,
@@ -535,54 +636,67 @@ async function searchOrganizationPeople(
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
-    throw new Error(`Azure DevOps request failed (${response.status}): people search`);
+    throw new Error(
+      `Azure DevOps request failed (${response.status}): people search`,
+    );
   }
   const data = (await response.json()) as { value?: AzureIdentity2[] };
   return (data.value ?? [])
-    .filter((identity) => identity.id && identity.isActive !== false && !identity.isContainer)
-    .map((identity): BacklogPerson => {
+    .filter(
+      (identity) =>
+        identity.id && identity.isActive !== false && !identity.isContainer,
+    )
+    .map((identity): FoundPerson => {
       const email = emailOf(
         identity.properties?.Mail?.$value,
         identity.properties?.Account?.$value,
       );
+      const uniqueName = uniqueNameOf(identity);
       return {
         id: identity.id!.toLowerCase(),
-        displayName: (identity.customDisplayName || identity.providerDisplayName || "").trim(),
+        displayName: (
+          identity.customDisplayName ||
+          identity.providerDisplayName ||
+          ""
+        ).trim(),
         ...(email ? { email } : {}),
+        ...(uniqueName ? { uniqueName } : {}),
       };
     })
     .filter((person) => person.displayName);
 }
 
 /**
- * People for the editor's @ suggestions. Azure DevOps has no list of people
- * allowed on one work item, so the people on the item come first, then the
- * people active in its project, both matched by any part of their name, then
- * the organization's users. A bare @ asks with no query and gets the item's
- * and the project's people, without searching the organization. A search
- * may fail or run out of time, such as when the token can't read
- * identities; only all of them failing fails.
+ * The people a search finds for a work item, in order, each maybe more than
+ * once. Azure DevOps has no list of people allowed on one work item, so the
+ * people on the item come first, then the people active in its project, both
+ * matched by any part of their name, then the organization's users. An empty
+ * query gets the item's and the project's people, without searching the
+ * organization. A search may fail or run out of time, such as when the token
+ * can't read identities; only all of them failing fails.
  */
-export async function searchAzureItemPeople(
+async function findPeople(
   config: AzureDevOpsConnectionInput,
-  request: BacklogSearchItemPeopleRequest,
-  /** Tests pass a shorter one. */
-  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
-): Promise<BacklogSearchItemPeopleResult> {
+  request: { sourceId: string; query: string },
+  timeoutMs: number,
+): Promise<FoundPerson[]> {
   const id = requireWorkItemId(config, request.sourceId);
   const query = request.query.trim().replace(/\s+/g, " ");
   const queryWords = nameWords(query);
-  if (query && queryWords.length === 0) return { people: [] };
+  if (query && queryWords.length === 0) return [];
 
   // Ajour asks with a query only while people search is on. The check keeps
   // a request the broker would refuse from being sent at all.
-  const searchesOrganization = query !== "" && config.access.includes(PEOPLE_SEARCH_ACCESS);
+  const searchesOrganization =
+    query !== "" && config.access.includes(PEOPLE_SEARCH_ACCESS);
   const knownProject = projectOfSourceId(config, request.sourceId);
   const item = fetchItemPeople(config, id, knownProject, timeoutMs);
   // The project's people are asked for at once, then again from the item's
   // own project if it moved since the source id was made.
   const projectPeople = async () => {
-    const early = knownProject ? fetchProjectPeople(config, knownProject, timeoutMs) : undefined;
+    const early = knownProject
+      ? fetchProjectPeople(config, knownProject, timeoutMs)
+      : undefined;
     early?.catch(() => undefined);
     const project = await item.then(
       (found) => found.project,
@@ -596,27 +710,84 @@ export async function searchAzureItemPeople(
   const [onItem, onProject, inOrganization] = await Promise.allSettled([
     item,
     projectPeople(),
-    searchesOrganization ? searchOrganizationPeople(config, query, timeoutMs) : Promise.resolve([]),
+    searchesOrganization
+      ? searchOrganizationPeople(config, query, timeoutMs)
+      : Promise.resolve([]),
   ]);
-  const searches = searchesOrganization ? [onItem, onProject, inOrganization] : [onItem, onProject];
+  const searches = searchesOrganization
+    ? [onItem, onProject, inOrganization]
+    : [onItem, onProject];
   const failed = searches.find((search) => search.status === "rejected");
   if (failed && searches.every((search) => search.status === "rejected")) {
     throw failed.reason;
   }
   const matching = (people: AzureIdentity[]) =>
-    people.filter((identity) => matchesQuery(identity, queryWords)).map(suggestion);
-  const found = [
+    people
+      .filter((identity) => matchesQuery(identity, queryWords))
+      .map(suggestion);
+  return [
     ...(onItem.status === "fulfilled" ? matching(onItem.value.people) : []),
     ...(onProject.status === "fulfilled" ? matching(onProject.value) : []),
     ...(inOrganization.status === "fulfilled" ? inOrganization.value : []),
   ];
+}
+
+/** Each person once, by id, in the order found, up to `limit`. */
+function distinctPeople(people: BacklogPerson[], limit: number) {
   const seen = new Set<string>();
-  const people = found.filter((candidate) => {
-    if (seen.has(candidate.id)) return false;
-    seen.add(candidate.id);
-    return true;
-  });
-  return { people: people.slice(0, request.limit) };
+  return people
+    .filter((candidate) => {
+      const key = candidate.id.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+/**
+ * People for the editor's @ suggestions, by identity id, the id mentions
+ * take. A bare @ asks with no query. See `findPeople` for where they come
+ * from.
+ */
+export async function searchAzureItemPeople(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSearchItemPeopleRequest,
+  /** Tests pass a shorter one. */
+  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
+): Promise<BacklogSearchItemPeopleResult> {
+  const found = await findPeople(config, request, timeoutMs);
+  const mentions = found.map(({ id, displayName, email }): BacklogPerson => ({
+    id,
+    displayName,
+    ...(email ? { email } : {}),
+  }));
+  return { people: distinctPeople(mentions, request.limit) };
+}
+
+/** The most people `searchAssignees` returns, whatever the limit. */
+const MAX_ASSIGNEES = 20;
+
+/**
+ * People to assign the item to, for the settle dialog's Assignee field: the
+ * same people as the @ suggestions, from the same searches, but by
+ * uniqueName, the id `System.AssignedTo` takes. Anyone without a uniqueName
+ * is skipped. An empty query needs only Work Items (Read); a typed one also
+ * searches the organization, which needs Identity (Read).
+ */
+export async function searchAzureAssignees(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSearchAssigneesRequest,
+  /** Tests pass a shorter one. */
+  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
+): Promise<BacklogSearchAssigneesResult> {
+  const found = await findPeople(config, request, timeoutMs);
+  const assignees = found.flatMap(
+    (candidate) => assigneeOf(candidate, candidate.email) ?? [],
+  );
+  return {
+    people: distinctPeople(assignees, Math.min(request.limit, MAX_ASSIGNEES)),
+  };
 }
 
 /** How many of a settled item's newest comments a sync reads. */
@@ -648,7 +819,9 @@ export function commentFactsOrder<Entry extends { since: number }>(
   entries: readonly Entry[],
   random: () => number = Math.random,
 ): Entry[] {
-  const byRecency = [...entries].sort((left, right) => right.since - left.since);
+  const byRecency = [...entries].sort(
+    (left, right) => right.since - left.since,
+  );
   const start = Math.floor(random() * byRecency.length);
   return [...byRecency.slice(start), ...byRecency.slice(0, start)];
 }
@@ -705,11 +878,19 @@ export async function findAzureCommentFacts(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[],
   limits: CommentFactsLimits = COMMENT_FACTS_LIMITS,
-): Promise<{ viewer?: BacklogPerson; commentFacts: BacklogItemCommentFacts[] }> {
+): Promise<{
+  viewer?: BacklogPerson;
+  commentFacts: BacklogItemCommentFacts[];
+}> {
   const settled = commentFactsOrder(
     workItems.flatMap((workItem) => {
-      const since = workItem.commentsSince ? Date.parse(workItem.commentsSince) : NaN;
-      const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
+      const since = workItem.commentsSince
+        ? Date.parse(workItem.commentsSince)
+        : NaN;
+      const id = parseAzureWorkItemId(
+        workItem.sourceId,
+        config.organizationUrl,
+      );
       return Number.isFinite(since) && id !== null
         ? [{ localWorkItemId: workItem.localWorkItemId, id, since }]
         : [];
@@ -740,28 +921,35 @@ export async function findAzureCommentFacts(
         config,
         `/${encodeURIComponent(project)}/_apis/wit/workItems/${entry.id}/comments`,
         {
-          query: { $top: SETTLED_COMMENT_PAGE, order: "desc", "api-version": COMMENTS_API_VERSION },
+          query: {
+            $top: SETTLED_COMMENT_PAGE,
+            order: "desc",
+            "api-version": COMMENTS_API_VERSION,
+          },
           signal: signal(),
         },
       );
-      const comments = (page.comments ?? []).flatMap((comment): BacklogCommentFact[] =>
-        !comment.isDeleted &&
-        comment.createdDate &&
-        Date.parse(comment.createdDate) > entry.since
-          ? [
-              {
-                id: String(comment.id),
-                author: person(comment.createdBy),
-                createdAt: comment.createdDate,
-                // Both formats name a mentioned person by identity id.
-                ...((comment.text ?? "").toLowerCase().includes(viewer.id)
-                  ? { mentionsViewer: true }
-                  : {}),
-              },
-            ]
-          : [],
+      const comments = (page.comments ?? []).flatMap(
+        (comment): BacklogCommentFact[] =>
+          !comment.isDeleted &&
+          comment.createdDate &&
+          Date.parse(comment.createdDate) > entry.since
+            ? [
+                {
+                  id: String(comment.id),
+                  author: person(comment.createdBy),
+                  createdAt: comment.createdDate,
+                  // Both formats name a mentioned person by identity id.
+                  ...((comment.text ?? "").toLowerCase().includes(viewer.id)
+                    ? { mentionsViewer: true }
+                    : {}),
+                },
+              ]
+            : [],
       );
-      return comments.length > 0 ? { localWorkItemId: entry.localWorkItemId, comments } : null;
+      return comments.length > 0
+        ? { localWorkItemId: entry.localWorkItemId, comments }
+        : null;
     } catch {
       return null;
     }
@@ -791,7 +979,11 @@ export async function findAzureCommentFacts(
         (left, right) =>
           Number(changedSinceSettle(right)) - Number(changedSinceSettle(left)),
       );
-    for (let group = 0; group < ordered.length; group += SETTLED_COMMENT_CONCURRENCY) {
+    for (
+      let group = 0;
+      group < ordered.length;
+      group += SETTLED_COMMENT_CONCURRENCY
+    ) {
       if (Date.now() >= deadline) break;
       const found = await Promise.all(
         ordered

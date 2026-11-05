@@ -28,7 +28,8 @@ import {
 
 /**
  * Settling a backlog item from Ajour: the states its work item type can move
- * to, and the write of a new state, priority or both. See Ajour's ADR 0001.
+ * to, and the write of a new state, priority, assignee or several of them.
+ * See Ajour's ADR 0001.
  */
 
 function requireWorkItemId(config: AzureDevOpsConnectionInput, sourceId: string) {
@@ -75,13 +76,18 @@ export async function listAzureSettleStates(
 /**
  * Writes the settle's changed fields in one update. Priority goes to the
  * connection's priority field, which must be set to write a priority. The
- * field gets the lowest value of the level's range.
+ * field gets the lowest value of the level's range. An assignee is a
+ * uniqueName, and null unassigns.
  */
 export async function writeAzureSettle(
   config: AzureDevOpsConnectionInput,
   request: ConnectorSettleWriteRequest,
 ): Promise<ConnectorSettleWriteResult> {
   const id = requireWorkItemId(config, request.sourceId);
+  const assignee = request.assignee?.trim();
+  if (assignee === "") {
+    throw new Error("An assignee needs a uniqueName. Send null to unassign.");
+  }
   const fields: Record<string, number | string> = {};
   if (request.state !== undefined) {
     fields["System.State"] = request.state;
@@ -108,9 +114,15 @@ export async function writeAzureSettle(
       : value;
   }
 
+  if (request.assignee !== undefined) {
+    // An empty value clears an identity field, as Microsoft's "Reset an
+    // identity field" sample for work item updates does.
+    fields["System.AssignedTo"] = assignee ?? "";
+  }
+
   const updated = await updateAzureWorkItemFields(config, String(id), fields);
   if (!updated) {
-    throw new Error("A settle write needs a state, a priority or both.");
+    throw new Error("A settle write needs a state, a priority or an assignee.");
   }
 
   const state = normalizeDisplayValue(updated.fields?.["System.State"]);

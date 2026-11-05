@@ -25,8 +25,14 @@ export const CHRONOPS_HOME_URL = "https://minehunter.az.nventive.com/a/wepoint-c
 /** Shown by Ajour when ChronOps cannot give the user's hours. */
 export const HOURS_NOTE = "Link your Workday name in ChronOps to compare your hours";
 
+/**
+ * The project's page in ChronOps, or undefined when the link is longer than
+ * Ajour takes. Ajour refuses the whole snapshot for one bad link, and a cut
+ * link would lead nowhere, so the project goes without one.
+ */
 export function projectUrl(code: string) {
-  return `${CHRONOPS_HOME_URL}/timetracking/projects/${encodeURIComponent(code)}`;
+  const url = `${CHRONOPS_HOME_URL}/timetracking/projects/${encodeURIComponent(code)}`;
+  return url.length <= PROJECT_SOURCE_BOUNDS.url ? url : undefined;
 }
 
 /** ChronOps' health colours in Ajour's words. */
@@ -105,13 +111,14 @@ function mapTask(task: ChronopsTask): ProjectSourceTask {
 function mapProject(project: ChronopsProject): ProjectSourceProject {
   const budget = mapBudget(project.budget);
   const client = nonBlank(project.client);
+  const url = projectUrl(project.code);
   // The code is the remote id, so the remote id's bound, the tighter of the two, applies.
   return {
     remoteId: remoteId(project.code, "project code"),
     code: project.code,
     name: cut(project.name, PROJECT_SOURCE_BOUNDS.name),
     ...(client !== undefined ? { client: cut(client, PROJECT_SOURCE_BOUNDS.client) } : {}),
-    url: projectUrl(project.code),
+    ...(url !== undefined ? { url } : {}),
     // ChronOps may not know. Ajour archives a complete project, so unknown stays open.
     complete: project.complete ?? false,
     ...(project.contractStart !== null ? { startsOn: project.contractStart } : {}),

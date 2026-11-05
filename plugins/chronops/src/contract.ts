@@ -98,6 +98,7 @@ export const PROJECT_SOURCE_BOUNDS = {
   group: 120,
   client: 240,
   hoursNote: 300,
+  url: 500,
   projects: 200,
   tasks: 10_000,
 } as const;

@@ -2,9 +2,12 @@
 
 `ajour-plugin-sdk-0.1.0.tgz` is `@ajour/plugin-sdk` 0.1.0, packed from
 `packages/plugin-sdk` in `les-cabochons/ajour` at commit
-`7b0e4daa292f66d09c1b8fb3aa1259a552c0c58b` (origin/main on 2026-10-26; the
-package last changed in `b4924d7a`). The SDK is not on npm yet. Plugins install
-it as a `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.
+`33c0a326401ac42ed44dcc5a8bd6efd0ebcd9725` (origin/main on 2026-11-04).
+This includes #566's assignee contracts, #572's sync viewer and assignee facts,
+and the optional source IDs on `syncConnection`. The SDK's upstream version
+is still 0.1.0, so the filename stays the same and the lockfile integrity changes.
+The SDK is not on npm yet. Plugins install it as a
+`file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.
 
 To refresh it, from an Ajour checkout:
 

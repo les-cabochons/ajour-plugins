@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { validateConnection } from "../src/plugin.ts";
+import { pluginConnection, stubAzureFetch } from "./support/azure-ajour.ts";
+
+const workItemsOn = { capabilities: ["connector" as const] };
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -17,8 +20,7 @@ describe("azure_devops plugin validateConnection", () => {
   });
 
   it("preserves task icon display mode in normalized config", async () => {
-    vi.stubGlobal(
-      "fetch",
+    stubAzureFetch(
       vi
         .fn()
         .mockResolvedValueOnce(jsonResponse({ value: [] }))
@@ -26,16 +28,17 @@ describe("azure_devops plugin validateConnection", () => {
     );
 
     await expect(
-      validateConnection({
-        organizationUrl: "https://dev.azure.com/contoso",
-        personalAccessToken: "secret",
-        queryScope: "assigned_to_me",
-        taskIconDisplayMode: "fallback",
-      }),
+      validateConnection(
+        pluginConnection({
+          organizationUrl: "https://dev.azure.com/contoso",
+          queryScope: "assigned_to_me",
+          taskIconDisplayMode: "fallback",
+        }),
+        workItemsOn,
+      ),
     ).resolves.toMatchObject({
       normalizedConfig: {
         organizationUrl: "https://dev.azure.com/contoso",
-        personalAccessToken: "secret",
         queryScope: "assigned_to_me",
         taskIconDisplayMode: "fallback",
       },
@@ -43,21 +46,22 @@ describe("azure_devops plugin validateConnection", () => {
   });
 
   it("keeps each priority level's values, with defaults for a connection saved before they existed", async () => {
-    vi.stubGlobal(
-      "fetch",
+    stubAzureFetch(
       vi
         .fn()
         .mockResolvedValueOnce(jsonResponse({ value: [] }))
         .mockResolvedValueOnce(jsonResponse({ workItems: [] })),
     );
 
-    const result = await validateConnection({
-      organizationUrl: "https://dev.azure.com/contoso",
-      personalAccessToken: "secret",
-      queryScope: "assigned_to_me",
-      priorityUrgent: " 0-1 ",
-      priorityLow: "",
-    });
+    const result = await validateConnection(
+      pluginConnection({
+        organizationUrl: "https://dev.azure.com/contoso",
+        queryScope: "assigned_to_me",
+        priorityUrgent: " 0-1 ",
+        priorityLow: "",
+      }),
+      workItemsOn,
+    );
 
     expect(result.normalizedConfig).toMatchObject({
       priorityUrgent: "0-1",
@@ -68,33 +72,35 @@ describe("azure_devops plugin validateConnection", () => {
   });
 
   it("rejects invalid priority level values before making a request", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
+    const { requests } = stubAzureFetch(vi.fn());
 
     await expect(
-      validateConnection({
-        organizationUrl: "https://dev.azure.com/contoso",
-        personalAccessToken: "secret",
-        queryScope: "assigned_to_me",
-        priorityUrgent: "1-3",
-        priorityHigh: "3",
-      }),
+      validateConnection(
+        pluginConnection({
+          organizationUrl: "https://dev.azure.com/contoso",
+          queryScope: "assigned_to_me",
+          priorityUrgent: "1-3",
+          priorityHigh: "3",
+        }),
+        workItemsOn,
+      ),
     ).rejects.toThrow('High priority "3" overlaps Urgent priority.');
-    expect(fetch).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
   });
 
   it("rejects non-primitive field values before making a request", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
+    const { requests } = stubAzureFetch(vi.fn());
 
     await expect(
-      validateConnection({
-        organizationUrl: "https://dev.azure.com/contoso",
-        personalAccessToken: "secret",
-        queryScope: "assigned_to_me",
-        priorityFieldName: ["invalid"],
-      } as never),
+      validateConnection(
+        pluginConnection({
+          organizationUrl: "https://dev.azure.com/contoso",
+          queryScope: "assigned_to_me",
+          priorityFieldName: ["invalid"],
+        } as never),
+        workItemsOn,
+      ),
     ).rejects.toThrow("must contain only primitive values");
-    expect(fetch).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
   });
 });

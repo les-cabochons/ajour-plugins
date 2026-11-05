@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncPullRequests, validateConnection } from "../src/plugin.ts";
 import { AzureReposClient, checkState, mentions, PullRequestSearch } from "../src/pull-requests.ts";
-import type { ConnectorPluginConnection } from "../src/contract.ts";
+import type { PluginConnection } from "@ajour/plugin-sdk";
+import { ALL_ACCESS, READ_ONLY_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ORG = "https://dev.azure.com/contoso";
 /** The organization-wide list the search tries first. */
@@ -46,17 +47,14 @@ type Routes = Record<string, unknown>;
 /** Answers a request by the first route whose key the URL contains. */
 function stubFetch(routes: Routes) {
   const calls: string[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: URL | string) => {
-      const url = decodeURIComponent(String(input));
-      calls.push(url);
-      const key = Object.keys(routes).find((route) => url.includes(route));
-      if (!key) return json({ message: "not found" }, 404);
-      const body = routes[key];
-      return body instanceof Response ? body : json(body);
-    }),
-  );
+  stubAzureFetch(async (input) => {
+    const url = decodeURIComponent(input);
+    calls.push(url);
+    const key = Object.keys(routes).find((route) => url.includes(route));
+    if (!key) return json({ message: "not found" }, 404);
+    const body = routes[key];
+    return body instanceof Response ? body : json(body);
+  });
   return calls;
 }
 
@@ -68,16 +66,20 @@ const connectionData = {
   },
 };
 
-function connection(config: Record<string, string | number | boolean> = {}): ConnectorPluginConnection {
+function connection(
+  config: Record<string, string | number | boolean> = {},
+  access: string[] = ALL_ACCESS,
+): PluginConnection {
   return {
     id: "c1",
-    pluginId: "azure_repos",
+    pluginId: "azure_devops",
     label: "Work",
     tenantLabel: "Contoso",
     autoSync: true,
     autoSyncIntervalMinutes: 5,
-    connectedAt: 0,
-    config: { organizationUrl: ORG, personalAccessToken: "secret", ...config },
+    connectedAt: 1,
+    access,
+    config: { organizationUrl: ORG, ...config },
   };
 }
 
@@ -98,19 +100,17 @@ describe("validateConnection with pull requests", () => {
     const calls = stubFetch({ "_apis/connectionData": connectionData, "_apis/git/repositories": { value: [] } });
 
     const result = await validateConnection(
-      {
-        organizationUrl: `${ORG}/Fabrikam/`,
-        personalAccessToken: " secret ",
+      connection({
+        organizationUrl: `${ORG}/`,
         queryScope: "assigned_to_me",
         pullRequestsInclude: " Fabrikam Web/api ",
-      },
+      }),
       { capabilities: ["codeHost"] },
     );
 
     expect(result).toEqual({
       normalizedConfig: {
         organizationUrl: ORG,
-        personalAccessToken: "secret",
         queryScope: "assigned_to_me",
         pullRequestsInclude: "Fabrikam Web/api",
         pullRequestsExclude: "",
@@ -122,16 +122,47 @@ describe("validateConnection with pull requests", () => {
     expect(calls).toEqual([`${ORG}/_apis/connectionData`, `${ORG}/_apis/git/repositories?api-version=7.1`]);
   });
 
+  it("skips the Code (Read) check while the connection's pull request access is off", async () => {
+    const calls = stubFetch({ "_apis/connectionData": connectionData });
+
+    await expect(
+      validateConnection(connection({}, READ_ONLY_ACCESS), { capabilities: ["codeHost"] }),
+    ).resolves.toMatchObject({ connectionSummary: { account: "viewer@contoso.com" } });
+    expect(calls).toEqual([`${ORG}/_apis/connectionData`]);
+  });
+
+  it("accepts a saved project URL with only pull requests enabled and retains it", async () => {
+    const savedUrl = `${ORG}/Fabrikam/`;
+    const calls: string[] = [];
+    stubAzureFetch(
+      async (url) => {
+        calls.push(url);
+        return url.includes("connectionData")
+          ? json(connectionData)
+          : json({ value: [] });
+      },
+      { baseAddress: savedUrl },
+    );
+    await expect(
+      validateConnection(connection({ organizationUrl: savedUrl }), {
+        capabilities: ["codeHost"],
+      }),
+    ).resolves.toMatchObject({
+      normalizedConfig: { organizationUrl: `${ORG}/Fabrikam` },
+    });
+    expect(calls).toEqual([
+      `${ORG}/_apis/connectionData`,
+      `${ORG}/_apis/git/repositories?api-version=7.1`,
+    ]);
+  });
+
   it("keeps pull request values unchecked while pull requests are off", async () => {
     const calls = stubFetch({});
 
     await expect(
-      validateConnection(
-        { organizationUrl: ORG, personalAccessToken: "secret", pullRequestsInclude: "a/b/c" },
-        { capabilities: [] },
-      ),
+      validateConnection(connection({ pullRequestsInclude: "a/b/c" }), { capabilities: [] }),
     ).resolves.toEqual({
-      normalizedConfig: { organizationUrl: ORG, personalAccessToken: "secret", pullRequestsInclude: "a/b/c" },
+      normalizedConfig: { organizationUrl: ORG, pullRequestsInclude: "a/b/c" },
       connectionSummary: {},
     });
     expect(calls).toHaveLength(0);
@@ -141,7 +172,7 @@ describe("validateConnection with pull requests", () => {
     stubFetch({ "_apis/connectionData": new Response("<html>sign in</html>", { status: 203 }) });
 
     await expect(
-      validateConnection({ organizationUrl: ORG, personalAccessToken: "bad" }, { capabilities: ["codeHost"] }),
+      validateConnection(connection(), { capabilities: ["codeHost"] }),
     ).rejects.toThrow(/rejected the token/);
   });
 
@@ -152,7 +183,7 @@ describe("validateConnection with pull requests", () => {
     });
 
     await expect(
-      validateConnection({ organizationUrl: ORG, personalAccessToken: "secret" }, { capabilities: ["codeHost"] }),
+      validateConnection(connection(), { capabilities: ["codeHost"] }),
     ).rejects.toThrow(/Code \(Read\)/);
   });
 });
@@ -360,7 +391,7 @@ describe("PullRequestSearch", () => {
       [`${ORG}/${OTHER}/_apis/git/pullrequests?`]: { value: [pullRequest(2)] },
     });
 
-    const search = new PullRequestSearch(new AzureReposClient(ORG, "secret"));
+    const search = new PullRequestSearch(new AzureReposClient("c1"));
     const found = await search.run({ "searchCriteria.creatorId": VIEWER });
 
     expect(found.map((pr) => pr.pullRequestId)).toEqual([1, 2]);
@@ -378,7 +409,7 @@ describe("PullRequestSearch", () => {
       [`${ORG}/_apis/git/pullrequests?searchCriteria`]: { value: [pullRequest(3)] },
     });
 
-    const search = new PullRequestSearch(new AzureReposClient(ORG, "secret"));
+    const search = new PullRequestSearch(new AzureReposClient("c1"));
     await search.run({ "searchCriteria.creatorId": VIEWER });
     await search.run({ "searchCriteria.reviewerId": VIEWER });
 
@@ -389,7 +420,7 @@ describe("PullRequestSearch", () => {
   it("asks for Code (Read) when the token cannot list pull requests", async () => {
     stubFetch({ [ORG_PROBE]: json({ message: "denied" }, 403) });
 
-    const search = new PullRequestSearch(new AzureReposClient(ORG, "secret"));
+    const search = new PullRequestSearch(new AzureReposClient("c1"));
     await expect(search.run({})).rejects.toThrow(/Code \(Read\)/);
   });
 });

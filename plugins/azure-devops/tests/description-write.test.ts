@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeDescription } from "../src/plugin.ts";
+import { stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ANA = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
 const SOURCE_ID = "https://dev.azure.com/contoso/Portal/_workitems/edit/4821";
@@ -12,7 +13,6 @@ const connection = {
   tenantLabel: "Contoso",
   config: {
     organizationUrl: "https://dev.azure.com/contoso",
-    personalAccessToken: "secret",
     queryScope: "assigned_to_me",
   },
 } as never;
@@ -53,9 +53,7 @@ function asWorkItem(item: Item, url = ITEM_URL) {
  */
 function stubAzure(item: Item, options: { refuse?: Response; changeBeforePatch?: string } = {}) {
   const patches: unknown[][] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: unknown, init?: RequestInit) => {
+  stubAzureFetch(vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       expect(url.startsWith(ITEM_URL)).toBe(true);
       if (init?.method !== "PATCH") return json(asWorkItem(item, url));

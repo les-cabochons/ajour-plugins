@@ -10,6 +10,7 @@ import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
+import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 const ORG = "https://dev.azure.com/contoso";
 const ANA = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
@@ -21,7 +22,7 @@ function config(): AzureDevOpsConnectionInput {
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: ORG,
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     priorityLevels: parsePriorityLevelRanges(DEFAULT_PRIORITY_LEVEL_VALUES),
   };
@@ -52,7 +53,7 @@ function fakeComments(pages: Record<string, unknown>) {
     }
     throw new Error(`Unexpected request: ${url}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
+  stubAzureFetch(fetchMock);
   return { requests };
 }
 
@@ -202,9 +203,7 @@ describe("posting an Azure DevOps comment", () => {
 
   it("posts Markdown with Azure DevOps mentions and returns Ajour's text", async () => {
     const posts: Array<{ url: string; body: unknown }> = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    stubAzureFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (/\/_apis\/wit\/workitems\/4821\?fields=System\.TeamProject/.test(url)) {
           return json({ id: 4821, fields: { "System.TeamProject": "Contoso Portal" } });

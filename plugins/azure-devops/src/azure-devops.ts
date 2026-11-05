@@ -1,3 +1,5 @@
+import { organizationRootUrl } from "./pull-request-config.ts";
+import type {} from "@ajour/plugin-sdk/globals";
 import type {
   AzureDevOpsQueryScope,
   BacklogPerson,
@@ -10,19 +12,29 @@ import type {
 import { resolveEstimateSyncAction } from "./estimate-sync.ts";
 import { htmlToMarkdown } from "./html-markdown.ts";
 import { describeWorkItem } from "./description.ts";
-import { priorityLevelForValue, type PriorityLevelRanges } from "./priority-levels.ts";
+import {
+  priorityLevelForValue,
+  type PriorityLevelRanges,
+} from "./priority-levels.ts";
 import {
   createStateCategoryResolver,
   type AzureStateInfo,
 } from "./state-categories.ts";
 
 export interface AzureDevOpsConnectionInput {
-  id?: string;
+  /** The connection `ajour.http` sends through. */
+  id: string;
   label: string;
   tenantLabel: string;
+  /**
+   * The Organization URL the user saved, which Ajour's broker builds every
+   * request's address from. API 3 project URLs remain valid and retain their
+   * source-ID prefix; cloud requests can use a derived organization root.
+   */
   organizationUrl: string;
   project?: string;
-  personalAccessToken: string;
+  /** The connection's access choices that are on, such as `editWorkItems`. */
+  access: readonly string[];
   queryScope: AzureDevOpsQueryScope;
   priorityFieldName?: string;
   /** Which values of the priority field map to each Ajour level. */
@@ -42,7 +54,10 @@ const BACKLOG_PARENT_WORK_ITEM_TYPES = [
   "Issue",
   "Bug",
 ] as const;
-const RELEVANT_WORK_ITEM_TYPES = [TASK_WORK_ITEM_TYPE, ...BACKLOG_PARENT_WORK_ITEM_TYPES];
+const RELEVANT_WORK_ITEM_TYPES = [
+  TASK_WORK_ITEM_TYPE,
+  ...BACKLOG_PARENT_WORK_ITEM_TYPES,
+];
 const MAX_CANDIDATE_NOTE_LENGTH = 4000;
 
 interface AzureWiqlResponse {
@@ -130,10 +145,6 @@ function normalizeOrganizationUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
-export function createAuthHeader(personalAccessToken: string) {
-  return `Basic ${Buffer.from(`:${personalAccessToken}`, "utf8").toString("base64")}`;
-}
-
 export function normalizeDisplayValue(value: unknown): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -142,9 +153,13 @@ export function normalizeDisplayValue(value: unknown): string | undefined {
 
   if (value && typeof value === "object") {
     const displayName =
-      "displayName" in value ? normalizeDisplayValue(value.displayName) : undefined;
+      "displayName" in value
+        ? normalizeDisplayValue(value.displayName)
+        : undefined;
     const uniqueName =
-      "uniqueName" in value ? normalizeDisplayValue(value.uniqueName) : undefined;
+      "uniqueName" in value
+        ? normalizeDisplayValue(value.uniqueName)
+        : undefined;
     return displayName ?? uniqueName;
   }
 
@@ -154,7 +169,10 @@ export function normalizeDisplayValue(value: unknown): string | undefined {
 /** An account name that is an email, as Azure DevOps names most users. */
 export function emailOf(...candidates: unknown[]) {
   for (const candidate of candidates) {
-    if (typeof candidate === "string" && /^[^\s@]+@[^\s@]+$/.test(candidate.trim())) {
+    if (
+      typeof candidate === "string" &&
+      /^[^\s@]+@[^\s@]+$/.test(candidate.trim())
+    ) {
       return candidate.trim();
     }
   }
@@ -173,7 +191,10 @@ export function assigneeOf(
   email?: string,
 ): BacklogPerson | undefined {
   if (!identity || typeof identity !== "object") return undefined;
-  const { uniqueName, displayName } = identity as { uniqueName?: unknown; displayName?: unknown };
+  const { uniqueName, displayName } = identity as {
+    uniqueName?: unknown;
+    displayName?: unknown;
+  };
   const id = typeof uniqueName === "string" ? uniqueName.trim() : "";
   if (!id || id.length > MAX_ASSIGNEE_TEXT) return undefined;
   const name = (typeof displayName === "string" && displayName.trim()) || id;
@@ -185,7 +206,10 @@ export function assigneeOf(
   };
 }
 
-function normalizeDescriptionValue(value: unknown, format: unknown): string | undefined {
+function normalizeDescriptionValue(
+  value: unknown,
+  format: unknown,
+): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -200,7 +224,9 @@ function normalizeDescriptionValue(value: unknown, format: unknown): string | un
   return htmlToMarkdown(value);
 }
 
-function normalizeConfiguredFieldName(value: string | undefined): string | undefined {
+function normalizeConfiguredFieldName(
+  value: string | undefined,
+): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
@@ -267,7 +293,9 @@ export function getProjectName(workItem: AzureWorkItem) {
   return normalizeDisplayValue(workItem.fields?.["System.TeamProject"]);
 }
 
-function parseRelatedWorkItemId(relation: AzureWorkItemRelation | undefined): number | null {
+function parseRelatedWorkItemId(
+  relation: AzureWorkItemRelation | undefined,
+): number | null {
   const url = relation?.url;
   if (!url) {
     return null;
@@ -286,7 +314,12 @@ function isTask(workItemType: string | undefined) {
 }
 
 function isBacklogParentType(workItemType: string | undefined) {
-  return Boolean(workItemType && BACKLOG_PARENT_WORK_ITEM_TYPES.includes(workItemType as (typeof BACKLOG_PARENT_WORK_ITEM_TYPES)[number]));
+  return Boolean(
+    workItemType &&
+    BACKLOG_PARENT_WORK_ITEM_TYPES.includes(
+      workItemType as (typeof BACKLOG_PARENT_WORK_ITEM_TYPES)[number],
+    ),
+  );
 }
 
 function buildWorkItemTypeFilter() {
@@ -295,7 +328,9 @@ function buildWorkItemTypeFilter() {
   ).join("\n      OR ");
 }
 
-function buildBaseWiqlQuery(queryScope: AzureDevOpsConnectionInput["queryScope"]) {
+function buildBaseWiqlQuery(
+  queryScope: AzureDevOpsConnectionInput["queryScope"],
+) {
   const assignedClause =
     queryScope === "assigned_to_me" ? "\n  AND [System.AssignedTo] = @Me" : "";
 
@@ -307,48 +342,147 @@ WHERE (
 ORDER BY [System.ChangedDate] DESC`;
 }
 
-export async function requestAzureDevOps<T>(
-  config: AzureDevOpsConnectionInput,
-  pathname: string,
-  init?: RequestInit,
-): Promise<T> {
-  const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
-  const url = `${organizationUrl}${pathname}`;
+/** What `ajour.http` answers. */
+export type AzureResponse = Awaited<ReturnType<typeof ajour.http>>;
 
-  let response: Response;
+export type AzureQuery = Record<string, string | number | boolean>;
+
+export interface AzureRequestInit {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** A derived host the manifest declares, such as `identities`. Absent: the Organization URL. */
+  host?: string;
+  /** The query string, such as `api-version`. The path holds none. */
+  query?: AzureQuery;
+  /** A JSON body, as text. */
+  body?: string;
+  /** The body's type: `application/json` unless set, such as `application/json-patch+json`. */
+  contentType?: string;
+  signal?: AbortSignal;
+}
+
+export const TOKEN_REJECTED =
+  "Azure DevOps rejected the token. Check that it is valid, not expired, and allowed in this organization.";
+
+/**
+ * Whether the answer is how Azure DevOps turns a token away: 401, or a 203
+ * with its sign-in page, or a redirect to sign in. Ajour's broker hands a
+ * redirect to another host back as it is, without following it.
+ */
+export function isRejectedToken(response: Pick<AzureResponse, "status">) {
+  return (
+    response.status === 401 ||
+    response.status === 203 ||
+    (response.status >= 300 && response.status < 400)
+  );
+}
+
+/**
+ * Sends one request through `ajour.http`. Ajour's broker builds the address
+ * from the Organization URL the user saved, or from a derived host, and
+ * attaches the personal access token as Basic credentials: the plugin names
+ * neither. `Accept` goes on every request, and `Content-Type` only with a
+ * body.
+ */
+export async function sendAzureDevOps(
+  config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
+  path: string,
+  init: AzureRequestInit = {},
+): Promise<AzureResponse> {
+  const hasBody = init.body !== undefined;
+  let host = init.host;
+  if (config.organizationUrl) {
+    const saved = new URL(config.organizationUrl);
+    const root = new URL(organizationRootUrl(config.organizationUrl));
+    if (
+      saved.pathname.replace(/\/+$/, "") !== root.pathname.replace(/\/+$/, "")
+    ) {
+      // These manifest forms start at the cloud host root. The saved URL
+      // remains the source-ID prefix, so existing tracked items still match.
+      if (host === undefined) {
+        host = "organization";
+        path = root.pathname.replace(/\/+$/, "") + path;
+      } else if (host === "identities" && saved.hostname === "dev.azure.com") {
+        host = "organizationIdentities";
+        path = root.pathname.replace(/\/+$/, "") + path;
+      }
+    }
+  }
   try {
-    response = await fetch(url, {
-      ...init,
+    return await ajour.http({
+      connectionId: config.id,
+      ...(host !== undefined ? { host } : {}),
+      method: init.method ?? "GET",
+      path,
+      ...(init.query !== undefined ? { query: init.query } : {}),
       headers: {
         Accept: "application/json",
-        Authorization: createAuthHeader(config.personalAccessToken),
-        "Content-Type": "application/json",
-        ...init?.headers,
+        ...(hasBody
+          ? { "Content-Type": init.contentType ?? "application/json" }
+          : {}),
       },
+      ...(hasBody ? { body: init.body } : {}),
+      ...(init.signal !== undefined ? { signal: init.signal } : {}),
     });
   } catch (error) {
     throw new Error(
       `Azure DevOps request failed: ${error instanceof Error ? error.message : "Network error"}`,
     );
   }
+}
+
+export async function requestAzureDevOps<T>(
+  config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
+  path: string,
+  init?: AzureRequestInit,
+): Promise<T> {
+  const response = await sendAzureDevOps(config, path, init);
+
+  // A 203 sign-in page or a redirect to sign in is not the answer asked for.
+  if (
+    response.status === 203 ||
+    (response.status >= 300 && response.status < 400)
+  ) {
+    throw new Error(TOKEN_REJECTED);
+  }
 
   if (!response.ok) {
-    let detail = response.statusText || "Request failed";
+    let detail = "Request failed";
     try {
       const payload = (await response.json()) as { message?: string };
-      if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+      if (
+        typeof payload.message === "string" &&
+        payload.message.trim().length > 0
+      ) {
         detail = payload.message.trim();
       }
     } catch {
       // Ignore non-JSON error responses.
     }
 
-    throw new Error(`Azure DevOps request failed (${response.status}): ${detail}`);
+    throw new Error(
+      `Azure DevOps request failed (${response.status}): ${detail}`,
+    );
   }
 
   // A delete answers 204 with no body.
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Preserve a saved project's query scope while other endpoints name their own project. */
+function projectQueryPath(organizationUrl: string) {
+  const saved = new URL(organizationUrl);
+  const root = new URL(organizationRootUrl(organizationUrl));
+  const suffix = saved.pathname
+    .slice(root.pathname.replace(/\/+$/, "").length)
+    .split("/")
+    .filter(Boolean);
+  if (
+    saved.hostname.endsWith(".visualstudio.com") &&
+    suffix[0]?.toLowerCase() === "defaultcollection"
+  )
+    suffix.shift();
+  return suffix[0] ? `/${suffix[0]}/_apis/wit/wiql` : "/_apis/wit/wiql";
 }
 
 async function executeWiqlQuery(
@@ -357,9 +491,10 @@ async function executeWiqlQuery(
 ): Promise<number[]> {
   const response = await requestAzureDevOps<AzureWiqlResponse>(
     config,
-    "/_apis/wit/wiql?$top=200&api-version=7.1",
+    projectQueryPath(config.organizationUrl),
     {
       method: "POST",
+      query: { $top: 200, "api-version": "7.1" },
       body: JSON.stringify({ query }),
     },
   );
@@ -401,29 +536,35 @@ export async function resolveAzureFieldMetadata(
   config: AzureDevOpsConnectionInput,
   configuredFieldName: string | undefined,
 ): Promise<AzureResolvedFieldMetadata | undefined> {
-  const normalizedConfiguredFieldName = normalizeConfiguredFieldName(configuredFieldName);
+  const normalizedConfiguredFieldName =
+    normalizeConfiguredFieldName(configuredFieldName);
   if (!normalizedConfiguredFieldName) {
     return undefined;
   }
 
-  const normalizedLookupValue = normalizeLookupValue(normalizedConfiguredFieldName);
+  const normalizedLookupValue = normalizeLookupValue(
+    normalizedConfiguredFieldName,
+  );
   const response = await requestAzureDevOps<AzureFieldListResponse>(
     config,
-    "/_apis/wit/fields?api-version=7.1",
+    "/_apis/wit/fields",
+    { query: { "api-version": "7.1" } },
   );
   const fields = response.value ?? [];
 
   const referenceNameMatch = requireSingleFieldMatch(
     normalizedConfiguredFieldName,
     fields.filter(
-      (field) => normalizeLookupValue(field.referenceName) === normalizedLookupValue,
+      (field) =>
+        normalizeLookupValue(field.referenceName) === normalizedLookupValue,
     ),
     "reference name",
   );
   if (referenceNameMatch?.referenceName) {
     return {
       configuredName: normalizedConfiguredFieldName,
-      resolvedName: referenceNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedName:
+        referenceNameMatch.name?.trim() || normalizedConfiguredFieldName,
       resolvedReferenceName: referenceNameMatch.referenceName,
       type: referenceNameMatch.type?.trim() || undefined,
       isQueryable: referenceNameMatch.isQueryable,
@@ -432,13 +573,16 @@ export async function resolveAzureFieldMetadata(
 
   const displayNameMatch = requireSingleFieldMatch(
     normalizedConfiguredFieldName,
-    fields.filter((field) => normalizeLookupValue(field.name) === normalizedLookupValue),
+    fields.filter(
+      (field) => normalizeLookupValue(field.name) === normalizedLookupValue,
+    ),
     "display name",
   );
   if (displayNameMatch?.referenceName) {
     return {
       configuredName: normalizedConfiguredFieldName,
-      resolvedName: displayNameMatch.name?.trim() || normalizedConfiguredFieldName,
+      resolvedName:
+        displayNameMatch.name?.trim() || normalizedConfiguredFieldName,
       resolvedReferenceName: displayNameMatch.referenceName,
       type: displayNameMatch.type?.trim() || undefined,
       isQueryable: displayNameMatch.isQueryable,
@@ -456,7 +600,9 @@ function mergeWorkItemBatchResponses(
   relationItems: AzureWorkItem[],
 ): AzureWorkItem[] {
   const fieldItemsById = new Map(fieldItems.map((item) => [item.id, item]));
-  const relationItemsById = new Map(relationItems.map((item) => [item.id, item]));
+  const relationItemsById = new Map(
+    relationItems.map((item) => [item.id, item]),
+  );
 
   return ids.flatMap((id) => {
     const fieldItem = fieldItemsById.get(id);
@@ -492,10 +638,7 @@ async function fetchWorkItems(
   }
 
   const requestedFields = Array.from(
-    new Set([
-      ...BASE_REQUESTED_WORK_ITEM_FIELDS,
-      ...additionalFields,
-    ]),
+    new Set([...BASE_REQUESTED_WORK_ITEM_FIELDS, ...additionalFields]),
   );
 
   const results = await Promise.all(
@@ -504,9 +647,10 @@ async function fetchWorkItems(
       const [fieldResponse, relationResponse] = await Promise.all([
         requestAzureDevOps<AzureWorkItemBatchResponse>(
           config,
-          "/_apis/wit/workitemsbatch?api-version=7.1",
+          "/_apis/wit/workitemsbatch",
           {
             method: "POST",
+            query: { "api-version": "7.1" },
             body: JSON.stringify({
               ids: chunk,
               fields: requestedFields,
@@ -516,9 +660,10 @@ async function fetchWorkItems(
         ),
         requestAzureDevOps<AzureWorkItemBatchResponse>(
           config,
-          "/_apis/wit/workitemsbatch?api-version=7.1",
+          "/_apis/wit/workitemsbatch",
           {
             method: "POST",
+            query: { "api-version": "7.1" },
             body: JSON.stringify({
               ids: chunk,
               errorPolicy: "omit",
@@ -556,12 +701,11 @@ export async function updateAzureWorkItemFields(
 
   return await requestAzureDevOps<AzureWorkItem>(
     config,
-    `/_apis/wit/workitems/${encodeURIComponent(workItemId)}?api-version=7.1`,
+    `/_apis/wit/workitems/${encodeURIComponent(workItemId)}`,
     {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json-patch+json",
-      },
+      query: { "api-version": "7.1" },
+      contentType: "application/json-patch+json",
       body: JSON.stringify(operations),
     },
   );
@@ -574,33 +718,72 @@ async function fetchWorkItemTypeFieldReferences(
 ) {
   const response = await requestAzureDevOps<AzureFieldListResponse>(
     config,
-    `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields?api-version=7.1`,
+    `/${encodeURIComponent(projectName)}/_apis/wit/workitemtypes/${encodeURIComponent(workItemType)}/fields`,
+    { query: { "api-version": "7.1" } },
   );
 
   if (!Array.isArray(response.value)) {
-    throw new Error("Azure DevOps returned invalid work item type field metadata.");
+    throw new Error(
+      "Azure DevOps returned invalid work item type field metadata.",
+    );
   }
 
   const fields = response.value;
-  return new Set(fields.flatMap((field) => {
-    if (!field || typeof field.referenceName !== "string") {
-      return [];
-    }
+  return new Set(
+    fields.flatMap((field) => {
+      if (!field || typeof field.referenceName !== "string") {
+        return [];
+      }
 
-    const normalizedReferenceName = normalizeLookupValue(field.referenceName);
-    return normalizedReferenceName ? [normalizedReferenceName] : [];
-  }));
+      const normalizedReferenceName = normalizeLookupValue(field.referenceName);
+      return normalizedReferenceName ? [normalizedReferenceName] : [];
+    }),
+  );
 }
 
 function workItemTypeFieldCacheKey(projectName: string, workItemType: string) {
   return `${normalizeLookupValue(projectName)}\u0000${normalizeLookupValue(workItemType)}`;
 }
 
-function buildSourceUrl(config: AzureDevOpsConnectionInput, workItem: AzureWorkItem) {
+function buildSourceUrl(
+  config: AzureDevOpsConnectionInput,
+  workItem: AzureWorkItem,
+) {
   const organizationUrl = normalizeOrganizationUrl(config.organizationUrl);
   const projectName = getProjectName(workItem) ?? config.project;
-  const projectSegment = projectName ? `/${encodeURIComponent(projectName)}` : "";
+  const projectSegment = projectName
+    ? `/${encodeURIComponent(projectName)}`
+    : "";
   return `${organizationUrl}${projectSegment}/_workitems/edit/${workItem.id}`;
+}
+
+/**
+ * The id Ajour already has for this work item, else the address of the work
+ * item. Ajour keys synced items by source id, and a connection saved under an
+ * older Ajour could name a project in its organization address, which put the
+ * project twice in the id. Correcting the address must not make every item new.
+ */
+function resolveSourceId(
+  config: AzureDevOpsConnectionInput,
+  workItem: AzureWorkItem,
+  localSourceIds: ReadonlyMap<number, string>,
+) {
+  return localSourceIds.get(workItem.id) ?? buildSourceUrl(config, workItem);
+}
+
+/** The ids Ajour already has for this connection's work items, by work item number. */
+function indexLocalSourceIds(
+  config: AzureDevOpsConnectionInput,
+  workItems: readonly ConnectorSyncWorkItem[],
+) {
+  const localSourceIds = new Map<number, string>();
+  for (const workItem of workItems) {
+    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
+    if (id !== null && !localSourceIds.has(id)) {
+      localSourceIds.set(id, workItem.sourceId);
+    }
+  }
+  return localSourceIds;
 }
 
 function buildCandidateNote(workItem: AzureWorkItem) {
@@ -620,7 +803,9 @@ function getParentId(workItem: AzureWorkItem): number | null {
 
 function getChildIds(workItem: AzureWorkItem): number[] {
   return (workItem.relations ?? [])
-    .filter((candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Forward")
+    .filter(
+      (candidate) => candidate.rel === "System.LinkTypes.Hierarchy-Forward",
+    )
     .map((candidate) => parseRelatedWorkItemId(candidate))
     .filter((candidate): candidate is number => candidate !== null);
 }
@@ -631,6 +816,7 @@ function mapWorkItemToCandidate(
   allItems: Map<number, AzureWorkItem>,
   baseCandidateIds: Set<number>,
   stateInfo: Map<number, AzureStateInfo>,
+  localSourceIds: ReadonlyMap<number, string>,
   fieldReferences?: {
     priorityFieldReferenceName?: string;
     originalEstimateFieldReferenceName?: string;
@@ -640,25 +826,44 @@ function mapWorkItemToCandidate(
 ): ConnectorImportCandidateInput | null {
   const title = normalizeDisplayValue(workItem.fields?.["System.Title"]);
   const state = normalizeDisplayValue(workItem.fields?.["System.State"]);
-  const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
-  const assignedTo = normalizeDisplayValue(workItem.fields?.["System.AssignedTo"]);
+  const workItemType = normalizeDisplayValue(
+    workItem.fields?.["System.WorkItemType"],
+  );
+  const assignedTo = normalizeDisplayValue(
+    workItem.fields?.["System.AssignedTo"],
+  );
   const assignee = assigneeOf(workItem.fields?.["System.AssignedTo"]);
   const projectName = getProjectName(workItem);
   const priority = fieldReferences?.priorityFieldReferenceName
     ? priorityLevelForValue(
         config.priorityLevels,
-        parsePriorityValue(workItem.fields?.[fieldReferences.priorityFieldReferenceName]),
+        parsePriorityValue(
+          workItem.fields?.[fieldReferences.priorityFieldReferenceName],
+        ),
       )
     : undefined;
-  const originalEstimateHours = fieldReferences?.originalEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName])
-    : undefined;
-  const remainingEstimateHours = fieldReferences?.remainingEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.remainingEstimateFieldReferenceName])
-    : undefined;
-  const completedEstimateHours = fieldReferences?.completedEstimateFieldReferenceName
-    ? parseEstimateValue(workItem.fields?.[fieldReferences.completedEstimateFieldReferenceName])
-    : undefined;
+  const originalEstimateHours =
+    fieldReferences?.originalEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[fieldReferences.originalEstimateFieldReferenceName],
+        )
+      : undefined;
+  const remainingEstimateHours =
+    fieldReferences?.remainingEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[
+            fieldReferences.remainingEstimateFieldReferenceName
+          ],
+        )
+      : undefined;
+  const completedEstimateHours =
+    fieldReferences?.completedEstimateFieldReferenceName
+      ? parseEstimateValue(
+          workItem.fields?.[
+            fieldReferences.completedEstimateFieldReferenceName
+          ],
+        )
+      : undefined;
 
   const isOpen = (item: AzureWorkItem) => !stateInfo.get(item.id)?.done;
   if (!title || !workItemType || !isOpen(workItem)) {
@@ -669,19 +874,22 @@ function mapWorkItemToCandidate(
   const isBaseCandidate = baseCandidateIds.has(workItem.id);
   const selectable = isBaseCandidate;
   const sourceUrl = buildSourceUrl(config, workItem);
+  const sourceId = resolveSourceId(config, workItem, localSourceIds);
 
   if (isTask(workItemType)) {
     const parentId = getParentId(workItem);
     const parent = parentId ? allItems.get(parentId) : undefined;
     const parentTitle = normalizeDisplayValue(parent?.fields?.["System.Title"]);
-    const hasImportableParent = Boolean(parent && parentTitle && isOpen(parent));
+    const hasImportableParent = Boolean(
+      parent && parentTitle && isOpen(parent),
+    );
 
     return {
       source: "azure_devops",
-      connectionId: config.id ?? "unknown_connection",
+      connectionId: config.id,
       connectionLabel: config.label,
       tenantLabel: config.tenantLabel,
-      sourceId: sourceUrl,
+      sourceId,
       externalId: String(workItem.id),
       sourceUrl,
       title,
@@ -698,7 +906,10 @@ function mapWorkItemToCandidate(
       originalEstimateHours,
       remainingEstimateHours,
       completedEstimateHours,
-      parentSourceId: hasImportableParent && parent ? buildSourceUrl(config, parent) : undefined,
+      parentSourceId:
+        hasImportableParent && parent
+          ? resolveSourceId(config, parent, localSourceIds)
+          : undefined,
       parentTitle: hasImportableParent ? parentTitle : undefined,
       depth: hasImportableParent ? 1 : 0,
       selectable,
@@ -717,7 +928,9 @@ function mapWorkItemToCandidate(
     }
 
     const child = allItems.get(childId);
-    const childType = normalizeDisplayValue(child?.fields?.["System.WorkItemType"]);
+    const childType = normalizeDisplayValue(
+      child?.fields?.["System.WorkItemType"],
+    );
     return Boolean(child && isTask(childType) && isOpen(child));
   }).length;
 
@@ -727,10 +940,10 @@ function mapWorkItemToCandidate(
 
   return {
     source: "azure_devops",
-    connectionId: config.id ?? "unknown_connection",
+    connectionId: config.id,
     connectionLabel: config.label,
     tenantLabel: config.tenantLabel,
-    sourceId: sourceUrl,
+    sourceId,
     externalId: String(workItem.id),
     sourceUrl,
     title,
@@ -774,17 +987,33 @@ async function describeWorkItemStates(
 
 async function fetchAzureDevOpsSyncContext(
   config: AzureDevOpsConnectionInput,
+  localSourceIds: ReadonlyMap<number, string> = new Map(),
   sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
-  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
-  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
-  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
-  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
+  const priorityField = await resolveAzureFieldMetadata(
+    config,
+    config.priorityFieldName,
+  );
+  const originalEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.originalEstimateFieldName,
+  );
+  const remainingEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.remainingEstimateFieldName,
+  );
+  const completedEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.completedEstimateFieldName,
+  );
   const baseIds = sourceIds
-    ? sourceIds.map(sourceId => {
+    ? sourceIds.map((sourceId) => {
         const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
-        if (id === null) throw new Error("The item does not belong to this Azure DevOps connection.");
+        if (id === null)
+          throw new Error(
+            "The item does not belong to this Azure DevOps connection.",
+          );
         return id;
       })
     : await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
@@ -815,7 +1044,9 @@ async function fetchAzureDevOpsSyncContext(
 
   const parentContextIds = new Set<number>();
   for (const workItem of baseItems) {
-    const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
+    const workItemType = normalizeDisplayValue(
+      workItem.fields?.["System.WorkItemType"],
+    );
     if (!isTask(workItemType)) {
       continue;
     }
@@ -826,9 +1057,15 @@ async function fetchAzureDevOpsSyncContext(
     }
   }
 
-  const parentContextItems = await fetchWorkItems(config, Array.from(parentContextIds), additionalFields);
+  const parentContextItems = await fetchWorkItems(
+    config,
+    Array.from(parentContextIds),
+    additionalFields,
+  );
   const allItems = new Map<number, AzureWorkItem>(
-    [...baseItems, ...parentContextItems].map((item) => [item.id, item] as const),
+    [...baseItems, ...parentContextItems].map(
+      (item) => [item.id, item] as const,
+    ),
   );
 
   const stateInfo = await describeWorkItemStates(resolver, allItems.values());
@@ -840,11 +1077,15 @@ async function fetchAzureDevOpsSyncContext(
       allItems,
       baseCandidateIds,
       stateInfo,
+      localSourceIds,
       {
         priorityFieldReferenceName: priorityField?.resolvedReferenceName,
-        originalEstimateFieldReferenceName: originalEstimateField?.resolvedReferenceName,
-        remainingEstimateFieldReferenceName: remainingEstimateField?.resolvedReferenceName,
-        completedEstimateFieldReferenceName: completedEstimateField?.resolvedReferenceName,
+        originalEstimateFieldReferenceName:
+          originalEstimateField?.resolvedReferenceName,
+        remainingEstimateFieldReferenceName:
+          remainingEstimateField?.resolvedReferenceName,
+        completedEstimateFieldReferenceName:
+          completedEstimateField?.resolvedReferenceName,
       },
     );
     if (!candidate) {
@@ -854,25 +1095,31 @@ async function fetchAzureDevOpsSyncContext(
     candidatesBySourceId.set(candidate.sourceId, candidate);
   }
 
-  const items = Array.from(candidatesBySourceId.values()).sort((left, right) => {
-    if (left.connectionId !== right.connectionId) {
-      return left.connectionId.localeCompare(right.connectionId);
-    }
+  const items = Array.from(candidatesBySourceId.values()).sort(
+    (left, right) => {
+      if (left.connectionId !== right.connectionId) {
+        return left.connectionId.localeCompare(right.connectionId);
+      }
 
-    if (left.depth !== right.depth) {
-      return left.depth - right.depth;
-    }
+      if (left.depth !== right.depth) {
+        return left.depth - right.depth;
+      }
 
-    if ((left.parentSourceId ?? "") !== (right.parentSourceId ?? "")) {
-      return (left.parentSourceId ?? "").localeCompare(right.parentSourceId ?? "");
-    }
+      if ((left.parentSourceId ?? "") !== (right.parentSourceId ?? "")) {
+        return (left.parentSourceId ?? "").localeCompare(
+          right.parentSourceId ?? "",
+        );
+      }
 
-    return left.title.localeCompare(right.title);
-  });
+      return left.title.localeCompare(right.title);
+    },
+  );
 
   return {
     items,
-    itemsBySourceId: new Map(items.map((item) => [item.sourceId, item] as const)),
+    itemsBySourceId: new Map(
+      items.map((item) => [item.sourceId, item] as const),
+    ),
     allItems,
     stateInfo,
     resolver,
@@ -888,7 +1135,10 @@ async function fetchAzureDevOpsSyncContext(
 function buildAzureEstimateFieldUpdate(
   localWorkItem: ConnectorSyncWorkItem,
   remoteItem: ConnectorImportCandidateInput,
-  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  fieldKey:
+    | "originalEstimateHours"
+    | "remainingEstimateHours"
+    | "completedEstimateHours",
   allowMissingRemoteValue = false,
 ): ConnectorSyncFieldUpdate | null {
   const fieldSyncState = localWorkItem.estimateSync?.[fieldKey];
@@ -918,14 +1168,18 @@ function buildAzureEstimateFieldUpdate(
     localValue: action.localValue,
     remoteValue: action.remoteValue,
     baselineValue: action.baselineValue,
-    nextBaselineValue: "nextBaselineValue" in action ? action.nextBaselineValue : undefined,
+    nextBaselineValue:
+      "nextBaselineValue" in action ? action.nextBaselineValue : undefined,
   };
 }
 
 function needsWorkItemTypeFieldSupportCheck(
   localWorkItem: ConnectorSyncWorkItem,
   remoteItem: ConnectorImportCandidateInput,
-  fieldKey: "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours",
+  fieldKey:
+    | "originalEstimateHours"
+    | "remainingEstimateHours"
+    | "completedEstimateHours",
 ) {
   if (remoteItem[fieldKey] !== undefined) {
     return false;
@@ -947,9 +1201,12 @@ async function buildAzureWorkItemUpdates(
 ): Promise<ConnectorSyncWorkItemUpdate[]> {
   const updates: ConnectorSyncWorkItemUpdate[] = [];
   const mappedFieldNames = {
-    originalEstimateHours: syncContext.fields.originalEstimateField?.resolvedReferenceName,
-    remainingEstimateHours: syncContext.fields.remainingEstimateField?.resolvedReferenceName,
-    completedEstimateHours: syncContext.fields.completedEstimateField?.resolvedReferenceName,
+    originalEstimateHours:
+      syncContext.fields.originalEstimateField?.resolvedReferenceName,
+    remainingEstimateHours:
+      syncContext.fields.remainingEstimateField?.resolvedReferenceName,
+    completedEstimateHours:
+      syncContext.fields.completedEstimateField?.resolvedReferenceName,
   } as const;
 
   const fieldSupportRequests = new Map<
@@ -962,7 +1219,9 @@ async function buildAzureWorkItemUpdates(
       continue;
     }
 
-    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<
+      keyof typeof mappedFieldNames
+    >) {
       if (
         !mappedFieldNames[fieldKey] ||
         !needsWorkItemTypeFieldSupportCheck(workItem, remoteItem, fieldKey)
@@ -973,10 +1232,13 @@ async function buildAzureWorkItemUpdates(
       const projectName = remoteItem.projectName ?? config.project;
       const workItemType = remoteItem.workItemType;
       if (projectName && workItemType) {
-        fieldSupportRequests.set(workItemTypeFieldCacheKey(projectName, workItemType), {
-          projectName,
-          workItemType,
-        });
+        fieldSupportRequests.set(
+          workItemTypeFieldCacheKey(projectName, workItemType),
+          {
+            projectName,
+            workItemType,
+          },
+        );
       }
     }
   }
@@ -985,16 +1247,24 @@ async function buildAzureWorkItemUpdates(
     string,
     { fields?: Set<string>; error?: string }
   >();
-  for (const [cacheKey, { projectName, workItemType }] of fieldSupportRequests) {
+  for (const [
+    cacheKey,
+    { projectName, workItemType },
+  ] of fieldSupportRequests) {
     try {
       workItemTypeFieldResults.set(cacheKey, {
-        fields: await fetchWorkItemTypeFieldReferences(config, projectName, workItemType),
+        fields: await fetchWorkItemTypeFieldReferences(
+          config,
+          projectName,
+          workItemType,
+        ),
       });
     } catch (error) {
       workItemTypeFieldResults.set(cacheKey, {
-        error: error instanceof Error
-          ? error.message
-          : "Unable to inspect Azure DevOps work item type fields.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to inspect Azure DevOps work item type fields.",
       });
     }
   }
@@ -1007,7 +1277,9 @@ async function buildAzureWorkItemUpdates(
 
     const fieldUpdates: ConnectorSyncWorkItemUpdate["fields"] = {};
 
-    for (const fieldKey of Object.keys(mappedFieldNames) as Array<keyof typeof mappedFieldNames>) {
+    for (const fieldKey of Object.keys(mappedFieldNames) as Array<
+      keyof typeof mappedFieldNames
+    >) {
       const mappedFieldName = mappedFieldNames[fieldKey];
       if (!mappedFieldName) {
         continue;
@@ -1027,10 +1299,12 @@ async function buildAzureWorkItemUpdates(
           const cacheKey = workItemTypeFieldCacheKey(projectName, workItemType);
           const fieldSupportResult = workItemTypeFieldResults.get(cacheKey);
           fieldSupportError = fieldSupportResult?.error;
-          const normalizedMappedFieldName = normalizeLookupValue(mappedFieldName);
+          const normalizedMappedFieldName =
+            normalizeLookupValue(mappedFieldName);
           if (normalizedMappedFieldName) {
             allowMissingRemoteValue =
-              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ?? false;
+              fieldSupportResult?.fields?.has(normalizedMappedFieldName) ??
+              false;
           }
         }
       }
@@ -1064,7 +1338,9 @@ async function buildAzureWorkItemUpdates(
       continue;
     }
 
-    for (const fieldKey of Object.keys(fieldUpdates) as Array<keyof typeof fieldUpdates>) {
+    for (const fieldKey of Object.keys(fieldUpdates) as Array<
+      keyof typeof fieldUpdates
+    >) {
       const mappedFieldName = mappedFieldNames[fieldKey];
       const fieldUpdate = fieldUpdates[fieldKey];
       const localValue = workItem[fieldKey];
@@ -1082,7 +1358,10 @@ async function buildAzureWorkItemUpdates(
           [mappedFieldName]: localValue,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to update Azure DevOps work item.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to update Azure DevOps work item.";
         const failedFieldUpdate: ConnectorSyncFieldUpdate = {
           ...fieldUpdate,
           status: "error",
@@ -1103,12 +1382,29 @@ async function buildAzureWorkItemUpdates(
   return updates;
 }
 
-export async function validateAzureDevOpsConnection(config: AzureDevOpsConnectionInput) {
-  const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
-  const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
-  const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
-  const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
-  const ids = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+export async function validateAzureDevOpsConnection(
+  config: AzureDevOpsConnectionInput,
+) {
+  const priorityField = await resolveAzureFieldMetadata(
+    config,
+    config.priorityFieldName,
+  );
+  const originalEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.originalEstimateFieldName,
+  );
+  const remainingEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.remainingEstimateFieldName,
+  );
+  const completedEstimateField = await resolveAzureFieldMetadata(
+    config,
+    config.completedEstimateFieldName,
+  );
+  const ids = await executeWiqlQuery(
+    config,
+    buildBaseWiqlQuery(config.queryScope),
+  );
   if (!Array.isArray(ids)) {
     throw new Error(
       `Azure DevOps query did not return a valid work item list for ${normalizeOrganizationUrl(config.organizationUrl)}.`,
@@ -1137,16 +1433,20 @@ export function parseAzureWorkItemId(
 ): number | null {
   try {
     const source = new URL(sourceId);
-    if (source.protocol !== "https:" && source.protocol !== "http:") return null;
+    if (source.protocol !== "https:" && source.protocol !== "http:")
+      return null;
     if (source.username || source.password) return null;
     if (organizationUrl) {
       const organization = new URL(normalizeOrganizationUrl(organizationUrl));
       if (
         source.origin !== organization.origin ||
-        !source.pathname.toLowerCase().startsWith(
-          organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
-        )
-      ) return null;
+        !source.pathname
+          .toLowerCase()
+          .startsWith(
+            organization.pathname.replace(/\/+$/, "").toLowerCase() + "/",
+          )
+      )
+        return null;
     }
     const match = /\/_workitems\/edit\/([1-9]\d*)\/?$/.exec(source.pathname);
     const id = match ? Number(match[1]) : NaN;
@@ -1166,10 +1466,9 @@ async function findDoneWorkItems(
   workItems: ConnectorSyncWorkItem[],
 ): Promise<ConnectorImportCandidateInput[]> {
   const localIds = new Map<number, string>();
-  for (const workItem of workItems) {
-    const id = parseAzureWorkItemId(workItem.sourceId, config.organizationUrl);
-    if (id !== null && !syncContext.itemsBySourceId.has(workItem.sourceId)) {
-      localIds.set(id, workItem.sourceId);
+  for (const [id, sourceId] of indexLocalSourceIds(config, workItems)) {
+    if (!syncContext.itemsBySourceId.has(sourceId)) {
+      localIds.set(id, sourceId);
     }
   }
   if (localIds.size === 0) {
@@ -1199,16 +1498,18 @@ async function findDoneWorkItems(
 
     doneItems.push({
       source: "azure_devops",
-      connectionId: config.id ?? "unknown_connection",
+      connectionId: config.id,
       connectionLabel: config.label,
       tenantLabel: config.tenantLabel,
       sourceId,
       externalId: String(id),
-      sourceUrl: sourceId,
-      title: normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
+      sourceUrl: buildSourceUrl(config, workItem),
+      title:
+        normalizeDisplayValue(workItem.fields?.["System.Title"]) ?? `#${id}`,
       projectName: getProjectName(workItem),
       workItemType:
-        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ?? "Work item",
+        normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]) ??
+        "Work item",
       state: normalizeDisplayValue(workItem.fields?.["System.State"]),
       stateCategory: info.category,
       stateDone: true,
@@ -1226,8 +1527,16 @@ export async function syncAzureDevOpsConnection(
   workItems: ConnectorSyncWorkItem[] = [],
   options?: { sourceIds?: string[] },
 ): Promise<ConnectorPluginSyncResult> {
-  const syncContext = await fetchAzureDevOpsSyncContext(config, options?.sourceIds);
-  const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
+  const syncContext = await fetchAzureDevOpsSyncContext(
+    config,
+    indexLocalSourceIds(config, workItems),
+    options?.sourceIds,
+  );
+  const workItemUpdates = await buildAzureWorkItemUpdates(
+    config,
+    syncContext,
+    workItems,
+  );
   // Last, so the sync's earlier requests keep their order.
   const doneItems = await findDoneWorkItems(config, syncContext, workItems);
   return {

@@ -1,4 +1,7 @@
-import { parseConnectorFieldValues, type ConnectorFieldValues } from "./contract.ts";
+import {
+  parseConnectorFieldValues,
+  type ConnectorFieldValues,
+} from "./contract.ts";
 
 /** A project, or one repository of it when `repository` is set. */
 export interface PullRequestScope {
@@ -7,9 +10,12 @@ export interface PullRequestScope {
 }
 
 export interface PullRequestConfig {
-  /** Organization or collection URL without a trailing slash. */
+  /** The connection `ajour.http` sends through. */
+  connectionId: string;
+  /** The saved address, separate from the pull request instance URL. */
+  savedOrganizationUrl?: string;
+  /** Organization or collection URL without a trailing slash, for web links. */
   organizationUrl: string;
-  token: string;
   include: PullRequestScope[];
   exclude: PullRequestScope[];
   hideDrafts: boolean;
@@ -32,23 +38,25 @@ function parseScopes(value: unknown, fieldId: string): PullRequestScope[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .map((entry) => {
-      const [project = "", repository, ...rest] = entry.split("/").map((part) => part.trim());
+      const [project = "", repository, ...rest] = entry
+        .split("/")
+        .map((part) => part.trim());
       if (
         rest.length > 0 ||
         !NAME_PATTERN.test(project) ||
         (repository !== undefined && !NAME_PATTERN.test(repository))
       ) {
-        throw new Error(`"${entry}" in Azure DevOps field "${fieldId}" is not a project or project/repository.`);
+        throw new Error(
+          `"${entry}" in Azure DevOps field "${fieldId}" is not a project or project/repository.`,
+        );
       }
       return repository === undefined ? { project } : { project, repository };
     });
 }
 
 /**
- * The organization or collection root that pull request calls start from.
- * Accepts https://dev.azure.com/org (a project or repository URL under it
- * too), https://org.visualstudio.com, or an Azure DevOps Server collection
- * URL such as https://ado.contoso.com/tfs/DefaultCollection.
+ * The API 3 organization or collection root. Cloud project and repository
+ * URLs are accepted; the saved URL stays separate for work item source IDs.
  */
 export function organizationRootUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
@@ -61,7 +69,9 @@ export function organizationRootUrl(value: unknown) {
     throw new Error('Azure DevOps field "organizationUrl" must be a URL.');
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error('Azure DevOps field "organizationUrl" must use HTTP or HTTPS.');
+    throw new Error(
+      'Azure DevOps field "organizationUrl" must use HTTP or HTTPS.',
+    );
   }
 
   const host = url.hostname.toLowerCase();
@@ -74,9 +84,7 @@ export function organizationRootUrl(value: unknown) {
     }
     return `${url.origin}/${segments[0]}`;
   }
-  if (host.endsWith(".visualstudio.com")) {
-    return url.origin;
-  }
+  if (host.endsWith(".visualstudio.com")) return url.origin;
   return `${url.origin}${segments.length ? `/${segments.join("/")}` : ""}`;
 }
 
@@ -84,16 +92,20 @@ function parseBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-/** Pull request settings from the connection's shared and pull request fields. */
-export function buildPullRequestConfig(values: ConnectorFieldValues): PullRequestConfig {
-  const parsed = parseConnectorFieldValues(values);
-  if (typeof parsed.personalAccessToken !== "string" || !parsed.personalAccessToken.trim()) {
-    throw new Error('Azure DevOps field "personalAccessToken" is required.');
-  }
+/**
+ * Pull request settings from the connection's shared and pull request fields.
+ * They hold no token: Ajour's broker keeps it and attaches it to each request.
+ */
+export function buildPullRequestConfig(connection: {
+  id: string;
+  config: ConnectorFieldValues;
+}): PullRequestConfig {
+  const parsed = parseConnectorFieldValues(connection.config);
 
   return {
+    connectionId: connection.id,
     organizationUrl: organizationRootUrl(parsed.organizationUrl),
-    token: parsed.personalAccessToken.trim(),
+    savedOrganizationUrl: String(parsed.organizationUrl),
     include: parseScopes(parsed.pullRequestsInclude, "pullRequestsInclude"),
     exclude: parseScopes(parsed.pullRequestsExclude, "pullRequestsExclude"),
     hideDrafts: parseBoolean(parsed.hideDraftPullRequests, false),
@@ -103,20 +115,33 @@ export function buildPullRequestConfig(values: ConnectorFieldValues): PullReques
 
 export function formatScopes(scopes: PullRequestScope[]) {
   return scopes
-    .map((scope) => (scope.repository ? `${scope.project}/${scope.repository}` : scope.project))
+    .map((scope) =>
+      scope.repository ? `${scope.project}/${scope.repository}` : scope.project,
+    )
     .join(", ");
 }
 
-function matchesScope(project: string, repository: string, scope: PullRequestScope) {
+function matchesScope(
+  project: string,
+  repository: string,
+  scope: PullRequestScope,
+) {
   return (
     scope.project.toLowerCase() === project.toLowerCase() &&
-    (scope.repository === undefined || scope.repository.toLowerCase() === repository.toLowerCase())
+    (scope.repository === undefined ||
+      scope.repository.toLowerCase() === repository.toLowerCase())
   );
 }
 
 /** Whether the connection's include and exclude filters keep the repository. */
-export function repositoryInScope(config: PullRequestConfig, project: string, repository: string) {
-  if (config.exclude.some((scope) => matchesScope(project, repository, scope))) {
+export function repositoryInScope(
+  config: PullRequestConfig,
+  project: string,
+  repository: string,
+) {
+  if (
+    config.exclude.some((scope) => matchesScope(project, repository, scope))
+  ) {
     return false;
   }
   return (

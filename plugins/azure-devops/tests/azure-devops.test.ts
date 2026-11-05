@@ -10,6 +10,7 @@ import {
   parsePriorityLevelRanges,
 } from "../src/priority-levels.ts";
 import { withWorkItemTypeStates } from "./work-item-type-states.ts";
+import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 function buildConnection(
   overrides: Partial<AzureDevOpsConnectionInput> = {},
@@ -18,7 +19,7 @@ function buildConnection(
     label: "Main connection",
     tenantLabel: "Contoso",
     organizationUrl: "https://dev.azure.com/contoso",
-    personalAccessToken: "secret",
+    access: ALL_ACCESS,
     queryScope: "assigned_to_me",
     autoSync: false,
     autoSyncIntervalMinutes: 15,
@@ -91,7 +92,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -137,7 +138,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(
@@ -221,7 +222,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       fetchAzureDevOpsImportCandidates(
@@ -299,7 +300,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -309,7 +310,8 @@ describe("Azure DevOps connector priority field resolution", () => {
         [
           {
             localWorkItemId: "local-1",
-            sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+            sourceId:
+              "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
             remainingEstimateHours: 5,
             estimateSync: {
               remainingEstimateHours: {
@@ -404,7 +406,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         return jsonResponse({});
       });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -414,7 +416,8 @@ describe("Azure DevOps connector priority field resolution", () => {
         [
           {
             localWorkItemId: "local-1",
-            sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+            sourceId:
+              "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
             completedEstimateHours: 2,
           },
         ],
@@ -500,11 +503,9 @@ describe("Azure DevOps connector priority field resolution", () => {
       .mockResolvedValueOnce(
         jsonResponse({ message: "Metadata unavailable" }, 503),
       )
-      .mockResolvedValueOnce(
-        jsonResponse({}),
-      );
+      .mockResolvedValueOnce(jsonResponse({}));
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -513,7 +514,8 @@ describe("Azure DevOps connector priority field resolution", () => {
       [
         {
           localWorkItemId: "local-1",
-          sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+          sourceId:
+            "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
           completedEstimateHours: 2,
           estimateSync: {
             completedEstimateHours: {
@@ -524,12 +526,14 @@ describe("Azure DevOps connector priority field resolution", () => {
         },
         {
           localWorkItemId: "local-2",
-          sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/456",
+          sourceId:
+            "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/456",
           completedEstimateHours: 2,
         },
         {
           localWorkItemId: "local-3",
-          sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/789",
+          sourceId:
+            "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/789",
           completedEstimateHours: 3,
         },
       ],
@@ -615,11 +619,9 @@ describe("Azure DevOps connector priority field resolution", () => {
           ],
         }),
       )
-      .mockResolvedValueOnce(
-        jsonResponse({ message: "Write rejected" }, 400),
-      );
+      .mockResolvedValueOnce(jsonResponse({ message: "Write rejected" }, 400));
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({
@@ -628,7 +630,8 @@ describe("Azure DevOps connector priority field resolution", () => {
       [
         {
           localWorkItemId: "local-1",
-          sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+          sourceId:
+            "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
           completedEstimateHours: 2,
         },
       ],
@@ -662,9 +665,7 @@ describe("Azure DevOps connector priority field resolution", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(fieldListResponse.clone())
-      .mockResolvedValueOnce(
-        jsonResponse({ workItems: [{ id: 123 }] }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ workItems: [{ id: 123 }] }))
       .mockResolvedValueOnce(
         jsonResponse({
           value: [
@@ -683,18 +684,17 @@ describe("Azure DevOps connector priority field resolution", () => {
       .mockResolvedValueOnce(
         jsonResponse({ value: [{ id: 123, relations: [] }] }),
       )
-      .mockResolvedValueOnce(
-        jsonResponse({ value: {} }),
-      );
+      .mockResolvedValueOnce(jsonResponse({ value: {} }));
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const result = await syncAzureDevOpsConnection(
       buildConnection({ completedEstimateFieldName: "Completed Work" }),
       [
         {
           localWorkItemId: "local-1",
-          sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+          sourceId:
+            "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
           completedEstimateHours: 2,
         },
       ],
@@ -706,7 +706,8 @@ describe("Azure DevOps connector priority field resolution", () => {
         fields: {
           completedEstimateHours: {
             status: "error",
-            message: "Azure DevOps returned invalid work item type field metadata.",
+            message:
+              "Azure DevOps returned invalid work item type field metadata.",
           },
         },
       },
@@ -770,7 +771,7 @@ describe("Azure DevOps connector priority field resolution", () => {
         }),
       );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       syncAzureDevOpsConnection(
@@ -780,7 +781,8 @@ describe("Azure DevOps connector priority field resolution", () => {
         [
           {
             localWorkItemId: "local-1",
-            sourceId: "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+            sourceId:
+              "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
             remainingEstimateHours: 5,
             estimateSync: {
               remainingEstimateHours: {
@@ -798,24 +800,22 @@ describe("Azure DevOps connector priority field resolution", () => {
   });
 
   it("rejects ambiguous display-name matches during connection validation", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({
-          value: [
-            {
-              name: "MS Priority",
-              referenceName: "Custom.TeamA.Priority",
-            },
-            {
-              name: "MS Priority",
-              referenceName: "Custom.TeamB.Priority",
-            },
-          ],
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        value: [
+          {
+            name: "MS Priority",
+            referenceName: "Custom.TeamA.Priority",
+          },
+          {
+            name: "MS Priority",
+            referenceName: "Custom.TeamB.Priority",
+          },
+        ],
+      }),
+    );
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     await expect(
       validateAzureDevOpsConnection(
@@ -857,7 +857,9 @@ describe("Azure DevOps description notes", () => {
                 "System.WorkItemType": "Task",
                 "System.Description": description,
               },
-              ...(format ? { multilineFieldsFormat: { "System.Description": format } } : {}),
+              ...(format
+                ? { multilineFieldsFormat: { "System.Description": format } }
+                : {}),
             },
           ],
         });
@@ -865,21 +867,21 @@ describe("Azure DevOps description notes", () => {
       return jsonResponse({ value: [] });
     });
 
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
     const result = await fetchAzureDevOpsImportCandidates(buildConnection());
     return result.items[0]?.note;
   }
 
   it("converts an HTML description to markdown", async () => {
-    await expect(fetchNote("<div><b>Steps</b></div><ul><li>Open</li><li>Save</li></ul>")).resolves.toBe(
-      "**Steps**\n\n- Open\n- Save",
-    );
+    await expect(
+      fetchNote("<div><b>Steps</b></div><ul><li>Open</li><li>Save</li></ul>"),
+    ).resolves.toBe("**Steps**\n\n- Open\n- Save");
   });
 
   it("keeps a Markdown description as written", async () => {
-    await expect(fetchNote("**Steps**\r\n\r\n- Open <b>raw</b>", "Markdown")).resolves.toBe(
-      "**Steps**\n\n- Open <b>raw</b>",
-    );
+    await expect(
+      fetchNote("**Steps**\r\n\r\n- Open <b>raw</b>", "Markdown"),
+    ).resolves.toBe("**Steps**\n\n- Open <b>raw</b>");
   });
 });
 
@@ -890,7 +892,11 @@ describe("Azure DevOps assignees in sync", () => {
   });
 
   it("sends each item's assignee by uniqueName, and none for an unassigned item", async () => {
-    const fields = (title: string, workItemType: string, extra: Record<string, unknown> = {}) => ({
+    const fields = (
+      title: string,
+      workItemType: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
       "System.Title": title,
       "System.State": "Active",
       "System.TeamProject": "Mercury",
@@ -905,7 +911,9 @@ describe("Azure DevOps assignees in sync", () => {
       if (url.includes("/_apis/wit/workitemsbatch")) {
         const body = JSON.parse(String(init?.body));
         if (body.$expand) {
-          return jsonResponse({ value: [1, 2, 3].map((id) => ({ id, relations: [] })) });
+          return jsonResponse({
+            value: [1, 2, 3].map((id) => ({ id, relations: [] })),
+          });
         }
         return jsonResponse({
           value: [
@@ -935,14 +943,19 @@ describe("Azure DevOps assignees in sync", () => {
       }
       return jsonResponse({ value: [] });
     });
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetchMock));
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
 
     const { items } = await syncAzureDevOpsConnection(buildConnection());
 
-    const byTitle = (title: string) => items.find((item) => item.title === title)!;
+    const byTitle = (title: string) =>
+      items.find((item) => item.title === title)!;
     expect(byTitle("Fix login")).toMatchObject({
       assignedTo: "Ana Silva",
-      assignee: { id: "ana@contoso.com", displayName: "Ana Silva", email: "ana@contoso.com" },
+      assignee: {
+        id: "ana@contoso.com",
+        displayName: "Ana Silva",
+        email: "ana@contoso.com",
+      },
     });
     expect(byTitle("Ship the release").assignee).toEqual({
       id: "CONTOSO\\bcote",
@@ -956,26 +969,81 @@ describe("an item refresh", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("fetches the requested id outside the assigned query and uploads its local estimate", async () => {
     const patches: unknown[] = [];
-    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      expect(url).not.toContain("/wiql");
-      if (url.includes("/fields")) return jsonResponse({ value: [{ name: "Remaining Work", referenceName: "Microsoft.VSTS.Scheduling.RemainingWork" }] });
-      if (init?.method === "PATCH") {
-        expect(url).toContain("/_apis/wit/workitems/42");
-        patches.push(JSON.parse(String(init.body)));
-        return jsonResponse({});
-      }
-      const body = JSON.parse(String(init?.body));
-      expect(body.ids).toEqual([42]);
-      return jsonResponse({ value: [{ id: 42, fields: { "System.Title": "Changed remotely", "System.State": "Active", "System.TeamProject": "Web", "System.WorkItemType": "Task", "Microsoft.VSTS.Scheduling.RemainingWork": 3 } }] });
-    });
-    vi.stubGlobal("fetch", withWorkItemTypeStates(fetch));
+    const fetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        expect(url).not.toContain("/wiql");
+        if (url.includes("/fields"))
+          return jsonResponse({
+            value: [
+              {
+                name: "Remaining Work",
+                referenceName: "Microsoft.VSTS.Scheduling.RemainingWork",
+              },
+            ],
+          });
+        if (init?.method === "PATCH") {
+          expect(url).toContain("/_apis/wit/workitems/42");
+          patches.push(JSON.parse(String(init.body)));
+          return jsonResponse({});
+        }
+        const body = JSON.parse(String(init?.body));
+        expect(body.ids).toEqual([42]);
+        return jsonResponse({
+          value: [
+            {
+              id: 42,
+              fields: {
+                "System.Title": "Changed remotely",
+                "System.State": "Active",
+                "System.TeamProject": "Web",
+                "System.WorkItemType": "Task",
+                "Microsoft.VSTS.Scheduling.RemainingWork": 3,
+              },
+            },
+          ],
+        });
+      },
+    );
+    stubAzureFetch(withWorkItemTypeStates(fetch));
     const sourceId = "https://dev.azure.com/contoso/Web/_workitems/edit/42";
-    const result = await syncAzureDevOpsConnection(buildConnection({ remainingEstimateFieldName: "Remaining Work" }), [{ localWorkItemId: "one", sourceId, remainingEstimateHours: 9, estimateSync: { remainingEstimateHours: { baselineValue: 3, remoteValue: 3 } } }], { sourceIds: [sourceId] });
-    expect(result.items).toEqual([expect.objectContaining({ sourceId, title: "Changed remotely", remainingEstimateHours: 3 })]);
-    expect(patches).toEqual([[{ op: "add", path: "/fields/Microsoft.VSTS.Scheduling.RemainingWork", value: 9 }]]);
+    const result = await syncAzureDevOpsConnection(
+      buildConnection({ remainingEstimateFieldName: "Remaining Work" }),
+      [
+        {
+          localWorkItemId: "one",
+          sourceId,
+          remainingEstimateHours: 9,
+          estimateSync: {
+            remainingEstimateHours: { baselineValue: 3, remoteValue: 3 },
+          },
+        },
+      ],
+      { sourceIds: [sourceId] },
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        sourceId,
+        title: "Changed remotely",
+        remainingEstimateHours: 3,
+      }),
+    ]);
+    expect(patches).toEqual([
+      [
+        {
+          op: "add",
+          path: "/fields/Microsoft.VSTS.Scheduling.RemainingWork",
+          value: 9,
+        },
+      ],
+    ]);
     expect(result.workItemUpdates).toEqual([
-      expect.objectContaining({ localWorkItemId: "one", fields: { remainingEstimateHours: expect.objectContaining({ status: "pushed" }) } }),
+      expect.objectContaining({
+        localWorkItemId: "one",
+        fields: {
+          remainingEstimateHours: expect.objectContaining({ status: "pushed" }),
+        },
+      }),
     ]);
   });
 });

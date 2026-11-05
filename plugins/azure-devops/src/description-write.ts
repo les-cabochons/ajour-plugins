@@ -114,10 +114,11 @@ export async function writeAzureDescription(
   try {
     written = await requestAzureDevOps<AzureWorkItem>(
       config,
-      `/_apis/wit/workitems/${id}?api-version=7.1`,
+      `/_apis/wit/workitems/${id}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json-patch+json" },
+        query: { "api-version": "7.1" },
+        contentType: "application/json-patch+json",
         body: JSON.stringify(operations),
       },
     );

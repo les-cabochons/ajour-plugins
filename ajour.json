@@ -6,8 +6,8 @@
       "id": "azure_devops",
       "name": "Azure DevOps",
       "description": "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
-      "version": "1.2.0",
-      "pluginApiVersion": 3,
+      "version": "2.0.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "connector",
         "codeHost"
@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "5ca496342390b2b42b75022a5fd75d875442fbac",
+      "commit": "58ee53ed89258235f11be8a6b3f756a9bc989b40",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -42,23 +42,23 @@
         },
         {
           "path": "package.json",
-          "sha256": "0c79db88d93b0ee0b06fe1d9856ad35d82a092eac31292922588e9b559d13cff",
-          "size": 1175
+          "sha256": "8ecd414bd46f1befd3feb452c82fd13fe9f5278139f5d7deb0304678d1393b85",
+          "size": 1248
         },
         {
           "path": "plugin.json",
-          "sha256": "5161fe2ebd6c66dc42e8ab52ec1f075fc22b6116618e7417d6113ff8815af5e3",
-          "size": 7344
+          "sha256": "06e8b9d02ed9c98d3369092f465b5ae21994d3b2716ccc9c5a98ec3b231a3718",
+          "size": 21511
         },
         {
           "path": "src/azure-devops.ts",
-          "sha256": "37add954829c4c7103283a567d76971a5d6d808c48c7e1e56774505f55fdeca2",
-          "size": 39685
+          "sha256": "ee7edf772ea91c80e58f97ddedf1152718f2bb1abd2f8afaefb98be3b62d467e",
+          "size": 45994
         },
         {
           "path": "src/comments.ts",
-          "sha256": "47b1f56881a43e7ef03bf4b7c63363248a598fb8dea9c0d6adf76301fe144230",
-          "size": 32152
+          "sha256": "6998987054ae31d06a7a32a8244812d4b4720c2d9e70c810d08f859da1b972af",
+          "size": 32600
         },
         {
           "path": "src/contract.ts",
@@ -72,13 +72,13 @@
         },
         {
           "path": "src/description-source.ts",
-          "sha256": "a5ee1100f6e636ee8d10ca4ec67cb1f53fc5fe516c21d66218d86c5160045261",
-          "size": 1507
+          "sha256": "3c9f7ae4fcea87aed6df2c99a0a481539f0a3b72857f0d6592c3597d5e18a77f",
+          "size": 1535
         },
         {
           "path": "src/description-write.ts",
-          "sha256": "dc30c49274bb34d60d27c7f0a7432e7be179787ef447e46e8a87f29f2ba20307",
-          "size": 6007
+          "sha256": "ad4ec0b9d414bc7585c9f5a041af63710f24047ab88b13f5614868236e6565db",
+          "size": 6016
         },
         {
           "path": "src/description.ts",
@@ -112,8 +112,8 @@
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "623af1b38824d6f79bda4a9af1e9570997bdc51f9693809369bd4273b18da6fa",
-          "size": 13490
+          "sha256": "e32ca091d76b48bb645a1d5e5e525ffe09c89001cc429ab512cf4a6ce07201a7",
+          "size": 13353
         },
         {
           "path": "src/priority-levels.ts",
@@ -122,32 +122,61 @@
         },
         {
           "path": "src/pull-request-config.ts",
-          "sha256": "3b0a592f82868705fecf0e86f08a4ebc6e133a92779d5280626075b2989ebfb3",
-          "size": 4574
+          "sha256": "9f366b50115092a7a5f36df35fb38e51635b2d6fab16276cb8776daeba7b381a",
+          "size": 4704
         },
         {
           "path": "src/pull-requests.ts",
-          "sha256": "ae485ca83897c5b40c17fc4d1a6941f206694cb61347751f8a15781621846d2f",
-          "size": 24135
+          "sha256": "f82bd9508a1f1632691d446368cecda96d9e2cfbe0482d10a1bb6ffc8604f8f7",
+          "size": 24247
         },
         {
           "path": "src/settle.ts",
-          "sha256": "c1efdbc74ec8f0bdb0df9a1e42f0125b3af47fa58ec37ec67a2c86afc0a0ad2d",
-          "size": 4824
+          "sha256": "ac3a2c847cf83365786b282783aaeca4e9fd6ea54e52cee6eb1dfc9368ca8ca7",
+          "size": 4853
         },
         {
           "path": "src/state-categories.ts",
-          "sha256": "132320f9bbb9ec3a43c24ff6d75467854956e897ca5bf566d197fa573ba5a023",
-          "size": 3835
+          "sha256": "ec81364b0b89bece5ff6404d0978ea459df2b904b6c5a629cc0f5397fff4289b",
+          "size": 3883
         }
       ]
+    },
+    {
+      "id": "chronops",
+      "name": "ChronOps",
+      "description": "Bring your ChronOps projects, tasks and budgets into Ajour, read-only, through MineHunter's ChronOps Forwarder.",
+      "version": "0.1.0",
+      "pluginApiVersion": 4,
+      "capabilities": [
+        "projectSource"
+      ],
+      "features": [
+        "project-source"
+      ],
+      "tags": [
+        "chronops",
+        "minehunter",
+        "projects",
+        "budgets"
+      ],
+      "author": {
+        "name": "Alex Trépanier",
+        "url": "https://github.com/alextrepa"
+      },
+      "license": {
+        "name": "MIT License",
+        "spdxId": "MIT"
+      },
+      "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
+      "status": "coming-soon"
     },
     {
       "id": "github",
       "name": "GitHub",
       "description": "Bring your GitHub issues into Ajour's backlog, and the pull requests you wrote or were asked to review.",
-      "version": "0.2.0",
-      "pluginApiVersion": 3,
+      "version": "0.3.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "connector",
         "codeHost"
@@ -171,7 +200,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "5ca496342390b2b42b75022a5fd75d875442fbac",
+      "commit": "58ee53ed89258235f11be8a6b3f756a9bc989b40",
       "path": "plugins/github",
       "files": [
         {
@@ -181,18 +210,18 @@
         },
         {
           "path": "package.json",
-          "sha256": "34571b1aa22419c82af70f4a410b1b8d3921c4a156a32d1e07cc336b36363511",
-          "size": 1105
+          "sha256": "80eb9451a7c3ee9d3b13c48cd1df8abc67737d6d36b9da3522a4458cc554e5b0",
+          "size": 1178
         },
         {
           "path": "plugin.json",
-          "sha256": "6877c61cb8b8429a59e24661be8a740795e1f55904a9b9b883a39af177e1bbc6",
-          "size": 3729
+          "sha256": "4d137722f650bab3fc3fc5b6e74e2d4be3ae82c1d5d21b27ca225aac335562ba",
+          "size": 5068
         },
         {
           "path": "src/config.ts",
-          "sha256": "cd24a0a503c3b24380bd6006707b069b8fc066d6128325ccb1619b0e67d6eddc",
-          "size": 3400
+          "sha256": "f12a6bea8b01cdff378c70780c5f1ffa4d235990115db82133659413308bd604",
+          "size": 3213
         },
         {
           "path": "src/contract.ts",
@@ -201,8 +230,8 @@
         },
         {
           "path": "src/description-source.ts",
-          "sha256": "3bbb54efae42715f3a2e823090812bacd0d4bc4dd1698153f615c8b6d09cd80a",
-          "size": 3985
+          "sha256": "0412798abf99addebb523a79ff8150fe1e99c45714e53f561914cf91f9e141c2",
+          "size": 3969
         },
         {
           "path": "src/description.ts",
@@ -211,18 +240,18 @@
         },
         {
           "path": "src/github.ts",
-          "sha256": "5c8903b94ec05421330fcda6afe2e05b0e8bfc84f09789d9541bb17ee769ebea",
-          "size": 22484
+          "sha256": "681a3b5d123462eb833874b2812db5e57c7516e398a8acb7c3df2ca07f6d75c8",
+          "size": 23141
         },
         {
           "path": "src/issues.ts",
-          "sha256": "27f158b0c34c0b94679ca40e1d8469a4297b1b22a5d446a41086573bde3086a8",
-          "size": 9973
+          "sha256": "356b5071fe130a88cb5eb58fc57230df34a27d166e86c50a1ec14fd684bb9ba3",
+          "size": 9957
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "83412bc8c3487555959818e0ccb8c5ba724979699807bffd3bb5083e937042d7",
-          "size": 3607
+          "sha256": "f7f585b93a5b5b11d3370f312a0a17ad93cacd17e4b8d6371b0b7547e81c2036",
+          "size": 2937
         }
       ]
     },
@@ -230,8 +259,8 @@
       "id": "ics",
       "name": "Calendar address (ICS)",
       "description": "Suggest the meetings in your Google Calendar, Outlook or Exchange calendar as time entries, through the calendar's private address. Read-only.",
-      "version": "0.1.0",
-      "pluginApiVersion": 3,
+      "version": "0.2.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "calendar"
       ],
@@ -254,7 +283,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "5ca496342390b2b42b75022a5fd75d875442fbac",
+      "commit": "58ee53ed89258235f11be8a6b3f756a9bc989b40",
       "path": "plugins/ics",
       "files": [
         {
@@ -264,18 +293,18 @@
         },
         {
           "path": "package.json",
-          "sha256": "cfeb6472a9e3249e1fcff9e0bd993d58fd36770c5b7d4920470ccb20e80cde7c",
-          "size": 988
+          "sha256": "02f8f646972cfe9f2dbe6f0d38209e3f78d8befab2a1019be744130b6afc0e0c",
+          "size": 1061
         },
         {
           "path": "plugin.json",
-          "sha256": "f60c5d23114d2f156d472a687dc8d5e0130e408850c2ec5894a1d4d350730574",
-          "size": 2433
+          "sha256": "dfcd1f8829c897024d4c91758c690e78a64d8b9fdbb9be518952a9bd782f6d75",
+          "size": 2633
         },
         {
           "path": "src/contract.ts",
-          "sha256": "9f2b72203ca64d605bab44eb89334c8631a2440c74c000c660a2a7db5ce15eb2",
-          "size": 2382
+          "sha256": "d9bf66d209c457509d4d8237b0484cf6c9e5985c69b0a604c10517a171c0b66e",
+          "size": 1364
         },
         {
           "path": "src/events.ts",
@@ -284,13 +313,13 @@
         },
         {
           "path": "src/feed.ts",
-          "sha256": "7c656b84c6d2886b476dc98ec08ee6537393e069fa9b9c28206c90173d1c4fcb",
-          "size": 5168
+          "sha256": "a06060f54ecee44208d40de9e43f234520e33d7716f32a92a1c11268103bd486",
+          "size": 4244
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "0652ac37c1586d79b701265cd019f6c69e534ccac6dc1cab34c3d5b963f527b9",
-          "size": 1925
+          "sha256": "60b15960c63673cd3b7b0413e30a899a8b8587253d4414a8fdd07cd1ded8a267",
+          "size": 2255
         },
         {
           "path": "src/vendor/ical.d.ts",
@@ -318,8 +347,8 @@
       "id": "jira",
       "name": "Jira",
       "description": "Sync Jira issues into Ajour's local backlog and update estimates from Ajour.",
-      "version": "1.0.0",
-      "pluginApiVersion": 3,
+      "version": "1.1.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "connector"
       ],
@@ -342,7 +371,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "5ca496342390b2b42b75022a5fd75d875442fbac",
+      "commit": "58ee53ed89258235f11be8a6b3f756a9bc989b40",
       "path": "plugins/jira",
       "files": [
         {
@@ -352,13 +381,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "f10190cf67117cb364c9085087e6230f18bd2c0dbc63a94435161d096e5cd9eb",
-          "size": 1083
+          "sha256": "1914c54f917df1a174cbb765ef170abc247a140dc94283019a88e8e068e29ca0",
+          "size": 1156
         },
         {
           "path": "plugin.json",
-          "sha256": "a5cf651987dd65c8a52709d0f2ff832487ec965b97e1cc9f90ca45fb0e8f349d",
-          "size": 3366
+          "sha256": "a0f0c8e7525dcc924af604e73810aa01ab6f66c78db345066cd4ff88713caf25",
+          "size": 4117
         },
         {
           "path": "src/adf-markdown.ts",
@@ -387,13 +416,13 @@
         },
         {
           "path": "src/description-source.ts",
-          "sha256": "69d60e36282a051b7e5869d037753895af885776792d9df537e01590a589851c",
-          "size": 1178
+          "sha256": "9d44e4517278352f7179a52fd64381126098f01919b6dc7fbac62f2eb4e43aef",
+          "size": 1201
         },
         {
           "path": "src/description-write.ts",
-          "sha256": "5c5fcb8539c7588e853e866653e7d1282223c22591ae1afeebef235606be4e45",
-          "size": 5365
+          "sha256": "b0610a81359bcc46520910d55ceb6e5360f01e8b60d87bca08e5e8447768ab50",
+          "size": 5361
         },
         {
           "path": "src/description.ts",
@@ -407,8 +436,8 @@
         },
         {
           "path": "src/jira.ts",
-          "sha256": "a0dd67edfba158e56d600db51d619f195f49ebd93d8e095b5009b7bd8cd41ad7",
-          "size": 25310
+          "sha256": "106ceb4440b9f5c9ff624a3a93fd75bda0cc01b4c9f35210489e8854e5abe3dd",
+          "size": 25942
         },
         {
           "path": "src/markdown-adf.ts",
@@ -417,8 +446,8 @@
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "b78be779dbe0412ec25074f574fda9d8f3bca2eefdf5577a8d7ccf7ccbb3772c",
-          "size": 4330
+          "sha256": "10db4dd2f81f385dd1f6fbd57d07263e53f4042d0e7358dcfcb0e843bc4bf19c",
+          "size": 3754
         },
         {
           "path": "src/priority.ts",
@@ -427,8 +456,8 @@
         },
         {
           "path": "src/settle.ts",
-          "sha256": "b789d4efea6bc6b92616a81019e97089bceee2ec033d2f839ed0af27399a48f1",
-          "size": 5456
+          "sha256": "293b4c9baba6d581861c5f98a8d6bf505bc4b93068d5f0e0c6cffc2bce349ee0",
+          "size": 5438
         }
       ]
     },
@@ -436,8 +465,8 @@
       "id": "workday-agent",
       "name": "Workday (agent)",
       "description": "Commit your Ajour week to the Workday web timesheet through a coding agent, Claude Code, Codex or OpenCode, in a Chrome window. Unofficial. It drives Workday's page, so it breaks when the page changes. It never signs in for you.",
-      "version": "0.6.0",
-      "pluginApiVersion": 3,
+      "version": "0.7.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "agentTask"
       ],
@@ -462,7 +491,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "5ca496342390b2b42b75022a5fd75d875442fbac",
+      "commit": "58ee53ed89258235f11be8a6b3f756a9bc989b40",
       "path": "plugins/workday-agent",
       "files": [
         {
@@ -472,13 +501,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "2e9ca8ab933ecc0bc412780e26b33ad6e8489a55db6c79c5f8907a0e98bbbf1a",
-          "size": 1078
+          "sha256": "3dc0f90248b91fce5c287191e9818fcaae16a6f749f0d23c5f4ca49ec8af4230",
+          "size": 1206
         },
         {
           "path": "plugin.json",
-          "sha256": "5e5f1f1ab360032a297650451f2d4f1ed9b69deac5af3ad9ae62ff1869df1499",
-          "size": 3466
+          "sha256": "4cb97a932ce5a004d15cc24997e700fdb2b8bcdd88bfba2621c133058016db37",
+          "size": 3655
         },
         {
           "path": "prompts/commit-week.md",
@@ -496,8 +525,8 @@
       "id": "workday-project-data",
       "name": "Workday project data shape",
       "description": "Imports a project and its tasks from Workday's Excel exports, in French, without connecting to Workday.",
-      "version": "2.0.0",
-      "pluginApiVersion": 1,
+      "version": "2.1.0",
+      "pluginApiVersion": 4,
       "capabilities": [
         "schema"
       ],

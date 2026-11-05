@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "algorithm": "ed25519",
   "publicKey": "MTsijMPv34j6agaaBq4zMzidHVmitts/mA4mUZ/uDas=",
-  "signature": "5hE3g5L7HFlxN60NrsDD0KHRHgUMDDgO2a41Okqm5WBpKj1mgD6QqJnLGWTycYaB/2WCEsioOSr1UYqZImG8BQ=="
+  "signature": "fnCewPgsNISiM9VZoIoJnqP/1nGVswniCfnyUnyWU77Qgeu37YgiafUHY4QKOck71179U3+O6N1yYZx1U3J6BQ=="
 }

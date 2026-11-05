@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/les-cabochons/ajour-plugins/plugins/chronops/contract/snapshot.schema.json",
+  "title": "ChronOps snapshot for Ajour, version 2",
+  "description": "What MineHunter's GET /integration/ajour/snapshot returns to the chronops plugin: the caller's projects, their budget and their tasks, as ChronOps sees them. A change to this shape bumps version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "generatedAt", "reportAt", "me", "projects"],
+  "properties": {
+    "version": { "const": 2 },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When MineHunter produced this snapshot."
+    },
+    "reportAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The moment the budget figures are computed for, the end of the last ChronOps report."
+    },
+    "me": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email", "workerLinked"],
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "workerLinked": {
+          "type": "boolean",
+          "description": "Whether the token's user is linked to a ChronOps worker. Without the link, myHours is null on every task; assignedToMe is known either way, since ChronOps assigns by email."
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/project" }
+    }
+  },
+  "$defs": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "name", "client", "complete", "contractStart", "contractEnd", "budget", "tasks"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "description": "The ChronOps project code, stable across renames." },
+        "name": { "type": "string", "minLength": 1 },
+        "client": { "type": ["string", "null"] },
+        "complete": { "type": ["boolean", "null"], "description": "Whether ChronOps marks the project complete. Null when ChronOps cannot tell." },
+        "contractStart": { "type": ["string", "null"], "format": "date" },
+        "contractEnd": { "type": ["string", "null"], "format": "date" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "tasks": {
+          "type": "array",
+          "description": "Every task of the project, including the ones not assigned to the caller.",
+          "items": { "$ref": "#/$defs/task" }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "capHours", "maxBudget", "consumedHours", "spentBudget", "remainingHours", "status"],
+      "properties": {
+        "mode": {
+          "enum": ["monthly", "annual"],
+          "description": "The period the cap and the consumed figures cover."
+        },
+        "capHours": { "type": ["number", "null"], "minimum": 0, "description": "Hours allowed for the period. Null when the project has no cap, or no figures for the current period." },
+        "maxBudget": { "type": ["number", "null"], "minimum": 0, "description": "Money allowed for the period, when ChronOps knows it." },
+        "consumedHours": { "type": "number", "minimum": 0, "description": "Hours consumed in the period, at reportAt." },
+        "spentBudget": { "type": ["number", "null"], "minimum": 0, "description": "Money spent in the period, at reportAt, when ChronOps knows it." },
+        "remainingHours": { "type": ["number", "null"], "description": "capHours minus consumedHours, negative when over. Null when capHours is null." },
+        "status": {
+          "enum": ["Green", "Yellow", "Red", "Unconfigured"],
+          "description": "ChronOps' own health colour. Unconfigured when capHours is null."
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "phase", "name", "closed", "billable", "estimateHours", "assignedToMe", "myHours"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "The ChronOps task id." },
+        "phase": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "closed": { "type": "boolean" },
+        "billable": { "type": "boolean" },
+        "estimateHours": { "type": "number", "minimum": 0 },
+        "assignedToMe": { "type": "boolean", "description": "Whether ChronOps assigns the task to the token's user, by email. Known with or without a worker link." },
+        "myHours": { "type": ["number", "null"], "minimum": 0, "description": "The caller's hours on the task in the current month, summed over the workers linked to the login. Null when not assigned or not linked." }
+      }
+    }
+  }
+}

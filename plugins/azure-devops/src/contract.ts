@@ -79,7 +79,13 @@ export interface ConnectorImportCandidateInput {
   stateCategory?: string;
   /** True for Completed and Removed. Ajour archives done items. */
   stateDone?: boolean;
+  /** The assignee's name, for Ajour's review line and older Ajour. */
   assignedTo?: string;
+  /**
+   * Who the item is assigned to, by uniqueName, with each text at most 400
+   * characters. Absent when unassigned.
+   */
+  assignee?: BacklogPerson;
   priority?: ConnectorPriorityLevel;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
@@ -153,6 +159,8 @@ export interface ConnectorSettleWriteRequest {
   sourceId: string;
   state?: string;
   priority?: ConnectorPriorityLevel;
+  /** A uniqueName, the id `searchAssignees` returns, assigns; null unassigns. */
+  assignee?: string | null;
 }
 
 /** The item's values in Azure DevOps after the write. */
@@ -265,11 +273,14 @@ export type BacklogReaction =
   | "rocket"
   | "eyes";
 
-/** A person in Azure DevOps, by identity id, the id comment authors carry. */
+/**
+ * A person in Azure DevOps. Comment authors and mentions carry the identity
+ * id; assignees carry the uniqueName, which `System.AssignedTo` takes.
+ */
 export interface BacklogPerson {
   id: string;
   displayName: string;
-  /** Under the name in Ajour's @ suggestions, to tell people apart. */
+  /** Under the name in Ajour's suggestions, to tell people apart. */
   email?: string;
 }
 
@@ -365,6 +376,19 @@ export interface BacklogSearchItemPeopleRequest {
 
 export interface BacklogSearchItemPeopleResult {
   /** In the id space of `mention:<id>`. */
+  people: BacklogPerson[];
+}
+
+export interface BacklogSearchAssigneesRequest {
+  sourceId: string;
+  /** Empty for the item's likely assignees, which need only Work Items (Read). */
+  query: string;
+  /** 1 to 20. */
+  limit: number;
+}
+
+export interface BacklogSearchAssigneesResult {
+  /** At most 20, by uniqueName, the id `writeSettle` takes as `assignee`. */
   people: BacklogPerson[];
 }
 

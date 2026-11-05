@@ -4,9 +4,11 @@ import {
   deleteAzureItemComment,
   editAzureItemComment,
   identitiesBaseUrl,
+  searchAzureAssignees,
   searchAzureItemPeople,
   setAzureItemCommentReaction,
 } from "../src/comments.ts";
+import { searchAssignees } from "../src/plugin.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   parsePriorityLevelRanges,
@@ -463,6 +465,115 @@ describe("searching Azure DevOps people", () => {
     });
 
     await expect(search("ana")).rejects.toThrow("Azure DevOps request failed (401)");
+  });
+
+  describe("for the settle dialog's Assignee field", () => {
+    const ANA_ASSIGNEE = { id: "ana@contoso.com", displayName: "Ana Silva", email: "ana@contoso.com" };
+    const ALEX_ASSIGNEE = { id: "alex@contoso.com", displayName: "Alex Martin", email: "alex@contoso.com" };
+    const CARLA_ASSIGNEE = { id: "carla@contoso.com", displayName: "Carla Diaz", email: "carla@contoso.com" };
+
+    async function assignees(query: string, limit = 8) {
+      return (await searchAzureAssignees(config(), { sourceId: SOURCE_ID, query, limit })).people;
+    }
+
+    it("answers a bare search with the item's and the project's people by uniqueName, skipping anyone without one", async () => {
+      const searches = fakePeople({
+        item: itemWithPeople,
+        comments: brunoComments,
+        projectItems: projectWithCarla,
+        projectPeople: carlaAndAna,
+      });
+      const connection = {
+        id: "connection-1",
+        pluginId: "azure_devops",
+        label: "Main connection",
+        tenantLabel: "Contoso",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        connectedAt: 0,
+        config: { organizationUrl: ORG, personalAccessToken: "secret", queryScope: "assigned_to_me" },
+      };
+
+      // Bruno's comment names him without a uniqueName, so he can't be assigned.
+      await expect(
+        searchAssignees(connection, { sourceId: SOURCE_ID, query: "", limit: 8 }),
+      ).resolves.toEqual({ people: [ANA_ASSIGNEE, ALEX_ASSIGNEE, CARLA_ASSIGNEE] });
+      expect(searches).toHaveLength(0);
+    });
+
+    it("searches the organization for a typed query, while mentions keep identity ids", async () => {
+      const searches = fakePeople({
+        item: itemWithPeople,
+        identities: () => json({
+          value: [
+            {
+              id: "44444444-4444-4444-4444-444444444444",
+              providerDisplayName: "Alba Reyes",
+              properties: {
+                Domain: { $value: "7a394543-62fd-4274-a7d2-8fac775942b6" },
+                Account: { $value: "alba@contoso.com" },
+                Mail: { $value: "alba@contoso.com" },
+              },
+            },
+            { id: ME, providerDisplayName: "Alex Martin", properties: { Account: { $value: "alex@contoso.com" } } },
+            {
+              id: "55555555-5555-5555-5555-555555555555",
+              providerDisplayName: "Alan Dupont",
+              properties: { Domain: { $value: "CONTOSO" }, Account: { $value: "adupont" } },
+            },
+            { id: "77777777-7777-7777-7777-777777777777", providerDisplayName: "Alfred Nobody" },
+          ],
+        }),
+      });
+
+      expect(await assignees("al")).toEqual([
+        ALEX_ASSIGNEE,
+        { id: "alba@contoso.com", displayName: "Alba Reyes", email: "alba@contoso.com" },
+        { id: "CONTOSO\\adupont", displayName: "Alan Dupont" },
+      ]);
+      expect(searches.map((url) => url.searchParams.get("filterValue"))).toEqual(["al"]);
+      // Alfred has no account to assign by, but can still be mentioned.
+      expect((await search("al")).map((person) => person.id)).toEqual([
+        ME,
+        "44444444-4444-4444-4444-444444444444",
+        "55555555-5555-5555-5555-555555555555",
+        "77777777-7777-7777-7777-777777777777",
+      ]);
+    });
+
+    it("finds the item's and the project's people when the token can't search identities", async () => {
+      fakePeople({
+        item: itemWithPeople,
+        projectItems: projectWithCarla,
+        projectPeople: carlaAndAna,
+        identities: () => new Response("Unauthorized", { status: 401 }),
+      });
+
+      expect(await assignees("silva")).toEqual([ANA_ASSIGNEE]);
+      expect(await assignees("diaz")).toEqual([CARLA_ASSIGNEE]);
+    });
+
+    it("returns at most the limit, and never more than 20", async () => {
+      fakePeople({
+        projectItems: projectWithCarla,
+        projectPeople: () =>
+          json({
+            value: Array.from({ length: 25 }, (_, index) => ({
+              id: index + 1,
+              fields: {
+                "System.AssignedTo": {
+                  id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
+                  displayName: `Person ${index}`,
+                  uniqueName: `person${index}@contoso.com`,
+                },
+              },
+            })),
+          }),
+      });
+
+      expect(await assignees("", 3)).toHaveLength(3);
+      expect(await assignees("", 50)).toHaveLength(20);
+    });
   });
 
   it("finds the identities host for each kind of organization URL", () => {

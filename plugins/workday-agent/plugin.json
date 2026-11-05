@@ -31,7 +31,11 @@
           "label": "Commit to Workday",
           "placement": "commit-week",
           "prompt": "prompts/commit-week.md",
-          "tools": ["get_week_changes", "get_week_status", "mark_entries_committed"],
+          "tools": [
+            "get_week_changes",
+            "get_week_status",
+            "mark_entries_committed"
+          ],
           "estimateMinutes": 10,
           "weekLink": "{{settings.timesheetUrl}}",
           "settings": [

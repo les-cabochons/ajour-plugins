@@ -3,6 +3,7 @@
 // which attaches the personal token, so the plugin never holds it.
 import { parseChronopsMe, parseChronopsSnapshot } from "./chronops.ts";
 import {
+  PROJECT_SOURCE_BOUNDS,
   isAjourRequestError,
   type AjourResponse,
   type PluginConnection,
@@ -148,6 +149,9 @@ export async function syncProjects(
     tasks: snapshot.projects.reduce((count, project) => count + project.tasks.length, 0),
     hoursAvailable: snapshot.me?.hoursAvailable ?? false,
   });
-  const cursor = response.headers["etag"];
+  // Ajour refuses the whole result for a cursor it cannot keep, so an ETag
+  // that is empty or too long means no cursor: the next sync reads it all.
+  const etag = response.headers["etag"];
+  const cursor = etag && etag.length <= PROJECT_SOURCE_BOUNDS.cursor ? etag : undefined;
   return { snapshot, ...(cursor === undefined ? {} : { cursor }) };
 }

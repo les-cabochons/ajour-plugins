@@ -56,9 +56,14 @@ function cut(text: string, max: number) {
 /**
  * An id is never cut, since a cut one would name something else next time.
  * The contract puts no bound on ChronOps ids, so this is the one place the
- * two sides can disagree.
+ * two sides can disagree. Ajour trims it and links by it, so a blank one
+ * stops the sync with the reason.
  */
-function remoteId(id: string, what: string) {
+function remoteId(rawId: string, what: string) {
+  const id = rawId.trim();
+  if (!id) {
+    throw new Error(`ChronOps sent a blank ${what}. Ajour links projects and tasks by it, so the sync stops here.`);
+  }
   if (id.length > PROJECT_SOURCE_BOUNDS.remoteId) {
     throw new Error(`ChronOps ${what} "${id.slice(0, 20)}\u2026" is longer than ${PROJECT_SOURCE_BOUNDS.remoteId} characters, the most Ajour accepts.`);
   }
@@ -72,7 +77,20 @@ function remoteId(id: string, what: string) {
  * without figures for the period, has no budget to show. ChronOps marks it
  * Unconfigured and leaves capHours null, and either is enough here.
  */
-function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
+/**
+ * The first day of the report's month, YYYY-MM-DD, from the report's own
+ * date rather than UTC's, as ChronOps counts its month where it runs.
+ */
+function monthStart(reportAt: string) {
+  return `${reportAt.slice(0, 7)}-01`;
+}
+
+/**
+ * A monthly budget's figures cover the report's month, which `since`
+ * tells Ajour. ChronOps gives no start for an annual period, so an annual
+ * budget goes without one.
+ */
+function mapBudget(budget: ChronopsBudget, reportMonth: string): ProjectSourceBudget | undefined {
   if (budget.status === "Unconfigured" || budget.capHours === null) return undefined;
   const status = BUDGET_STATUS[budget.status];
   if (budget.mode === "annual" && budget.spentBudget !== null) {
@@ -91,14 +109,17 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
     consumed: budget.consumedHours,
     ...(budget.remainingHours !== null ? { remaining: budget.remainingHours } : {}),
     status,
+    ...(budget.mode === "monthly" ? { since: reportMonth } : {}),
   };
 }
 
 function mapTask(task: ChronopsTask): ProjectSourceTask {
   const group = nonBlank(task.phase);
+  const id = remoteId(task.id, "task id");
   return {
-    remoteId: remoteId(task.id, "task id"),
-    name: cut(task.name, PROJECT_SOURCE_BOUNDS.name),
+    remoteId: id,
+    // Ajour refuses a blank name, so a task ChronOps left unnamed goes by its id.
+    name: cut(nonBlank(task.name) ?? id, PROJECT_SOURCE_BOUNDS.name),
     ...(group !== undefined ? { group: cut(group, PROJECT_SOURCE_BOUNDS.group) } : {}),
     closed: task.closed,
     billable: task.billable,
@@ -108,15 +129,17 @@ function mapTask(task: ChronopsTask): ProjectSourceTask {
   };
 }
 
-function mapProject(project: ChronopsProject): ProjectSourceProject {
-  const budget = mapBudget(project.budget);
+function mapProject(project: ChronopsProject, reportMonth: string): ProjectSourceProject {
+  const budget = mapBudget(project.budget, reportMonth);
   const client = nonBlank(project.client);
-  const url = projectUrl(project.code);
   // The code is the remote id, so the remote id's bound, the tighter of the two, applies.
+  const code = remoteId(project.code, "project code");
+  const url = projectUrl(code);
   return {
-    remoteId: remoteId(project.code, "project code"),
-    code: project.code,
-    name: cut(project.name, PROJECT_SOURCE_BOUNDS.name),
+    remoteId: code,
+    code,
+    // Ajour refuses a blank name, so a project ChronOps left unnamed goes by its code.
+    name: cut(nonBlank(project.name) ?? code, PROJECT_SOURCE_BOUNDS.name),
     ...(client !== undefined ? { client: cut(client, PROJECT_SOURCE_BOUNDS.client) } : {}),
     ...(url !== undefined ? { url } : {}),
     // ChronOps may not know. Ajour archives a complete project, so unknown stays open.
@@ -141,10 +164,12 @@ function checkCounts(snapshot: ChronopsSnapshot) {
 
 export function mapChronopsSnapshot(snapshot: ChronopsSnapshot): ProjectSourceSnapshot {
   checkCounts(snapshot);
+  const reportMonth = monthStart(snapshot.reportAt);
   return {
     source: { label: SOURCE_LABEL, url: CHRONOPS_HOME_URL },
     asOf: snapshot.reportAt,
-    me: { hoursAvailable: snapshot.me.workerLinked, hoursNote: HOURS_NOTE },
-    projects: snapshot.projects.map(mapProject),
+    // myHours is the current month's only.
+    me: { hoursAvailable: snapshot.me.workerLinked, hoursNote: HOURS_NOTE, hoursSince: reportMonth },
+    projects: snapshot.projects.map((project) => mapProject(project, reportMonth)),
   };
 }

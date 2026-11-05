@@ -29,6 +29,33 @@ just verify
 Ajour imports `src/plugin.mjs` directly, so there is nothing to build. The
 plugin depends on no Ajour source code.
 
+## Plugin API 4
+
+The plugin runs on **plugin API 4**, in a dedicated worker inside a sandboxed
+renderer. It declares no network and no connection fields, loads when needed
+(`runtime.start`), and its source is pure: no import, no Node built-in or
+global, no `fetch`. A test fails on any of them. Ajour admits an API 4 package
+in development builds only, until the release that switches every plugin to
+API 4 (les-cabochons/ajour#403). The import contract is unchanged.
+
+`types.check.ts` holds `plugin.json` to the API 4 manifest type of
+`@ajour/plugin-sdk`. The SDK is not on npm yet, so the packed package is
+vendored in the repository's `vendor/ajour-plugin-sdk-0.1.0.tgz`, shared by
+every plugin, and installed as a `file:../../vendor/...` dev dependency. See
+`vendor/README.md` for the Ajour commit it was built from. To refresh it:
+
+```sh
+# in an Ajour checkout
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @ajour/plugin-sdk build
+cd packages/plugin-sdk && pnpm pack --pack-destination <this repo>/vendor
+# point each plugin's package.json at the new file, run `just install`, and
+# update the commit in vendor/README.md
+```
+
+Once the SDK is published, swap the `file:` dependency for a version range and
+delete the root `vendor/`.
+
 The official plugin source lists it as coming soon, without files. To try it,
 run `just package workday-project-data` from the repository root and install
 `plugins/workday-project-data/package/workday-project-data-<version>.ajour-connector`

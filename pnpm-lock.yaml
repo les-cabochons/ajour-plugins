@@ -70,9 +70,20 @@ importers:
 
   plugins/workday-agent: {}
 
-  plugins/workday-project-data: {}
+  plugins/workday-project-data:
+    devDependencies:
+      '@ajour/plugin-sdk':
+        specifier: file:../../vendor/ajour-plugin-sdk-0.1.0.tgz
+        version: file:vendor/ajour-plugin-sdk-0.1.0.tgz
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
 
 packages:
+
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz':
+    resolution: {integrity: sha512-RHOa1J2cq58N0kyFWwM3NjZQ6lS1osSI5EpM7jA5g0tnxCVWueEgEPyus1ZEOGSMZNr55Z2d3mkRlevRTE8ilA==, tarball: file:vendor/ajour-plugin-sdk-0.1.0.tgz}
+    version: 0.1.0
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
@@ -510,6 +521,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz': {}
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 

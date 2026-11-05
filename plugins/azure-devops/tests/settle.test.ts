@@ -263,6 +263,64 @@ describe("Azure DevOps settle", () => {
     ]);
   });
 
+  it("writes the assignee's uniqueName with the state and priority in one update", async () => {
+    const azure = fakeAzureDevOps({
+      items: { 7: task("Fix login", "Active", { "Microsoft.VSTS.Common.Priority": 2 }) },
+      fields: [
+        { name: "Priority", referenceName: "Microsoft.VSTS.Common.Priority", type: "integer" },
+      ],
+    });
+
+    const result = await writeAzureSettle(buildConnection({ priorityFieldName: "Priority" }), {
+      sourceId: sourceId(7),
+      state: "Resolved",
+      priority: "low",
+      assignee: "ana@contoso.com",
+    });
+
+    expect(azure.patches).toEqual([
+      {
+        id: 7,
+        body: [
+          { op: "add", path: "/fields/System.State", value: "Resolved" },
+          { op: "add", path: "/fields/Microsoft.VSTS.Common.Priority", value: 4 },
+          { op: "add", path: "/fields/System.AssignedTo", value: "ana@contoso.com" },
+        ],
+      },
+    ]);
+    expect(result).toEqual({
+      state: "Resolved",
+      stateCategory: "Resolved",
+      stateDone: false,
+      priority: "low",
+    });
+  });
+
+  it("writes an assignee alone, and unassigns with the empty value that resets an identity field", async () => {
+    const azure = fakeAzureDevOps({ items: { 7: task("Fix login", "Active") } });
+    const connection = buildConnection();
+
+    await writeAzureSettle(connection, { sourceId: sourceId(7), assignee: "ana@contoso.com" });
+    await writeAzureSettle(connection, { sourceId: sourceId(7), assignee: null });
+
+    expect(azure.patches.map((patch) => patch.body)).toEqual([
+      [{ op: "add", path: "/fields/System.AssignedTo", value: "ana@contoso.com" }],
+      [{ op: "add", path: "/fields/System.AssignedTo", value: "" }],
+    ]);
+  });
+
+  it("refuses a write with nothing to change and a blank assignee, before writing", async () => {
+    const azure = fakeAzureDevOps({ items: { 7: task("Fix login", "Active") } });
+
+    await expect(writeAzureSettle(buildConnection(), { sourceId: sourceId(7) })).rejects.toThrow(
+      "A settle write needs a state, a priority or an assignee.",
+    );
+    await expect(
+      writeAzureSettle(buildConnection(), { sourceId: sourceId(7), assignee: "  " }),
+    ).rejects.toThrow("An assignee needs a uniqueName");
+    expect(azure.patches).toEqual([]);
+  });
+
   it("returns the priority level after a state-only write applies a workflow rule", async () => {
     const azure = fakeAzureDevOps({
       items: { 7: task("Fix login", "Active", { "Custom.MSPriority": "50" }) },

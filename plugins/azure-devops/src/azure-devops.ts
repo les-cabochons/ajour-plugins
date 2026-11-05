@@ -1,5 +1,6 @@
 import type {
   AzureDevOpsQueryScope,
+  BacklogPerson,
   ConnectorImportCandidateInput,
   ConnectorPluginSyncResult,
   ConnectorSyncFieldUpdate,
@@ -148,6 +149,40 @@ export function normalizeDisplayValue(value: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+/** An account name that is an email, as Azure DevOps names most users. */
+export function emailOf(...candidates: unknown[]) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && /^[^\s@]+@[^\s@]+$/.test(candidate.trim())) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
+/** The longest id, name or email Ajour takes for an assignee. */
+const MAX_ASSIGNEE_TEXT = 400;
+
+/**
+ * An identity as an assignee, by its uniqueName, the id `System.AssignedTo`
+ * takes on write. None without a uniqueName, or with one too long for Ajour.
+ */
+export function assigneeOf(
+  identity: unknown,
+  email?: string,
+): BacklogPerson | undefined {
+  if (!identity || typeof identity !== "object") return undefined;
+  const { uniqueName, displayName } = identity as { uniqueName?: unknown; displayName?: unknown };
+  const id = typeof uniqueName === "string" ? uniqueName.trim() : "";
+  if (!id || id.length > MAX_ASSIGNEE_TEXT) return undefined;
+  const name = (typeof displayName === "string" && displayName.trim()) || id;
+  const mail = email ?? emailOf(id);
+  return {
+    id,
+    displayName: name.slice(0, MAX_ASSIGNEE_TEXT),
+    ...(mail && mail.length <= MAX_ASSIGNEE_TEXT ? { email: mail } : {}),
+  };
 }
 
 function normalizeDescriptionValue(value: unknown, format: unknown): string | undefined {
@@ -607,6 +642,7 @@ function mapWorkItemToCandidate(
   const state = normalizeDisplayValue(workItem.fields?.["System.State"]);
   const workItemType = normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]);
   const assignedTo = normalizeDisplayValue(workItem.fields?.["System.AssignedTo"]);
+  const assignee = assigneeOf(workItem.fields?.["System.AssignedTo"]);
   const projectName = getProjectName(workItem);
   const priority = fieldReferences?.priorityFieldReferenceName
     ? priorityLevelForValue(
@@ -657,6 +693,7 @@ function mapWorkItemToCandidate(
       stateCategory,
       stateDone: false,
       assignedTo,
+      ...(assignee ? { assignee } : {}),
       priority,
       originalEstimateHours,
       remainingEstimateHours,
@@ -705,6 +742,7 @@ function mapWorkItemToCandidate(
     stateCategory,
     stateDone: false,
     assignedTo,
+    ...(assignee ? { assignee } : {}),
     priority,
     originalEstimateHours,
     remainingEstimateHours,
@@ -736,13 +774,20 @@ async function describeWorkItemStates(
 
 async function fetchAzureDevOpsSyncContext(
   config: AzureDevOpsConnectionInput,
+  sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
   const priorityField = await resolveAzureFieldMetadata(config, config.priorityFieldName);
   const originalEstimateField = await resolveAzureFieldMetadata(config, config.originalEstimateFieldName);
   const remainingEstimateField = await resolveAzureFieldMetadata(config, config.remainingEstimateFieldName);
   const completedEstimateField = await resolveAzureFieldMetadata(config, config.completedEstimateFieldName);
-  const baseIds = await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
+  const baseIds = sourceIds
+    ? sourceIds.map(sourceId => {
+        const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
+        if (id === null) throw new Error("The item does not belong to this Azure DevOps connection.");
+        return id;
+      })
+    : await executeWiqlQuery(config, buildBaseWiqlQuery(config.queryScope));
   if (baseIds.length === 0) {
     return {
       items: [],
@@ -1179,8 +1224,9 @@ async function findDoneWorkItems(
 export async function syncAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
   workItems: ConnectorSyncWorkItem[] = [],
+  options?: { sourceIds?: string[] },
 ): Promise<ConnectorPluginSyncResult> {
-  const syncContext = await fetchAzureDevOpsSyncContext(config);
+  const syncContext = await fetchAzureDevOpsSyncContext(config, options?.sourceIds);
   const workItemUpdates = await buildAzureWorkItemUpdates(config, syncContext, workItems);
   // Last, so the sync's earlier requests keep their order.
   const doneItems = await findDoneWorkItems(config, syncContext, workItems);

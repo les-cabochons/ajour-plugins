@@ -148,6 +148,10 @@ export function assertConnectorPluginManifest(manifest) {
     manifest.capabilities.connector?.settle,
     "Connector manifest capabilities.connector.settle",
   );
+  assertOptionalBoolean(
+    manifest.capabilities.connector?.assign,
+    "Connector manifest capabilities.connector.assign",
+  );
   const description = manifest.capabilities.connector?.description;
   if (description !== undefined) {
     assertRecord(description, "Connector manifest capabilities.connector.description");

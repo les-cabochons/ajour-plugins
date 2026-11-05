@@ -21,9 +21,9 @@ function unknownSlots(text, task) {
     );
 }
 
-test("the manifest is an agent-task plugin with project properties for API 4", () => {
+test("the manifest is an agent-task plugin with project and task properties for API 4", () => {
   assert.equal(manifest.apiVersion, 4);
-  assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties"]);
+  assert.deepEqual(Object.keys(manifest.capabilities).sort(), ["agentTask", "projectProperties", "taskProperties"]);
   // No code, so no entrypoint, and no network or connection for the broker.
   for (const key of ["entrypoint", "network", "connectionFields", "connectionAccess", "runtime"]) {
     assert.equal(manifest[key], undefined, key);
@@ -53,7 +53,7 @@ for (const task of tasks) {
 
 /** The Ajour MCP tools each task declares: what its prompt tells the agent to call. */
 const declaredTools = {
-  "commit-week": ["get_week_changes", "list_time_entries", "mark_entries_committed"],
+  "commit-week": ["get_week_changes", "get_week_status", "mark_entries_committed"],
   "submit-week": ["get_week_status", "submit_week"],
 };
 /** Session tools are always allowed and never declared. */
@@ -94,11 +94,42 @@ test("the submit prompt repeats the commit prompt's shared rules word for word",
     ['1. Send update_session: "Opening Workday."', "say what the page shows."],
     ["Ajour gives hours as decimal numbers with a dot", "when you compare Workday's hours with Ajour's."],
     ["A change may have projectFullName and projectProperties.", "it is a short name only Ajour knows."],
-    ["Find a change's time type in Workday.", "Match the task by taskName."],
+    ["A change may have taskProperties.", "Workday gets that Workday task."],
+    ["Find a change's time type in Workday.", "never fall back to taskName."],
+    ["An entry's comment has two lines.", "such a comment matches the same values."],
     ["To add an entry, open the entry dialog from the day itself.", "check the entry shows in the day with the right hours."],
   ]) {
     assert.ok(submit.includes(block(commit, start, end)), `submit-week.md differs from commit-week.md from "${start}"`);
   }
+});
+
+test("a task maps to a Workday task by a task property that defaults to its name", () => {
+  assert.deepEqual(
+    manifest.capabilities.taskProperties.fields.map((field) => [field.id, field.defaultFrom]),
+    [["task", "name"]],
+  );
+});
+
+test("both prompts read the Workday task from that property, and use taskName only without it", async () => {
+  for (const name of ["commit-week.md", "submit-week.md"]) {
+    const prompt = await readFile(new URL(`prompts/${name}`, root), "utf8");
+    assert.match(prompt, /Match the task by taskProperties\["workday-agent"\]\.task\. Match it by taskName only when the change has no taskProperties/, name);
+  }
+});
+
+test("the commit prompt finds an entry by its ID on a day in any time type, so a remapped task's entry moves", async () => {
+  const commit = await readFile(new URL("prompts/commit-week.md", root), "utf8");
+  assert.match(commit, /Find an entry by its externalId on a day, in any time type\./);
+  assert.match(commit, /\*\*Updated\*\*, moved to another day/);
+  assert.doesNotMatch(commit, /the committed day and time type, only when it differs/);
+  assert.match(commit, /When it holds more, an earlier run stopped halfway/);
+});
+
+test("after a refused mark, the commit prompt reads the committed values again instead of reusing the first read", async () => {
+  const commit = await readFile(new URL("prompts/commit-week.md", root), "utf8");
+  assert.match(commit, /look in committedEntries for this entryId/);
+  assert.match(commit, /Never reuse the time type of the change you read first/);
+  assert.doesNotMatch(commit, /list_time_entries has no Workday name or code/);
 });
 
 test("the submit prompt never presses a Workday Submit button", async () => {

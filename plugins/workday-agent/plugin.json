@@ -1,6 +1,6 @@
 {
   "id": "workday-agent",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "apiVersion": 4,
   "displayName": "Workday (agent)",
   "description": "Commits your Ajour week changes to the Workday timesheet, and submits the week, through a coding agent and a Chrome window. Unofficial: it drives Workday's web page and breaks when the page changes. It never signs in for you.",
@@ -13,6 +13,17 @@
         { "id": "code", "label": "Workday code", "defaultFrom": "code" }
       ]
     },
+    "taskProperties": {
+      "section": "Workday",
+      "fields": [
+        {
+          "id": "task",
+          "label": "Workday task",
+          "defaultFrom": "name",
+          "helpText": "Leave it on Same name when Workday has a task with this name. Otherwise Workday gets the task you pick, and each comment starts with this task's name."
+        }
+      ]
+    },
     "agentTask": {
       "tasks": [
         {
@@ -20,7 +31,7 @@
           "label": "Commit to Workday",
           "placement": "commit-week",
           "prompt": "prompts/commit-week.md",
-          "tools": ["get_week_changes", "list_time_entries", "mark_entries_committed"],
+          "tools": ["get_week_changes", "get_week_status", "mark_entries_committed"],
           "estimateMinutes": 10,
           "weekLink": "{{settings.timesheetUrl}}",
           "settings": [

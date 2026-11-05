@@ -45,7 +45,7 @@ The manifest declares `apiVersion: 4`. It has no `entrypoint`, no `runtime`, no 
 | --- | --- | --- |
 | Commit to Workday | `get_week_changes` | Reads the added, updated and deleted entries of the week. |
 | | `mark_entries_committed` | Marks each change once Workday saved it. |
-| | `list_time_entries` | Looks up an entry after Ajour refuses a mark, to make Workday match it. |
+| | `get_week_status` | Looks up an entry after Ajour refuses a mark, to make Workday match it. |
 | Check Workday and submit | `get_week_status` | Reads the pace, the committed entries and the week's version. |
 | | `submit_week` | Submits and locks the week in Ajour. |
 

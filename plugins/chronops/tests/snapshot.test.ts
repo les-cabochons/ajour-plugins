@@ -172,6 +172,15 @@ describe("mapChronopsSnapshot", () => {
     expect(() => mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks }] })).toThrow(/task id .* longer than 100/);
   });
 
+  it("leaves out a project link longer than Ajour takes, and keeps the project", () => {
+    const [acme] = fixture.projects;
+    // 100 characters fit the remote id, but each é is 6 once encoded in the link.
+    const code = "\u00e9".repeat(100);
+    const [project] = mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, code }] }).projects;
+    expect(project!.code).toBe(code);
+    expect(project!.url).toBeUndefined();
+  });
+
   it("refuses more projects or tasks than Ajour takes in one snapshot", () => {
     const [acme] = fixture.projects;
     const projects = Array.from({ length: 201 }, (_, index) => ({ ...acme!, code: `P-${index}` }));

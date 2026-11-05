@@ -40,6 +40,8 @@ A name, client or phase longer than Ajour accepts is cut, with an
 ellipsis. A project code or task id longer than 100 characters, more than
 200 projects or more than 10,000 tasks fail the sync with a message, since
 Ajour would refuse the snapshot.
+A project whose ChronOps link would pass Ajour's 500 characters, which only
+a long code with accented letters can do, has no link in Ajour.
 
 Each failure is one message on the connection page, with no retry: a
 revoked or expired token (401), a forbidden request (403, with the

@@ -1,6 +1,6 @@
 {
   "name": "@les-cabochons/ajc-ics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -38,6 +38,7 @@
     "verify": "corepack pnpm test && corepack pnpm typecheck"
   },
   "devDependencies": {
+    "@ajour/plugin-sdk": "file:../../vendor/ajour-plugin-sdk-0.1.0.tgz",
     "@types/node": "^22.13.10",
     "ical.js": "2.2.1",
     "typescript": "^5.8.2",

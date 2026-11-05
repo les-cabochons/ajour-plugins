@@ -104,6 +104,58 @@ function assertConnectionField(field, index) {
   assertOptionalFiniteNumber(field.step, label + ".step");
 }
 
+// Headers a plugin may never set, whatever its manifest lists. Ajour's broker
+// refuses them, so a manifest that lists one never installs.
+const deniedRequestHeaders = new Set([
+  "authorization",
+  "cookie",
+  "host",
+  "forwarded",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+]);
+
+/**
+ * The part of plugin API 4 this plugin relies on: the calendar address is a
+ * secret address, the connection's whole address. Ajour's broker fetches it
+ * for a GET with an empty path, follows its redirects and never gives the
+ * address away, so the manifest names the secret field and nothing else to
+ * reach: no base address, endpoints or hosts. Ajour validates the whole
+ * manifest again at install.
+ */
+function assertNetwork(manifest) {
+  assertRecord(manifest.network, "Connector manifest network");
+  const { auth, requestHeaders, ...rest } = manifest.network;
+  const fields = new Map(manifest.connectionFields.map((field) => [field.id, field]));
+
+  assertRecord(auth, "Connector manifest network.auth");
+  if (auth.scheme !== "secretAddress") {
+    throw new Error("Connector manifest network.auth must use the secretAddress scheme.");
+  }
+  const secretField = fields.get(auth.secretField);
+  if (secretField?.secret !== true || secretField.type !== "url") {
+    throw new Error("Connector manifest network.auth.secretField must be a secret url connection field.");
+  }
+
+  const extra = Object.keys(rest);
+  if (extra.length > 0) {
+    throw new Error(
+      "A secret address is the connection's whole address, so network may not declare " + extra.join(", ") + ".",
+    );
+  }
+
+  if (!Array.isArray(requestHeaders)) {
+    throw new Error("Connector manifest network.requestHeaders must be a list.");
+  }
+  requestHeaders.forEach((header, index) => {
+    assertString(header, "Connector manifest network.requestHeaders[" + index + "]", { min: 1, max: 100 });
+    if (deniedRequestHeaders.has(header.toLowerCase())) {
+      throw new Error("Connector manifest network.requestHeaders may not list " + header + ".");
+    }
+  });
+}
+
 export function assertConnectorPluginManifest(manifest) {
   assertRecord(manifest, "Connector manifest");
   assertString(manifest.id, "Connector manifest id", {
@@ -118,8 +170,8 @@ export function assertConnectorPluginManifest(manifest) {
     pattern: pluginVersionPattern,
   });
 
-  if (manifest.apiVersion !== 3) {
-    throw new Error("Connector manifest API version must be 3.");
+  if (manifest.apiVersion !== 4) {
+    throw new Error("Connector manifest API version must be 4.");
   }
 
   assertRecord(manifest.capabilities, "Connector manifest capabilities");
@@ -157,5 +209,6 @@ export function assertConnectorPluginManifest(manifest) {
   }
 
   manifest.connectionFields.forEach(assertConnectionField);
+  assertNetwork(manifest);
   return manifest;
 }

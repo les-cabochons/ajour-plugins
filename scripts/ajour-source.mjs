@@ -75,6 +75,7 @@ export const CATALOG_CAPABILITIES = Object.freeze([
   "calendar",
   "team",
   "agentTask",
+  "projectSource",
   "schema",
 ]);
 const STATUSES = ["available", "coming-soon", "deprecated"];
@@ -89,6 +90,7 @@ const PLUGIN_CAPABILITIES = {
   calendar: "calendar",
   team: "team",
   agentTask: "agentTask",
+  projectSource: "projectSource",
   schema: "schema",
   projectDataShape: "schema",
   projectProperties: null,

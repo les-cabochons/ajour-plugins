@@ -11,6 +11,7 @@ import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import {
+  catalogCapabilities,
   createConnectorArchive,
   createTar,
   decryptSigningKey,
@@ -402,6 +403,19 @@ describe("release and verify", () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /^Commit or stash your changes first/);
     assert.doesNotMatch(result.stderr, /at .*ajour-source\.mjs/);
+  });
+});
+
+describe("capability names", () => {
+  test("a project source plugin lists projectSource, so a release can include ChronOps", () => {
+    assert.deepEqual(catalogCapabilities({ projectSource: {} }), ["projectSource"]);
+    const source = validSource();
+    source.plugins[0].capabilities = ["projectSource"];
+    assert.deepEqual(validateSource(source), []);
+  });
+
+  test("a capability ajour.json has no name for is refused", () => {
+    assert.throws(() => catalogCapabilities({ somethingNew: {} }), /has no name for/);
   });
 });
 

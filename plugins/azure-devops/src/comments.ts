@@ -1,5 +1,7 @@
 import {
+  assigneeOf,
   createAuthHeader,
+  emailOf,
   getProjectName,
   parseAzureWorkItemId,
   requestAzureDevOps,
@@ -18,6 +20,8 @@ import type {
   BacklogPostItemCommentRequest,
   BacklogPostItemCommentResult,
   BacklogReaction,
+  BacklogSearchAssigneesRequest,
+  BacklogSearchAssigneesResult,
   BacklogSearchItemPeopleRequest,
   BacklogSearchItemPeopleResult,
   BacklogSetItemCommentReactionRequest,
@@ -354,20 +358,44 @@ interface AzureIdentity2 {
   properties?: Record<string, { $value?: unknown } | undefined>;
 }
 
-/** An account name that is an email, as Azure DevOps names most users. */
-function emailOf(...candidates: unknown[]) {
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && /^[^\s@]+@[^\s@]+$/.test(candidate.trim())) {
-      return candidate.trim();
-    }
-  }
-  return undefined;
+/**
+ * Someone a people search found, by identity id, the id mentions take. The
+ * uniqueName is the one `System.AssignedTo` takes.
+ */
+interface FoundPerson extends BacklogPerson {
+  uniqueName?: string;
 }
 
-/** A person for the @ suggestions, with their email when there is one. */
-function suggestion(identity: AzureIdentity): BacklogPerson {
+/** Someone on the item or in its project, with their email when there is one. */
+function suggestion(identity: AzureIdentity): FoundPerson {
   const email = emailOf(identity.uniqueName);
-  return { ...person(identity), ...(email ? { email } : {}) };
+  const uniqueName = identity.uniqueName?.trim();
+  return {
+    ...person(identity),
+    ...(email ? { email } : {}),
+    ...(uniqueName ? { uniqueName } : {}),
+  };
+}
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The uniqueName work item fields give someone the identities service found.
+ * An Entra ID or Microsoft account's is its account, an email. A Windows
+ * account's on Azure DevOps Server is `DOMAIN\account`.
+ */
+function uniqueNameOf(identity: AzureIdentity2) {
+  const text = (name: string) => {
+    const value = identity.properties?.[name]?.$value;
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const account = text("Account");
+  const domain = text("Domain");
+  if (!account) return undefined;
+  // Entra ID names the tenant by its id as the domain.
+  return domain && !account.includes("@") && !GUID.test(domain)
+    ? `${domain}\\${account}`
+    : account;
 }
 
 /**
@@ -551,39 +579,40 @@ async function searchOrganizationPeople(
   const data = (await response.json()) as { value?: AzureIdentity2[] };
   return (data.value ?? [])
     .filter((identity) => identity.id && identity.isActive !== false && !identity.isContainer)
-    .map((identity): BacklogPerson => {
+    .map((identity): FoundPerson => {
       const email = emailOf(
         identity.properties?.Mail?.$value,
         identity.properties?.Account?.$value,
       );
+      const uniqueName = uniqueNameOf(identity);
       return {
         id: identity.id!.toLowerCase(),
         displayName: (identity.customDisplayName || identity.providerDisplayName || "").trim(),
         ...(email ? { email } : {}),
+        ...(uniqueName ? { uniqueName } : {}),
       };
     })
     .filter((person) => person.displayName);
 }
 
 /**
- * People for the editor's @ suggestions. Azure DevOps has no list of people
- * allowed on one work item, so the people on the item come first, then the
- * people active in its project, both matched by any part of their name, then
- * the organization's users. A bare @ asks with no query and gets the item's
- * and the project's people, without searching the organization. A search
- * may fail or run out of time, such as when the token can't read
- * identities; only all of them failing fails.
+ * The people a search finds for a work item, in order, each maybe more than
+ * once. Azure DevOps has no list of people allowed on one work item, so the
+ * people on the item come first, then the people active in its project, both
+ * matched by any part of their name, then the organization's users. An empty
+ * query gets the item's and the project's people, without searching the
+ * organization. A search may fail or run out of time, such as when the token
+ * can't read identities; only all of them failing fails.
  */
-export async function searchAzureItemPeople(
+async function findPeople(
   config: AzureDevOpsConnectionInput,
-  request: BacklogSearchItemPeopleRequest,
-  /** Tests pass a shorter one. */
-  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
-): Promise<BacklogSearchItemPeopleResult> {
+  request: { sourceId: string; query: string },
+  timeoutMs: number,
+): Promise<FoundPerson[]> {
   const id = requireWorkItemId(config, request.sourceId);
   const query = request.query.trim().replace(/\s+/g, " ");
   const queryWords = nameWords(query);
-  if (query && queryWords.length === 0) return { people: [] };
+  if (query && queryWords.length === 0) return [];
 
   const knownProject = projectOfSourceId(config, request.sourceId);
   const item = fetchItemPeople(config, id, knownProject, timeoutMs);
@@ -613,18 +642,65 @@ export async function searchAzureItemPeople(
   }
   const matching = (people: AzureIdentity[]) =>
     people.filter((identity) => matchesQuery(identity, queryWords)).map(suggestion);
-  const found = [
+  return [
     ...(onItem.status === "fulfilled" ? matching(onItem.value.people) : []),
     ...(onProject.status === "fulfilled" ? matching(onProject.value) : []),
     ...(inOrganization.status === "fulfilled" ? inOrganization.value : []),
   ];
+}
+
+/** Each person once, by id, in the order found, up to `limit`. */
+function distinctPeople(people: BacklogPerson[], limit: number) {
   const seen = new Set<string>();
-  const people = found.filter((candidate) => {
-    if (seen.has(candidate.id)) return false;
-    seen.add(candidate.id);
-    return true;
-  });
-  return { people: people.slice(0, request.limit) };
+  return people
+    .filter((candidate) => {
+      const key = candidate.id.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+/**
+ * People for the editor's @ suggestions, by identity id, the id mentions
+ * take. A bare @ asks with no query. See `findPeople` for where they come
+ * from.
+ */
+export async function searchAzureItemPeople(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSearchItemPeopleRequest,
+  /** Tests pass a shorter one. */
+  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
+): Promise<BacklogSearchItemPeopleResult> {
+  const found = await findPeople(config, request, timeoutMs);
+  const mentions = found.map(({ id, displayName, email }): BacklogPerson => ({
+    id,
+    displayName,
+    ...(email ? { email } : {}),
+  }));
+  return { people: distinctPeople(mentions, request.limit) };
+}
+
+/** The most people `searchAssignees` returns, whatever the limit. */
+const MAX_ASSIGNEES = 20;
+
+/**
+ * People to assign the item to, for the settle dialog's Assignee field: the
+ * same people as the @ suggestions, from the same searches, but by
+ * uniqueName, the id `System.AssignedTo` takes. Anyone without a uniqueName
+ * is skipped. An empty query needs only Work Items (Read); a typed one also
+ * searches the organization, which needs Identity (Read).
+ */
+export async function searchAzureAssignees(
+  config: AzureDevOpsConnectionInput,
+  request: BacklogSearchAssigneesRequest,
+  /** Tests pass a shorter one. */
+  timeoutMs = PEOPLE_REQUEST_TIMEOUT_MS,
+): Promise<BacklogSearchAssigneesResult> {
+  const found = await findPeople(config, request, timeoutMs);
+  const assignees = found.flatMap((candidate) => assigneeOf(candidate, candidate.email) ?? []);
+  return { people: distinctPeople(assignees, Math.min(request.limit, MAX_ASSIGNEES)) };
 }
 
 /** How many of a settled item's newest comments a sync reads. */

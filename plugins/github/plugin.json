@@ -108,7 +108,6 @@
         "label": "GitHub REST API",
         "forms": [
           { "whenHost": "github.com", "host": "api.github.com", "keepBasePath": false },
-          { "whenHost": "www.github.com", "host": "api.github.com", "keepBasePath": false },
           { "host": "{host}", "pathPrefix": "/api/v3", "keepBasePath": false }
         ],
         "endpoints": [
@@ -125,7 +124,6 @@
         "label": "GitHub GraphQL API",
         "forms": [
           { "whenHost": "github.com", "host": "api.github.com", "keepBasePath": false },
-          { "whenHost": "www.github.com", "host": "api.github.com", "keepBasePath": false },
           { "host": "{host}", "pathPrefix": "/api", "keepBasePath": false }
         ],
         "endpoints": [{ "method": "POST", "path": "/graphql" }]

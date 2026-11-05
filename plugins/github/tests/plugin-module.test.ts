@@ -287,18 +287,23 @@ describe("the source entrypoint", () => {
   });
 });
 
-// API 3 upgraded both public HTTP hosts to HTTPS. API 4's broker inherits
-// the saved scheme and exposes no derived-host scheme override. These remain
-// blocked on broker support, not on the www host mapping fixed below.
-it.todo("validates and syncs a saved http://github.com connection over HTTPS");
-it.todo("validates and syncs a saved http://www.github.com connection over HTTPS");
-
-// API 3 matched URL.hostname, ignoring case, port, path, query and fragment.
-describe.each([
+// API 3 normalized these public addresses to HTTPS api.github.com. The host
+// upgrade must rewrite saved connections before API 4 operations use them.
+for (const savedUrl of [
+  "http://github.com",
+  "http://www.github.com",
   "https://www.github.com",
-  "https://GITHUB.COM:443/ignored/path?query=1#fragment",
   "https://WWW.GITHUB.COM:8443/ignored/path?query=1#fragment",
   "https://github.com:8443",
+]) {
+  it.todo(
+    `validates and syncs a saved ${savedUrl} connection after migration in les-cabochons/ajour#403`,
+  );
+}
+
+// Case, default port and path normalization on github.com remain supported.
+describe.each([
+  "https://GITHUB.COM:443/ignored/path?query=1#fragment",
 ])("an existing API 3 connection saved with %s", (savedUrl) => {
   it("validates and syncs pull requests through the broker at api.github.com", async () => {
     currentBase = savedUrl;

@@ -1,5 +1,5 @@
-// The checks Ajour applies to plugin.json when it installs the plugin, so a
-// broken manifest fails here instead of in the user's Ajour.
+// Local packaging checks for this plugin. Ajour owns the canonical API 4
+// schema; the vendored SDK does not export its manifest validator.
 const pluginIdPattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const pluginVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const connectorFieldTypes = new Set([
@@ -209,6 +209,18 @@ function assertNetwork(manifest) {
       assertRecord(form, formLabel);
       assertString(form.host, formLabel + ".host", { min: 1, max: 253 });
       assertOptionalString(form.whenHost, formLabel + ".whenHost", { min: 1, max: 253 });
+      // A literal target must stay under the host the connection names.
+      // This plugin uses exact host rules, not wildcard or {match} forms.
+      if (
+        !form.host.includes("{host}") &&
+        (!form.whenHost ||
+          (form.host !== form.whenHost &&
+            !form.host.endsWith("." + form.whenHost)))
+      ) {
+        throw new Error(
+          formLabel + ".host must equal whenHost or be a subdomain of it.",
+        );
+      }
       assertOptionalString(form.pathPrefix, formLabel + ".pathPrefix", { min: 1, max: 200 });
       if (form.whenHost === undefined && formIndex !== host.forms.length - 1) {
         throw new Error(formLabel + " must be the last form to leave out whenHost.");

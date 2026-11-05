@@ -122,7 +122,6 @@ describe("network declaration", () => {
     const rest = validManifest.network.derivedHosts.find((host: { id: string }) => host.id === "rest");
     expect(rest.forms).toEqual([
       { whenHost: "github.com", host: "api.github.com", keepBasePath: false },
-      { whenHost: "www.github.com", host: "api.github.com", keepBasePath: false },
       { host: "{host}", pathPrefix: "/api/v3", keepBasePath: false },
     ]);
     expect(rest.endpoints.map((endpoint: { method: string; path: string }) => `${endpoint.method} ${endpoint.path}`)).toEqual([
@@ -139,7 +138,6 @@ describe("network declaration", () => {
     const graphql = validManifest.network.derivedHosts.find((host: { id: string }) => host.id === "graphql");
     expect(graphql.forms).toEqual([
       { whenHost: "github.com", host: "api.github.com", keepBasePath: false },
-      { whenHost: "www.github.com", host: "api.github.com", keepBasePath: false },
       { host: "{host}", pathPrefix: "/api", keepBasePath: false },
     ]);
     expect(graphql.endpoints).toEqual([{ method: "POST", path: "/graphql" }]);
@@ -173,6 +171,17 @@ describe("network declaration", () => {
     ["no derived hosts", (manifest: any) => (manifest.network.derivedHosts = [])],
     ["two derived hosts with one id", (manifest: any) => (manifest.network.derivedHosts[1].id = "rest")],
     ["a derived host without forms", (manifest: any) => (manifest.network.derivedHosts[0].forms = [])],
+    [
+      "a www host mapped to a sibling API host",
+      (manifest: any) =>
+        (manifest.network.derivedHosts[0].forms[0].whenHost = "www.github.com"),
+    ],
+    [
+      "a port-bearing host mapped to a literal API host",
+      (manifest: any) =>
+        (manifest.network.derivedHosts[0].forms[0].whenHost =
+          "github.com:8443"),
+    ],
     ["a form without whenHost before another", (manifest: any) => manifest.network.derivedHosts[0].forms.reverse()],
     ["an absolute endpoint", (manifest: any) => (manifest.network.derivedHosts[1].endpoints[0].path = "https://evil.test/graphql")],
     ["an endpoint with a trailing slash", (manifest: any) => (manifest.network.derivedHosts[1].endpoints[0].path = "/graphql/")],

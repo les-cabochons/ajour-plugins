@@ -287,6 +287,64 @@ describe("the source entrypoint", () => {
   });
 });
 
+// API 3 upgraded both public HTTP hosts to HTTPS. API 4's broker inherits
+// the saved scheme and exposes no derived-host scheme override. These remain
+// blocked on broker support, not on the www host mapping fixed below.
+it.todo("validates and syncs a saved http://github.com connection over HTTPS");
+it.todo("validates and syncs a saved http://www.github.com connection over HTTPS");
+
+// API 3 matched URL.hostname, ignoring case, port, path, query and fragment.
+describe.each([
+  "https://www.github.com",
+  "https://GITHUB.COM:443/ignored/path?query=1#fragment",
+  "https://WWW.GITHUB.COM:8443/ignored/path?query=1#fragment",
+  "https://github.com:8443",
+])("an existing API 3 connection saved with %s", (savedUrl) => {
+  it("validates and syncs pull requests through the broker at api.github.com", async () => {
+    currentBase = savedUrl;
+    received = [];
+    const saved = connection();
+
+    const validation = await moduleExports.validateConnection!(saved, {
+      capabilities: ["codeHost"],
+    });
+    expect(validation.normalizedConfig.hostUrl).toBe(new URL(savedUrl).origin);
+    expect(received.map((request) => request.url)).toEqual([
+      "https://api.github.com/graphql",
+    ]);
+
+    // Sync the original saved connection, without applying validation's normalized config.
+    received = [];
+    const result = await moduleExports.syncPullRequests!(saved, {
+      tracked: [],
+    });
+    expect(result.viewer.login).toBe("octocat");
+    expect(result.pullRequests).toHaveLength(1);
+    expect(result.pullRequests[0]).toMatchObject({
+      repository: "acme/api",
+      number: 1,
+      lastPushedAt: Date.parse("2026-10-02T10:00:00Z"),
+    });
+    expect(
+      received
+        .filter((request) => request.method === "POST")
+        .map((request) => request.url),
+    ).toEqual(expect.arrayContaining(["https://api.github.com/graphql"]));
+    expect(
+      received.every(
+        (request) => new URL(request.url).origin === "https://api.github.com",
+      ),
+    ).toBe(true);
+    expect(
+      received
+        .filter((request) => request.method === "GET")
+        .map((request) => request.url),
+    ).toEqual([
+      "https://api.github.com/repos/alice/api/activity?ref=refs%2Fheads%2Fchange%2Frate-limits&per_page=100&direction=desc",
+    ]);
+  });
+});
+
 describe.each([
   {
     name: "GitHub.com",

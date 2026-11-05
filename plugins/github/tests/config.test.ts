@@ -25,7 +25,6 @@ describe("GitHub connection config", () => {
   it("rejects a GitHub URL that is not an HTTP address", () => {
     expect(() => build({ hostUrl: "not a url" })).toThrow(/GitHub URL/);
     expect(() => build({ hostUrl: "ftp://github.com" })).toThrow(/HTTP or HTTPS/);
-    expect(() => build({ hostUrl: "https://www.github.com" })).toThrow(/without www/);
   });
 
   it("rejects a scope that is not an owner or owner/repository", () => {

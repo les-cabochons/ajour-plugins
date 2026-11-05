@@ -53,10 +53,6 @@ function parseHostUrl(value: unknown) {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error('GitHub field "GitHub URL" must use HTTP or HTTPS.');
   }
-  if (url.hostname.toLowerCase() === "www.github.com") {
-    // Ajour derives api.github.com from github.com alone.
-    throw new Error('GitHub field "GitHub URL" for GitHub.com is https://github.com, without www.');
-  }
   return url.origin;
 }
 

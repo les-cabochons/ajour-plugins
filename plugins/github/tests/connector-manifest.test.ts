@@ -121,7 +121,8 @@ describe("network declaration", () => {
   it("derives the REST host: api.github.com on GitHub.com, /api/v3 on Enterprise Server", () => {
     const rest = validManifest.network.derivedHosts.find((host: { id: string }) => host.id === "rest");
     expect(rest.forms).toEqual([
-      { whenHost: "github.com", host: "api.{host}", keepBasePath: false },
+      { whenHost: "github.com", host: "api.github.com", keepBasePath: false },
+      { whenHost: "www.github.com", host: "api.github.com", keepBasePath: false },
       { host: "{host}", pathPrefix: "/api/v3", keepBasePath: false },
     ]);
     expect(rest.endpoints.map((endpoint: { method: string; path: string }) => `${endpoint.method} ${endpoint.path}`)).toEqual([
@@ -137,7 +138,8 @@ describe("network declaration", () => {
   it("derives the GraphQL host: api.github.com/graphql on GitHub.com, /api/graphql on Enterprise Server", () => {
     const graphql = validManifest.network.derivedHosts.find((host: { id: string }) => host.id === "graphql");
     expect(graphql.forms).toEqual([
-      { whenHost: "github.com", host: "api.{host}", keepBasePath: false },
+      { whenHost: "github.com", host: "api.github.com", keepBasePath: false },
+      { whenHost: "www.github.com", host: "api.github.com", keepBasePath: false },
       { host: "{host}", pathPrefix: "/api", keepBasePath: false },
     ]);
     expect(graphql.endpoints).toEqual([{ method: "POST", path: "/graphql" }]);

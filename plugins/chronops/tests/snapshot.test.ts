@@ -70,7 +70,7 @@ describe("mapChronopsSnapshot", () => {
     expect(CHRONOPS_HOME_URL).toMatch(/^https:\/\//);
     for (const project of snapshot.projects) expect(project.url).toMatch(/^https:\/\/[^/]+\/a\/wepoint-chronops-app\/timetracking\/projects\//);
     expect(snapshot.asOf).toBe("2026-10-31T23:59:59.000Z");
-    expect(snapshot.me).toEqual({ hoursAvailable: true, hoursNote: HOURS_NOTE });
+    expect(snapshot.me).toEqual({ hoursAvailable: true, hoursNote: HOURS_NOTE, hoursSince: "2026-10-01" });
     expect(snapshot.projects).toHaveLength(3);
   });
 
@@ -85,7 +85,7 @@ describe("mapChronopsSnapshot", () => {
       complete: false,
       startsOn: "2026-01-01",
       endsOn: "2026-12-31",
-      budget: { unit: "hours", total: 40, consumed: 31.5, remaining: 8.5, status: "warning" },
+      budget: { unit: "hours", total: 40, consumed: 31.5, remaining: 8.5, status: "warning", since: "2026-10-01" },
       tasks: [
         { remoteId: "1001", name: "Billet #101 - Login", group: "Support", closed: false, billable: true, estimateHours: 8, assigned: true, myHours: 5.25 },
         { remoteId: "1002", name: "Billet #102 - Export CSV", group: "Support", closed: false, billable: true, estimateHours: 4, assigned: false },
@@ -126,6 +126,21 @@ describe("mapChronopsSnapshot", () => {
     expect(() =>
       mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks: [{ ...acme!.tasks[0]!, id: " " }] }] }),
     ).toThrow(/blank task id/);
+  });
+
+  it("dates a monthly budget and the user's hours from the first of the report's month", () => {
+    // reportAt is 2026-10-31: ChronOps' month, and myHours, start on October 1.
+    const monthly = mapChronopsSnapshot(withBudget({ mode: "monthly" }));
+    expect(monthly.me).toMatchObject({ hoursSince: "2026-10-01" });
+    expect(monthly.projects[0]!.budget).toMatchObject({ since: "2026-10-01" });
+    // The report's own date counts, not UTC's: late on the 31st in Montreal is still October.
+    const late = mapChronopsSnapshot({ ...fixture, reportAt: "2026-10-31T22:30:00-04:00" });
+    expect(late.me).toMatchObject({ hoursSince: "2026-10-01" });
+  });
+
+  it("leaves an annual budget undated, since ChronOps does not give the year's start", () => {
+    const annual = mapChronopsSnapshot(withBudget({ mode: "annual" }));
+    expect(annual.projects[0]!.budget).not.toHaveProperty("since");
   });
 
   it("says a budget's health in Ajour's words", () => {
@@ -210,6 +225,6 @@ describe("mapChronopsSnapshot", () => {
 
   it("says why my hours are missing when the user has no linked worker", () => {
     const unlinked = mapChronopsSnapshot({ ...fixture, me: { ...fixture.me, workerLinked: false } });
-    expect(unlinked.me).toEqual({ hoursAvailable: false, hoursNote: HOURS_NOTE });
+    expect(unlinked.me).toEqual({ hoursAvailable: false, hoursNote: HOURS_NOTE, hoursSince: "2026-10-01" });
   });
 });

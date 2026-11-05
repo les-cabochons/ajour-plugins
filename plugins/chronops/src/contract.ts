@@ -43,7 +43,12 @@ export interface ProjectSourceSnapshot {
   /** When the source's hours are from, ISO 8601. */
   asOf: string;
   /** Whether the source knows the user's own hours, and why not when it does not. */
-  me?: { hoursAvailable: boolean; hoursNote?: string };
+  me?: {
+    hoursAvailable: boolean;
+    hoursNote?: string;
+    /** YYYY-MM-DD, the first day `myHours` covers. Without it, Ajour compares every day. */
+    hoursSince?: string;
+  };
   projects: ProjectSourceProject[];
 }
 
@@ -72,6 +77,8 @@ export interface ProjectSourceBudget {
   /** May be negative. `status` says whether that is over. */
   remaining?: number;
   status?: ProjectSourceBudgetStatus;
+  /** YYYY-MM-DD, the first day `consumed` covers. Without it, Ajour counts every day. */
+  since?: string;
 }
 
 export interface ProjectSourceTask {

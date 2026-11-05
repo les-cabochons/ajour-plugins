@@ -77,7 +77,20 @@ function remoteId(rawId: string, what: string) {
  * without figures for the period, has no budget to show. ChronOps marks it
  * Unconfigured and leaves capHours null, and either is enough here.
  */
-function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
+/**
+ * The first day of the report's month, YYYY-MM-DD, from the report's own
+ * date rather than UTC's, as ChronOps counts its month where it runs.
+ */
+function monthStart(reportAt: string) {
+  return `${reportAt.slice(0, 7)}-01`;
+}
+
+/**
+ * A monthly budget's figures cover the report's month, which `since`
+ * tells Ajour. ChronOps gives no start for an annual period, so an annual
+ * budget goes without one.
+ */
+function mapBudget(budget: ChronopsBudget, reportMonth: string): ProjectSourceBudget | undefined {
   if (budget.status === "Unconfigured" || budget.capHours === null) return undefined;
   const status = BUDGET_STATUS[budget.status];
   if (budget.mode === "annual" && budget.spentBudget !== null) {
@@ -96,6 +109,7 @@ function mapBudget(budget: ChronopsBudget): ProjectSourceBudget | undefined {
     consumed: budget.consumedHours,
     ...(budget.remainingHours !== null ? { remaining: budget.remainingHours } : {}),
     status,
+    ...(budget.mode === "monthly" ? { since: reportMonth } : {}),
   };
 }
 
@@ -115,8 +129,8 @@ function mapTask(task: ChronopsTask): ProjectSourceTask {
   };
 }
 
-function mapProject(project: ChronopsProject): ProjectSourceProject {
-  const budget = mapBudget(project.budget);
+function mapProject(project: ChronopsProject, reportMonth: string): ProjectSourceProject {
+  const budget = mapBudget(project.budget, reportMonth);
   const client = nonBlank(project.client);
   // The code is the remote id, so the remote id's bound, the tighter of the two, applies.
   const code = remoteId(project.code, "project code");
@@ -150,10 +164,12 @@ function checkCounts(snapshot: ChronopsSnapshot) {
 
 export function mapChronopsSnapshot(snapshot: ChronopsSnapshot): ProjectSourceSnapshot {
   checkCounts(snapshot);
+  const reportMonth = monthStart(snapshot.reportAt);
   return {
     source: { label: SOURCE_LABEL, url: CHRONOPS_HOME_URL },
     asOf: snapshot.reportAt,
-    me: { hoursAvailable: snapshot.me.workerLinked, hoursNote: HOURS_NOTE },
-    projects: snapshot.projects.map(mapProject),
+    // myHours is the current month's only.
+    me: { hoursAvailable: snapshot.me.workerLinked, hoursNote: HOURS_NOTE, hoursSince: reportMonth },
+    projects: snapshot.projects.map((project) => mapProject(project, reportMonth)),
   };
 }

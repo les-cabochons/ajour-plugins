@@ -32,7 +32,8 @@ MineHunter's answer to Ajour's generic snapshot:
 | annual budget | money, `maxBudget` and `spentBudget`, or hours when ChronOps has no money figures |
 | no cap (`capHours` null, status Unconfigured) | no budget |
 | task `id`, `phase`, `assignedToMe` | `remoteId`, `group`, `assigned` |
-| `myHours` | `myHours`, the current month only |
+| `myHours` | `myHours`, the current month only, with `me.hoursSince` the first of the report's month |
+| monthly budget period | `budget.since`, the first of the report's month; an annual budget has none, since ChronOps gives no start |
 | `reportAt` | `asOf`, the moment the figures are from |
 | `me.workerLinked` | whether Ajour can compare your hours, with a note on linking your Workday name otherwise |
 

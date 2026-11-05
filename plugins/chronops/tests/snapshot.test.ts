@@ -43,6 +43,10 @@ describe("parseChronopsSnapshot", () => {
       [withBudget({ consumedHours: -1 }), /budget\.consumedHours should be a number of 0 or more/],
       [{ ...fixture, reportAt: "yesterday" }, /snapshot\.reportAt should be an ISO 8601/],
       [{ ...fixture, projects: [{ ...acme!, contractStart: "2026-1-1" }] }, /projects\[0\]\.contractStart should be a date/],
+      // Date.parse rolls these over to March 2 and May 1. The schema refuses them.
+      [{ ...fixture, projects: [{ ...acme!, contractStart: "2026-02-30" }] }, /projects\[0\]\.contractStart should be a date/],
+      [{ ...fixture, projects: [{ ...acme!, contractEnd: "2026-04-31" }] }, /projects\[0\]\.contractEnd should be a date/],
+      [{ ...fixture, reportAt: "2026-02-30T12:00:00Z" }, /snapshot\.reportAt should be an ISO 8601/],
       [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, id: "" }] }] }, /tasks\[0\]\.id should be a non-empty string/],
       [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, myHours: -2 }] }] }, /tasks\[0\]\.myHours/],
       [{ ...fixture, extra: true }, /snapshot\.extra should be left out/],

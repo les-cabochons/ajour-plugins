@@ -95,14 +95,24 @@ const nonEmpty: Reader<string> = (value, path) =>
   typeof value === "string" && value.length > 0 ? value : fail(path, "a non-empty string");
 const nonNegative: Reader<number> = (value, path) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fail(path, "a number of 0 or more");
+/**
+ * Whether a string starts with a real calendar day, YYYY-MM-DD. Date.parse
+ * alone is not enough, since it rolls 2026-02-30 over to March 2.
+ */
+function isCalendarDay(text: string) {
+  const [year, month, day] = text.slice(0, 10).split("-").map(Number) as [number, number, number];
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
 // The schema's "date" and "date-time" formats, as the contract tests read them.
 const date: Reader<string> = (value, path) =>
-  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && isCalendarDay(value)
     ? value
     : fail(path, "a date, YYYY-MM-DD");
 const dateTime: Reader<string> = (value, path) =>
   typeof value === "string" &&
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+  isCalendarDay(value) &&
   !Number.isNaN(Date.parse(value))
     ? value
     : fail(path, "an ISO 8601 date and time");

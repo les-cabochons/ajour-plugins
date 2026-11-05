@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "apiVersion": 3,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -9,6 +9,7 @@
   "capabilities": {
     "connector": {
       "settle": true,
+      "assign": true,
       "comments": { "edit": true, "delete": true, "reactions": ["like", "dislike", "heart", "hooray", "laugh", "confused"], "mentions": true },
       "description": { "write": true, "maxLength": 1000000 }
     },
@@ -18,7 +19,7 @@
     { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Contoso Platform" },
     { "id": "tenantLabel", "label": "Tenant", "type": "text", "required": true, "placeholder": "Contoso Entra" },
     { "id": "organizationUrl", "label": "Organization URL", "type": "url", "required": true, "placeholder": "https://dev.azure.com/your-org" },
-    { "id": "personalAccessToken", "label": "Personal Access Token", "type": "password", "required": true, "secret": true, "placeholder": "PAT with Work Items and Code access", "helpText": "Work items need Work Items (Read, or Read & write to write back and to post comments), and mentions need Identity (Read) to suggest anyone beyond the people on the item. Pull requests need Code (Read), and Project and Team (Read) for team review requests." },
+    { "id": "personalAccessToken", "label": "Personal Access Token", "type": "password", "required": true, "secret": true, "placeholder": "PAT with Work Items and Code access", "helpText": "Work items need Work Items (Read, or Read & write to write back, assign and post comments), and mentions and assignees need Identity (Read) to suggest anyone beyond the people on the item. Pull requests need Code (Read), and Project and Team (Read) for team review requests." },
     {
       "id": "queryScope",
       "label": "Import scope",

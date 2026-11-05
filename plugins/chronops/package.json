@@ -1,0 +1,17 @@
+{
+  "name": "@les-cabochons/ajp-chronops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "node --check contract/fake-minehunter.mjs",
+    "verify": "corepack pnpm typecheck && corepack pnpm test"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

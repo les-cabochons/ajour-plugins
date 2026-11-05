@@ -82,7 +82,7 @@ importers:
 packages:
 
   '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz':
-    resolution: {integrity: sha512-o/Yy6UyB2UwGch9Kozdju1vcbRHGKSuViZDkS9j33lPxmlP2XTqPh462XFbBf33l5DBXb7SBLtsvQpBcYzbm2g==, tarball: file:vendor/ajour-plugin-sdk-0.1.0.tgz}
+    resolution: {integrity: sha512-RHOa1J2cq58N0kyFWwM3NjZQ6lS1osSI5EpM7jA5g0tnxCVWueEgEPyus1ZEOGSMZNr55Z2d3mkRlevRTE8ilA==, tarball: file:vendor/ajour-plugin-sdk-0.1.0.tgz}
     version: 0.1.0
 
   '@jridgewell/sourcemap-codec@1.6.0':

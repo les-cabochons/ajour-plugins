@@ -174,10 +174,9 @@ describe("Azure DevOps connector priority field resolution", () => {
         },
       ],
     });
+    // One read of the field list resolves all three fields.
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(fieldListResponse.clone())
-      .mockResolvedValueOnce(fieldListResponse.clone())
       .mockResolvedValueOnce(fieldListResponse.clone())
       .mockResolvedValueOnce(
         jsonResponse({

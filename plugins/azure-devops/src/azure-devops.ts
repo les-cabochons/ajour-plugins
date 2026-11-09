@@ -532,9 +532,31 @@ function requireSingleFieldMatch(
   return undefined;
 }
 
+/** The organization's field list, read on first use and shared by later lookups. */
+export type AzureFieldList = () => Promise<AzureFieldDefinition[]>;
+
+/**
+ * Reads the organization's field list at most once, however many fields are
+ * resolved against it. The list can be large, so a sync reads it once.
+ */
+export function azureFieldList(config: AzureDevOpsConnectionInput): AzureFieldList {
+  let fields: Promise<AzureFieldDefinition[]> | undefined;
+  return () =>
+    (fields ??= requestAzureDevOps<AzureFieldListResponse>(
+      config,
+      "/_apis/wit/fields",
+      { query: { "api-version": "7.1" } },
+    ).then((response) => response.value ?? []));
+}
+
+/**
+ * Finds a configured field by reference name, then by display name. Pass the
+ * same `fieldList` to resolve several fields with one read of the list.
+ */
 export async function resolveAzureFieldMetadata(
   config: AzureDevOpsConnectionInput,
   configuredFieldName: string | undefined,
+  fieldList: AzureFieldList = azureFieldList(config),
 ): Promise<AzureResolvedFieldMetadata | undefined> {
   const normalizedConfiguredFieldName =
     normalizeConfiguredFieldName(configuredFieldName);
@@ -545,12 +567,7 @@ export async function resolveAzureFieldMetadata(
   const normalizedLookupValue = normalizeLookupValue(
     normalizedConfiguredFieldName,
   );
-  const response = await requestAzureDevOps<AzureFieldListResponse>(
-    config,
-    "/_apis/wit/fields",
-    { query: { "api-version": "7.1" } },
-  );
-  const fields = response.value ?? [];
+  const fields = await fieldList();
 
   const referenceNameMatch = requireSingleFieldMatch(
     normalizedConfiguredFieldName,
@@ -592,6 +609,30 @@ export async function resolveAzureFieldMetadata(
   throw new Error(
     `Azure DevOps field "${normalizedConfiguredFieldName}" was not found. Enter the display name shown in Azure DevOps or the exact reference name.`,
   );
+}
+
+/**
+ * The connection's priority and estimate fields, resolved in that order
+ * against one read of the field list.
+ */
+async function resolveMappedFields(config: AzureDevOpsConnectionInput) {
+  const fieldList = azureFieldList(config);
+  const resolve = (name: string | undefined) =>
+    resolveAzureFieldMetadata(config, name, fieldList);
+  const priorityField = await resolve(config.priorityFieldName);
+  const originalEstimateField = await resolve(config.originalEstimateFieldName);
+  const remainingEstimateField = await resolve(
+    config.remainingEstimateFieldName,
+  );
+  const completedEstimateField = await resolve(
+    config.completedEstimateFieldName,
+  );
+  return {
+    priorityField,
+    originalEstimateField,
+    remainingEstimateField,
+    completedEstimateField,
+  };
 }
 
 function mergeWorkItemBatchResponses(
@@ -991,22 +1032,12 @@ async function fetchAzureDevOpsSyncContext(
   sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
-  const priorityField = await resolveAzureFieldMetadata(
-    config,
-    config.priorityFieldName,
-  );
-  const originalEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.originalEstimateFieldName,
-  );
-  const remainingEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.remainingEstimateFieldName,
-  );
-  const completedEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.completedEstimateFieldName,
-  );
+  const {
+    priorityField,
+    originalEstimateField,
+    remainingEstimateField,
+    completedEstimateField,
+  } = await resolveMappedFields(config);
   const baseIds = sourceIds
     ? sourceIds.map((sourceId) => {
         const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
@@ -1385,22 +1416,12 @@ async function buildAzureWorkItemUpdates(
 export async function validateAzureDevOpsConnection(
   config: AzureDevOpsConnectionInput,
 ) {
-  const priorityField = await resolveAzureFieldMetadata(
-    config,
-    config.priorityFieldName,
-  );
-  const originalEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.originalEstimateFieldName,
-  );
-  const remainingEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.remainingEstimateFieldName,
-  );
-  const completedEstimateField = await resolveAzureFieldMetadata(
-    config,
-    config.completedEstimateFieldName,
-  );
+  const {
+    priorityField,
+    originalEstimateField,
+    remainingEstimateField,
+    completedEstimateField,
+  } = await resolveMappedFields(config);
   const ids = await executeWiqlQuery(
     config,
     buildBaseWiqlQuery(config.queryScope),

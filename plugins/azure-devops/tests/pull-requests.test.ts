@@ -350,6 +350,27 @@ describe("syncPullRequests", () => {
     expect(result.pullRequests[1]).toMatchObject({ closedAt: Date.parse("2026-10-03T00:00:00Z"), checks: "none" });
   });
 
+  it("reads only the checks of a tracked pull request that closed, not its threads or iterations", async () => {
+    const calls = stubFetch({
+      "_apis/connectionData": connectionData,
+      [ORG_PROBE]: { value: [] },
+      [`creatorId=${VIEWER}`]: { value: [] },
+      [`reviewerId=${VIEWER}`]: { value: [] },
+      "_apis/git/pullrequests/9?": pullRequest(9, { status: "completed", closedDate: "2026-10-03T00:00:00Z" }),
+      "_apis/policy/evaluations": { value: [] },
+    });
+
+    const result = await syncPullRequests(connection({ includeTeamReviewRequests: false }), {
+      tracked: [{ repository: "Fabrikam Web/api", number: 9 }],
+    });
+
+    expect(result.pullRequests).toMatchObject([
+      { number: 9, state: "merged", updatedAt: Date.parse("2026-10-03T00:00:00Z"), reviews: [], comments: [] },
+    ]);
+    expect(calls.filter((url) => url.includes("/pullRequests/9/"))).toEqual([]);
+    expect(calls.some((url) => url.includes(`artifactId=vstfs:///CodeReview/CodeReviewId/${PROJECT}/9`))).toBe(true);
+  });
+
   it("pages through search results", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => pullRequest(index + 1));
     const calls = stubFetch({

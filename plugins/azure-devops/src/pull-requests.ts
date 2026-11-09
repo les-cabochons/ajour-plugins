@@ -552,13 +552,21 @@ async function fetchTracked(client: AzureReposClient, ref: CodeHostPullRequestRe
   }
 }
 
+/**
+ * The threads, iterations and checks of a pull request. A closed one gets its
+ * checks only: Ajour reads its reviews, comments and pushes only while it is
+ * open, and shows a closed one's state, checks and last update, which its
+ * close date gives. That keeps a sync tracking many merged pull requests to
+ * one request each instead of three.
+ */
 async function fetchDetails(client: AzureReposClient, pullRequest: AzurePullRequest): Promise<PullRequestDetails> {
   const { project, id: repositoryId } = pullRequest.repository;
   const base = `/${encodeURIComponent(project.id)}/_apis/git/repositories/${encodeURIComponent(repositoryId)}/pullRequests/${pullRequest.pullRequestId}`;
   const artifactId = `vstfs:///CodeReview/CodeReviewId/${project.id}/${pullRequest.pullRequestId}`;
+  const open = pullRequest.status === "active";
   const [threads, iterations, evaluations] = await Promise.all([
-    client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION }),
-    client.get<{ value: AzureIteration[] }>(`${base}/iterations`, { "api-version": API_VERSION }),
+    open ? client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION }) : { value: [] },
+    open ? client.get<{ value: AzureIteration[] }>(`${base}/iterations`, { "api-version": API_VERSION }) : { value: [] },
     // Checks are optional facts: without policy access they read as none.
     client
       .get<{ value: AzurePolicyEvaluation[] }>(`/${encodeURIComponent(project.id)}/_apis/policy/evaluations`, {

@@ -105,6 +105,21 @@ describe("the requests each operation sends", () => {
     ).toBe(true);
   });
 
+  it("reads the field list once when a sync or a validation resolves several fields", async () => {
+    const fake = install();
+    const withPriority = connection(ALL_ACCESS, { priorityFieldName: "Priority" });
+
+    await plugin.validateConnection!(withPriority, {
+      capabilities: ["connector"],
+    });
+    await plugin.syncConnection!(withPriority, []);
+
+    // One read for the validation and one for the sync, each resolving two fields.
+    expect(
+      fake.requests.map(label).filter((request) => request === "GET /_apis/wit/fields"),
+    ).toHaveLength(2);
+  });
+
   it("syncs with WIQL, two batch reads, the states, and pushes an estimate as a JSON patch", async () => {
     const fake = install();
 

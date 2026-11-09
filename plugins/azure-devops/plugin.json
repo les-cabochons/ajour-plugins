@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",

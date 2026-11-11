@@ -6,7 +6,7 @@ import addFormats from "ajv-formats";
 import { startFakeMinehunter } from "../contract/fake-minehunter.mjs";
 
 // The contract between the chronops plugin and MineHunter's
-// GET /integration/ajour/snapshot route. Ajour never sees it.
+// GET /integration/snapshot route. Ajour never sees it.
 
 const contract = new URL("../contract/", import.meta.url);
 
@@ -61,7 +61,7 @@ const headers = { "X-ChronOps-Token": "fake-token", "X-ChronOps-Source": "ajour"
 
 test("the fake refuses a request without X-ChronOps-Token with 401", async (t) => {
   const fake = await withFake(t);
-  for (const path of ["/integration/me", "/integration/ajour/snapshot"]) {
+  for (const path of ["/integration/me", "/integration/snapshot"]) {
     const response = await fetch(`${fake.url}${path}`, { headers: { "X-ChronOps-Source": "ajour" } });
     assert.equal(response.status, 401, path);
     assert.deepEqual(await response.json(), { error: "a personal token is required" });
@@ -83,7 +83,7 @@ test("the fake serves /integration/me with the chosen scope and expiry", async (
 
 test("the fake serves the fixture as the snapshot, with an ETag", async (t) => {
   const fake = await withFake(t);
-  const response = await fetch(`${fake.url}/integration/ajour/snapshot`, { headers });
+  const response = await fetch(`${fake.url}/integration/snapshot`, { headers });
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /^application\/json/);
   const etag = response.headers.get("etag");
@@ -93,21 +93,21 @@ test("the fake serves the fixture as the snapshot, with an ETag", async (t) => {
 
 test("the fake answers 304 to a matching If-None-Match", async (t) => {
   const fake = await withFake(t);
-  const first = await fetch(`${fake.url}/integration/ajour/snapshot`, { headers });
+  const first = await fetch(`${fake.url}/integration/snapshot`, { headers });
   const etag = first.headers.get("etag");
 
-  const unchanged = await fetch(`${fake.url}/integration/ajour/snapshot`, { headers: { ...headers, "If-None-Match": etag } });
+  const unchanged = await fetch(`${fake.url}/integration/snapshot`, { headers: { ...headers, "If-None-Match": etag } });
   assert.equal(unchanged.status, 304);
   assert.equal(unchanged.headers.get("etag"), etag);
   assert.equal(await unchanged.text(), "");
 
-  const stale = await fetch(`${fake.url}/integration/ajour/snapshot`, { headers: { ...headers, "If-None-Match": '"stale"' } });
+  const stale = await fetch(`${fake.url}/integration/snapshot`, { headers: { ...headers, "If-None-Match": '"stale"' } });
   assert.equal(stale.status, 200);
 });
 
 test("the fake refuses an expired token with 401, as the Forwarder does", async (t) => {
   const expired = await withFake(t, { expiresAt: "2026-01-01T00:00:00.000Z" });
-  for (const path of ["/integration/me", "/integration/ajour/snapshot"]) {
+  for (const path of ["/integration/me", "/integration/snapshot"]) {
     const response = await fetch(`${expired.url}${path}`, { headers });
     assert.equal(response.status, 401, path);
     assert.deepEqual(await response.json(), { error: "expired personal token" });

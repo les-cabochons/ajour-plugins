@@ -40,7 +40,7 @@
     "baseAddress": { "field": "forwarderUrl", "allowOnPremises": true },
     "endpoints": [
       { "method": "GET", "path": "/integration/me" },
-      { "method": "GET", "path": "/integration/ajour/snapshot" }
+      { "method": "GET", "path": "/integration/snapshot" }
     ],
     "requestHeaders": ["X-ChronOps-Source", "If-None-Match"]
   },

@@ -1,12 +1,12 @@
 // A stand-in for MineHunter's Forwarder, for the chronops plugin's tests and
-// for trying the plugin against Ajour before MineHunter ships the route.
+// for trying the plugin against Ajour without MineHunter.
 //
 //   node contract/fake-minehunter.mjs [--port 8787] [--scope read|read-write] [--expires-at <ISO date>]
 //
 // It serves two routes, as MineHunter does:
 // - GET /integration/me, the token's user, with the scope and expiry chosen
 //   above, so the plugin can test its warnings.
-// - GET /integration/ajour/snapshot, fixture.json as is, with an ETag, and
+// - GET /integration/snapshot, fixture.json as is, with an ETag, and
 //   304 when If-None-Match matches.
 // Every request needs X-ChronOps-Token, any value, or gets 401, as does one
 // once the chosen expiry is past. A read token gets 403 on anything but GET,
@@ -55,7 +55,7 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
       send(404, JSON.stringify({ error: "not found" }));
     } else if (path === "/integration/me") {
       send(200, me);
-    } else if (path === "/integration/ajour/snapshot") {
+    } else if (path === "/integration/snapshot") {
       if (request.headers["if-none-match"] === etag) {
         response.writeHead(304, { ETag: etag });
         response.end();

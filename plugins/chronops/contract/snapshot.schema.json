@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/les-cabochons/ajour-plugins/plugins/chronops/contract/snapshot.schema.json",
   "title": "ChronOps snapshot for Ajour, version 2",
-  "description": "What MineHunter's GET /integration/ajour/snapshot returns to the chronops plugin: the caller's projects, their budget and their tasks, as ChronOps sees them. A change to this shape bumps version.",
+  "description": "What MineHunter's GET /integration/snapshot returns to the chronops plugin: the caller's projects, their budget and their tasks, as ChronOps sees them. A change to this shape bumps version.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "generatedAt", "reportAt", "me", "projects"],

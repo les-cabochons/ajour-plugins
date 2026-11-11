@@ -19,7 +19,7 @@ since Ajour only reads.
 
 ## What Ajour gets
 
-Every sync calls `GET /integration/ajour/snapshot` with the last `ETag` in
+Every sync calls `GET /integration/snapshot` with the last `ETag` in
 `If-None-Match`, so an unchanged snapshot costs one 304. The plugin maps
 MineHunter's answer to Ajour's generic snapshot:
 
@@ -55,13 +55,17 @@ be reached.
 
 ## Contract
 
-MineHunter's `GET /integration/ajour/snapshot` (PBI 337547) returns the
+MineHunter's `GET /integration/snapshot` (PBI 337547) returns the
 shape in [`contract/snapshot.schema.json`](contract/snapshot.schema.json).
-MineHunter implements that file. A change to the shape bumps its `version`,
-and the plugin refuses a version it does not know.
+MineHunter owns the contract and serves the same snapshot to every
+integration: the route has no consumer in its path, and
+`X-ChronOps-Source: ajour` only says who asks. The file here is the plugin's
+copy of MineHunter's `plugins/chronops/contract/snapshot.schema.json`. A
+change to the shape bumps its `version`, and the plugin refuses a version it
+does not know.
 
-The contract is between the plugin and MineHunter only. Ajour never sees it.
-The plugin maps it to Ajour's generic project source snapshot.
+Ajour never sees the contract. The plugin maps it to Ajour's generic project
+source snapshot.
 
 What the plugin expects of MineHunter's Forwarder, from its ADR-0030:
 
@@ -69,7 +73,7 @@ What the plugin expects of MineHunter's Forwarder, from its ADR-0030:
   `X-ChronOps-Source: ajour`. A missing, revoked or expired token gets 401.
 - `GET /integration/me` returns `{ email, login, scope, expiresAt }`, with
   `scope` either `read` or `read-write` and `expiresAt` an ISO date or null.
-- `GET /integration/ajour/snapshot` returns the snapshot with an `ETag`, and
+- `GET /integration/snapshot` returns the snapshot with an `ETag`, and
   304 when `If-None-Match` matches.
 - A read token gets 403 on anything but `GET`.
 - The Forwarder limits each caller to 10 requests a second.
@@ -88,8 +92,8 @@ and closed tasks. The tests check it against the schema.
 ## Fake MineHunter
 
 [`contract/fake-minehunter.mjs`](contract/fake-minehunter.mjs) serves the
-fixture the way MineHunter will, for the plugin's tests and for trying the
-plugin against Ajour before MineHunter ships the route. It refuses a request
+fixture the way MineHunter does, for the plugin's tests and for trying the
+plugin against Ajour without MineHunter. It refuses a request
 without `X-ChronOps-Token` with 401, as it does one past the expiry you
 choose, answers 403 to a write with a read token, serves `/integration/me`
 with the scope and expiry you choose, and answers 304 to a matching

@@ -6,7 +6,7 @@
       "id": "azure_devops",
       "name": "Azure DevOps",
       "description": "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector",
@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -42,13 +42,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "11a22d2b0806478acd131874fc5698c3a982c0e66e98293caa44a0bf86848595",
+          "sha256": "367922d9c187aed8b2b8597caf7c0f6a6514559df2a3aaf6f1ba5b9f02c342f2",
           "size": 1248
         },
         {
           "path": "plugin.json",
-          "sha256": "2aac8a9cb9d5c9354ccd2562af52d036ffe5aee6e54145d6e9c45304ed9779b1",
-          "size": 21511
+          "sha256": "aec4c115424247d366b39519c33fe418a32bdc939f4be12389e90d65c0f8c4c2",
+          "size": 21648
         },
         {
           "path": "src/azure-devops.ts",
@@ -146,7 +146,7 @@
       "id": "chronops",
       "name": "ChronOps",
       "description": "Bring your ChronOps projects, tasks and budgets into Ajour, read-only, through MineHunter's ChronOps Forwarder.",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "pluginApiVersion": 4,
       "capabilities": [
         "projectSource"
@@ -170,7 +170,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/chronops",
       "files": [
         {
@@ -180,13 +180,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "a1450be0ee26b150325051a7d5caac96d5cb6fab1298c52a32dacfd050d0c4d0",
+          "sha256": "d2994097bcb6f983978262df8663c361854e54191531fe46299227cebcedb763",
           "size": 1302
         },
         {
           "path": "plugin.json",
-          "sha256": "c767347925f5d02e61123ad0e570fc7d92ca99eef48c66da5938ac3cbdadc03d",
-          "size": 6600
+          "sha256": "dc0bec6faf4754988aff8a54ca3b57f5e26e0850745db4052cbba6c8b1105fbf",
+          "size": 6628
         },
         {
           "path": "src/chronops.ts",
@@ -214,7 +214,7 @@
       "id": "github",
       "name": "GitHub",
       "description": "Bring your GitHub issues into Ajour's backlog, and the pull requests you wrote or were asked to review.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector",
@@ -239,7 +239,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/github",
       "files": [
         {
@@ -249,13 +249,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "80eb9451a7c3ee9d3b13c48cd1df8abc67737d6d36b9da3522a4458cc554e5b0",
+          "sha256": "11b3f285c23d4516ec2147307404e7a671d72eb3efa16ec034f645eaac7dbf15",
           "size": 1178
         },
         {
           "path": "plugin.json",
-          "sha256": "4d137722f650bab3fc3fc5b6e74e2d4be3ae82c1d5d21b27ca225aac335562ba",
-          "size": 5068
+          "sha256": "02e2e11b688d0a6a25e8a97bd5ef48b64b1cceb2f7a203ff2d4ac0573f4facda",
+          "size": 5168
         },
         {
           "path": "src/config.ts",
@@ -298,7 +298,7 @@
       "id": "ics",
       "name": "Calendar address (ICS)",
       "description": "Suggest the meetings in your Google Calendar, Outlook or Exchange calendar as time entries, through the calendar's private address. Read-only.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "pluginApiVersion": 4,
       "capabilities": [
         "calendar"
@@ -322,7 +322,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/ics",
       "files": [
         {
@@ -332,13 +332,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "02f8f646972cfe9f2dbe6f0d38209e3f78d8befab2a1019be744130b6afc0e0c",
+          "sha256": "78781dd4653b678dcdb909cc25dc137dee7392d68dfaf161bf7395b7db1d4a67",
           "size": 1061
         },
         {
           "path": "plugin.json",
-          "sha256": "dfcd1f8829c897024d4c91758c690e78a64d8b9fdbb9be518952a9bd782f6d75",
-          "size": 2633
+          "sha256": "51e959b1a596bf61b9d2e6f89e4850d622b0cbf899bac942ebf15891a2df5039",
+          "size": 2609
         },
         {
           "path": "src/contract.ts",
@@ -386,7 +386,7 @@
       "id": "jira",
       "name": "Jira",
       "description": "Sync Jira issues into Ajour's local backlog and update estimates from Ajour.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector"
@@ -410,7 +410,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/jira",
       "files": [
         {
@@ -420,13 +420,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "1914c54f917df1a174cbb765ef170abc247a140dc94283019a88e8e068e29ca0",
+          "sha256": "afe21dd2e94e716024baf4c9ec9a4cc5e1f27702174d4136b10481783f23b805",
           "size": 1156
         },
         {
           "path": "plugin.json",
-          "sha256": "a0f0c8e7525dcc924af604e73810aa01ab6f66c78db345066cd4ff88713caf25",
-          "size": 4117
+          "sha256": "30d7c89619d07dedb02fe1fb8909c3096f6f11b13752f7c7fc11ae357e81fb5c",
+          "size": 4156
         },
         {
           "path": "src/adf-markdown.ts",
@@ -504,7 +504,7 @@
       "id": "workday-agent",
       "name": "Workday (agent)",
       "description": "Commit your Ajour week to the Workday web timesheet through a coding agent, Claude Code, Codex or OpenCode, in a Chrome window. Unofficial. It drives Workday's page, so it breaks when the page changes. It never signs in for you.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "pluginApiVersion": 4,
       "capabilities": [
         "agentTask"
@@ -530,7 +530,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "d6f16dd83dd253ed0c9b2f6c890e14cd0c12c3a5",
+      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
       "path": "plugins/workday-agent",
       "files": [
         {
@@ -540,13 +540,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "3dc0f90248b91fce5c287191e9818fcaae16a6f749f0d23c5f4ca49ec8af4230",
+          "sha256": "8b0ba3f7941b697b353b62cd07d66c4613947f56f98eb9d6cf94d3f099d7e862",
           "size": 1206
         },
         {
           "path": "plugin.json",
-          "sha256": "4cb97a932ce5a004d15cc24997e700fdb2b8bcdd88bfba2621c133058016db37",
-          "size": 3655
+          "sha256": "b7d833c6d5d796b198c263a1b229595055293ac4f93c06531cd201a1fbd6b61e",
+          "size": 3677
         },
         {
           "path": "prompts/commit-week.md",

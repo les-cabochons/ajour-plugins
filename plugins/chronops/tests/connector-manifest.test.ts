@@ -42,7 +42,7 @@ describe("project source manifest packaging contract", () => {
     expect(network.requestHeaders).toEqual(["X-ChronOps-Source", "If-None-Match"]);
     expect(network.endpoints).toEqual([
       { method: "GET", path: "/integration/me" },
-      { method: "GET", path: "/integration/ajour/snapshot" },
+      { method: "GET", path: "/integration/snapshot" },
     ]);
   });
 

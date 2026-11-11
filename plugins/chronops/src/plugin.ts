@@ -134,7 +134,7 @@ export async function syncProjects(
 ): Promise<ProjectSourceSyncResult> {
   const response = await forwarderGet(
     connection,
-    "/integration/ajour/snapshot",
+    "/integration/snapshot",
     request.cursor === undefined ? {} : { "If-None-Match": request.cursor },
   );
   if (response.status === 304) {

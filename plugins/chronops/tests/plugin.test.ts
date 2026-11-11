@@ -84,7 +84,7 @@ describe("syncProjects against the fake MineHunter", () => {
     const result = await syncProjects(connection, {});
     expect(result).toEqual({ snapshot: mapChronopsSnapshot(fixture), cursor: expect.stringMatching(/^"[^"]+"$/) });
     expect(ajour.requests).toEqual([
-      { method: "GET", path: "/integration/ajour/snapshot", headers: { "x-chronops-source": "ajour" } },
+      { method: "GET", path: "/integration/snapshot", headers: { "x-chronops-source": "ajour" } },
     ]);
   });
 

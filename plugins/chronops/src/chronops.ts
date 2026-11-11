@@ -17,7 +17,7 @@ export interface ChronopsMe {
   expiresAt: string | null;
 }
 
-/** `GET /integration/ajour/snapshot`. */
+/** `GET /integration/snapshot`. */
 export interface ChronopsSnapshot {
   version: 2;
   generatedAt: string;

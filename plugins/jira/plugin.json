@@ -1,6 +1,6 @@
 {
   "id": "jira",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "apiVersion": 4,
   "displayName": "Jira",
   "description": "Sync Jira issues into backlog.",
@@ -13,12 +13,12 @@
     }
   },
   "connectionFields": [
-    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Product backlog" },
-    { "id": "tenantLabel", "label": "Workspace", "type": "text", "required": true, "placeholder": "Acme Jira" },
-    { "id": "baseUrl", "label": "Site URL", "type": "url", "required": true, "placeholder": "https://your-domain.atlassian.net" },
-    { "id": "email", "label": "Email", "type": "text", "required": true, "placeholder": "name@example.com" },
-    { "id": "apiToken", "label": "API token", "type": "password", "required": true, "secret": true, "placeholder": "Atlassian API token", "helpText": "Syncing needs the Browse projects permission, or the read:jira-work scope for a scoped token. Writing estimates, settles and descriptions needs Edit issues, or write:jira-work." },
-    { "id": "projectKey", "label": "Project key", "type": "text", "placeholder": "Optional: ENG" },
+    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Name this connection" },
+    { "id": "tenantLabel", "label": "Workspace", "type": "text", "required": true, "placeholder": "Your workspace name" },
+    { "id": "baseUrl", "label": "Site URL", "type": "url", "required": true, "placeholder": "Paste your Jira site URL" },
+    { "id": "email", "label": "Email", "type": "text", "required": true, "placeholder": "Your Atlassian account email" },
+    { "id": "apiToken", "label": "API token", "type": "password", "required": true, "secret": true, "placeholder": "Paste an Atlassian API token", "helpText": "Syncing needs the Browse projects permission, or the read:jira-work scope for a scoped token. Writing estimates, settles and descriptions needs Edit issues, or write:jira-work." },
+    { "id": "projectKey", "label": "Project key", "type": "text", "placeholder": "Optional: one project key" },
     {
       "id": "queryScope",
       "label": "Import scope",

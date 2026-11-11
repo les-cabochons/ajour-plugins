@@ -10,8 +10,8 @@
     "projectSource": {}
   },
   "connectionFields": [
-    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "ChronOps" },
-    { "id": "tenantLabel", "label": "Organization", "type": "text", "required": true, "placeholder": "Wepoint" },
+    { "id": "label", "label": "Connection label", "type": "text", "required": true, "placeholder": "Name this connection" },
+    { "id": "tenantLabel", "label": "Organization", "type": "text", "required": true, "placeholder": "Your company name" },
     {
       "id": "forwarderUrl",
       "label": "Forwarder URL",
@@ -26,7 +26,7 @@
       "type": "password",
       "required": true,
       "secret": true,
-      "placeholder": "A read token from your ChronOps profile",
+      "placeholder": "Paste a read token from your ChronOps profile",
       "helpText": "Create it on your ChronOps profile with the read scope. Ajour only reads your projects, so a read-write token gives it more than it needs."
     }
   ],

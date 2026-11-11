@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "apiVersion": 4,
   "displayName": "GitHub",
   "description": "Brings your GitHub issues into the backlog, and the pull requests you wrote or were asked to review.",
@@ -19,14 +19,14 @@
       "label": "Connection label",
       "type": "text",
       "required": true,
-      "placeholder": "Work"
+      "placeholder": "Name this connection"
     },
     {
       "id": "tenantLabel",
       "label": "Account",
       "type": "text",
       "required": true,
-      "placeholder": "Acme on GitHub"
+      "placeholder": "Your account or organization name"
     },
     {
       "id": "hostUrl",
@@ -42,21 +42,21 @@
       "type": "password",
       "required": true,
       "secret": true,
-      "placeholder": "github_pat_…",
+      "placeholder": "Paste a personal access token",
       "helpText": "Issues need the Issues permission set to Read and write, to close and reopen them and to write their descriptions back. Pull requests need read and write access to pull requests and read access to the repositories, and read:org for team review requests."
     },
     {
       "id": "include",
       "label": "Only these organizations or repositories",
       "type": "text",
-      "placeholder": "Optional: acme, octocat/hello-world",
+      "placeholder": "Optional: owners or owner/repository, comma separated",
       "helpText": "Comma-separated, for issues and pull requests. An entry with a slash is a repository, otherwise an organization or user."
     },
     {
       "id": "exclude",
       "label": "Never these organizations or repositories",
       "type": "text",
-      "placeholder": "Optional: acme/legacy"
+      "placeholder": "Optional: owners or owner/repository, comma separated"
     },
     {
       "id": "hideDrafts",

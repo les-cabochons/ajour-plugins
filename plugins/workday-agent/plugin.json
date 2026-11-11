@@ -1,6 +1,6 @@
 {
   "id": "workday-agent",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "apiVersion": 4,
   "displayName": "Workday (agent)",
   "description": "Commits your Ajour week changes to the Workday timesheet, and submits the week, through a coding agent and a Chrome window. Unofficial: it drives Workday's web page and breaks when the page changes. It never signs in for you.",
@@ -44,7 +44,7 @@
               "label": "Workday timesheet URL",
               "type": "url",
               "required": true,
-              "placeholder": "https://wd5.myworkday.com/your-company/...",
+              "placeholder": "Paste the Enter Time address",
               "helpText": "Open Enter Time in Workday and copy the address."
             },
             {
@@ -52,7 +52,7 @@
               "label": "Sign-in username",
               "type": "text",
               "required": false,
-              "placeholder": "you@company.com",
+              "placeholder": "Optional: your sign-in email or username",
               "helpText": "Optional. The agent types it when Workday's sign-in page asks for an email or username, so sign-in can finish without you while Chrome still has your company session. It never types a password or a code."
             }
           ]
@@ -71,7 +71,7 @@
               "label": "Workday timesheet URL",
               "type": "url",
               "required": true,
-              "placeholder": "https://wd5.myworkday.com/your-company/...",
+              "placeholder": "Paste the Enter Time address",
               "helpText": "Open Enter Time in Workday and copy the address."
             },
             {
@@ -79,7 +79,7 @@
               "label": "Sign-in username",
               "type": "text",
               "required": false,
-              "placeholder": "you@company.com",
+              "placeholder": "Optional: your sign-in email or username",
               "helpText": "Optional. The agent types it when Workday's sign-in page asks for an email or username, so sign-in can finish without you while Chrome still has your company session. It never types a password or a code."
             }
           ]

@@ -1,6 +1,6 @@
 {
   "id": "ics",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "apiVersion": 4,
   "displayName": "Calendar address (ICS)",
   "description": "Suggest the meetings in your Google Calendar, Outlook or Exchange calendar as time entries, through the calendar's private address. Read-only.",
@@ -15,14 +15,14 @@
       "label": "Connection label",
       "type": "text",
       "required": true,
-      "placeholder": "Work calendar"
+      "placeholder": "Name this connection"
     },
     {
       "id": "tenantLabel",
       "label": "Calendar",
       "type": "text",
       "required": true,
-      "placeholder": "Google Calendar, Outlook or Exchange"
+      "placeholder": "Your calendar app"
     },
     {
       "id": "calendarUrl",
@@ -30,14 +30,14 @@
       "type": "url",
       "required": true,
       "secret": true,
-      "placeholder": "https://calendar.google.com/calendar/ical/…/basic.ics",
+      "placeholder": "Paste the calendar's ICS address",
       "helpText": "The calendar's private or published ICS address. Anyone with it can read your whole calendar. Google: Settings, your calendar, Integrate calendar, Secret address in iCal format. Outlook: Settings, Calendar, Shared calendars, Publish a calendar, ICS link. Reset it there if it leaks."
     },
     {
       "id": "email",
       "label": "Your email",
       "type": "text",
-      "placeholder": "Optional: name@example.com",
+      "placeholder": "Optional: your email in this calendar",
       "helpText": "Lets Ajour find your own reply in each meeting, so it can hide meetings you declined. Leave it empty if the calendar has no attendee lists."
     }
   ],

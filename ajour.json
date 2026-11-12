@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -146,7 +146,7 @@
       "id": "chronops",
       "name": "ChronOps",
       "description": "Bring your ChronOps projects, tasks and budgets into Ajour, read-only, through MineHunter's ChronOps Forwarder.",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "pluginApiVersion": 4,
       "capabilities": [
         "projectSource"
@@ -170,7 +170,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/chronops",
       "files": [
         {
@@ -180,12 +180,12 @@
         },
         {
           "path": "package.json",
-          "sha256": "d2994097bcb6f983978262df8663c361854e54191531fe46299227cebcedb763",
+          "sha256": "8bdfc585ea5a07d2c45cfa86621e407d6c70f975cf79b998200f8516d501596b",
           "size": 1302
         },
         {
           "path": "plugin.json",
-          "sha256": "dc0bec6faf4754988aff8a54ca3b57f5e26e0850745db4052cbba6c8b1105fbf",
+          "sha256": "baa9d24a1416d90fd781fd84bfacbef23c0d711bb250b9a89a0be832035ead2b",
           "size": 6628
         },
         {
@@ -195,13 +195,13 @@
         },
         {
           "path": "src/contract.ts",
-          "sha256": "b7d30a6b038acdbf2e588ab8b246b4ada0357540966a03f7ff7778ee9fe59ff0",
-          "size": 5868
+          "sha256": "cc688c019a8be0f0b1dc561184c43ddfe90bebd73372c7798390093b41babb89",
+          "size": 6080
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "2351b5887e7529ff8ac1beec122105662db3514511fcef41f146c669eb3f5699",
-          "size": 6085
+          "sha256": "06996a3f26f5cffecbd137905a9eec7befb3b9950cb407a1f3ffe2c81c363ed7",
+          "size": 6438
         },
         {
           "path": "src/snapshot.ts",
@@ -239,7 +239,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/github",
       "files": [
         {
@@ -322,7 +322,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/ics",
       "files": [
         {
@@ -410,7 +410,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/jira",
       "files": [
         {
@@ -530,7 +530,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "6444cd2cd3a003b8cdccf7f0ae6ea3f9773f2025",
+      "commit": "039957f94b996186bbdfc090e6e23a51eef5ae88",
       "path": "plugins/workday-agent",
       "files": [
         {

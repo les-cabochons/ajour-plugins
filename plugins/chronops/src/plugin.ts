@@ -1,18 +1,16 @@
 // The chronops plugin's entrypoint, one function per project source
 // operation. Each reaches MineHunter's ChronOps Forwarder through `ajour.http`,
 // which attaches the personal token, so the plugin never holds it.
+import type {
+  AjourResponse,
+  PluginConnection,
+  ProjectSourceSyncRequest,
+  ProjectSourceSyncResult,
+  ValidationContext,
+  ValidationResult,
+} from "@ajour/plugin-sdk";
 import { parseChronopsMe, parseChronopsSnapshot } from "./chronops.ts";
-import {
-  PROJECT_SOURCE_BOUNDS,
-  isAjourRequestError,
-  type AjourResponse,
-  type PluginConnection,
-  type PluginFieldValue,
-  type ProjectSourceSyncRequest,
-  type ProjectSourceSyncResult,
-  type ValidationContext,
-  type ValidationResult,
-} from "./contract.ts";
+import { PROJECT_SOURCE_BOUNDS, isAjourRequestError } from "./contract.ts";
 import { mapChronopsSnapshot } from "./snapshot.ts";
 
 /** Every request names its integration, as the Forwarder's ADR-0030 asks. */
@@ -106,7 +104,7 @@ export async function validateConnection(
   _context?: ValidationContext,
 ): Promise<ValidationResult> {
   const me = parseChronopsMe(await jsonBody(await forwarderGet(connection, "/integration/me")));
-  const connectionSummary: Record<string, PluginFieldValue> = {
+  const connectionSummary: Record<string, string | number | boolean> = {
     Email: me.email,
     Scope: me.scope === "read" ? "Read" : "Read and write",
   };

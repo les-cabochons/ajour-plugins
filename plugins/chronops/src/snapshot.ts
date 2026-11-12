@@ -8,14 +8,13 @@ import type {
   ChronopsSnapshot,
   ChronopsTask,
 } from "./chronops.ts";
-import {
-  PROJECT_SOURCE_BOUNDS,
-  type ProjectSourceBudget,
-  type ProjectSourceBudgetStatus,
-  type ProjectSourceProject,
-  type ProjectSourceSnapshot,
-  type ProjectSourceTask,
-} from "./contract.ts";
+import type {
+  ProjectSourceBudget,
+  ProjectSourceProject,
+  ProjectSourceSnapshot,
+  ProjectSourceTask,
+} from "@ajour/plugin-sdk";
+import { PROJECT_SOURCE_BOUNDS } from "./contract.ts";
 
 export const SOURCE_LABEL = "ChronOps";
 
@@ -36,7 +35,7 @@ export function projectUrl(code: string) {
 }
 
 /** ChronOps' health colours in Ajour's words. */
-const BUDGET_STATUS: Record<Exclude<ChronopsBudgetStatus, "Unconfigured">, ProjectSourceBudgetStatus> = {
+const BUDGET_STATUS: Record<Exclude<ChronopsBudgetStatus, "Unconfigured">, NonNullable<ProjectSourceBudget["status"]>> = {
   Green: "ok",
   Yellow: "warning",
   Red: "over",

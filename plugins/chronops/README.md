@@ -138,8 +138,11 @@ just verify
 
 `just test` runs the plugin's vitest suites, which stub Ajour's `ajour`
 global and talk to the fake MineHunter over HTTP, then the contract tests on
-`node --test`. [`src/contract.ts`](src/contract.ts) is the plugin's copy of
-the parts of Ajour's plugin API 4 it uses, as the other plugins keep theirs.
+`node --test`. The plugin takes Ajour's types from `@ajour/plugin-sdk` 0.2.0,
+vendored in the repository's [`vendor/`](../../vendor), as types only, since
+Ajour installs no dependencies. [`src/contract.ts`](src/contract.ts) keeps the
+few values of Ajour's contract the plugin needs at run time, such as its
+bounds.
 
 ## License
 

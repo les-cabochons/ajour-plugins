@@ -126,9 +126,11 @@ test("the fake refuses a write with a read token with 403, and passes the scope 
   assert.equal(refused.status, 403);
   assert.deepEqual(await refused.json(), { error: "this personal token only reads" });
 
+  // Past the scope check, the timer start refuses the missing body.
   const readWrite = await withFake(t, { scope: "read-write" });
   const allowed = await fetch(`${readWrite.url}/integration/entries/timer/start`, { method: "POST", headers });
-  assert.equal(allowed.status, 404);
+  assert.equal(allowed.status, 400);
+  assert.deepEqual(await allowed.json(), { error: "invalid timer payload" });
 });
 
 // The fake's Time Entry routes follow MineHunter's rules from its branch
@@ -246,6 +248,59 @@ test("the fake lists entries started in [from, to), newest first, and the runnin
 
   const tooLong = await call(fake, "GET", `/integration/entries?from=${day("2026-01-01", "05:00")}&to=${day("2026-04-05", "05:00")}`);
   assert.deepEqual(tooLong, { status: 400, body: { error: "to must be after from, at most 93 days later" } });
+});
+
+test("the fake starts a timer, stops the one that runs at that instant, and answers a repeated client reference without stopping anything", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const devopsStart = minutesAgo(9);
+  const devops = await call(fake, "POST", "/integration/entries/timer/start", { workdayProject: "ACME-SUP", task: "Export", startedAt: devopsStart }, { "X-ChronOps-Source": "azure_devops" });
+  assert.equal(devops.status, 200);
+  assert.equal(devops.body.stopped, null);
+  assert.deepEqual([devops.body.timer.startedAt, devops.body.timer.endedAt, devops.body.timer.minutes], [devopsStart, null, null]);
+
+  // One timer per person: Ajour's start stops the extension's at the instant it starts.
+  const startedAt = minutesAgo(4);
+  const mine = await call(fake, "POST", "/integration/entries/timer/start", { workdayProject: "ACME-SUP", task: "Login", startedAt, clientRef: "key-1" });
+  assert.equal(mine.status, 200);
+  assert.deepEqual([mine.body.timer.clientRef, mine.body.timer.startedAt, mine.body.timer.endedAt], ["key-1", startedAt, null]);
+  assert.deepEqual([mine.body.stopped.id, mine.body.stopped.endedAt, mine.body.stopped.minutes], [devops.body.timer.id, startedAt, 5]);
+
+  // A repeat answers the entry the key made, as it is now, and stops nothing,
+  // not even the timer another start made since. It ignores its body.
+  const other = await call(fake, "POST", "/integration/entries/timer/start", { workdayProject: "ACME-SUP", task: "Export" }, { "X-ChronOps-Source": "azure_devops" });
+  const repeat = await call(fake, "POST", "/integration/entries/timer/start", { workdayProject: "OTHER", task: "Other", startedAt: minutesAgo(60), clientRef: "key-1" });
+  assert.equal(repeat.status, 200);
+  assert.equal(repeat.body.stopped, null);
+  assert.deepEqual([repeat.body.timer.id, repeat.body.timer.task, repeat.body.timer.minutes], [mine.body.timer.id, "Login", 4]);
+  assert.equal(fake.entries().find((entry) => entry.id === other.body.timer.id).endedAt, null);
+
+  for (const [body, error] of [
+    [{ workdayProject: "ACME-SUP", task: "Login", startedAt: minutesAgo(11) }, "the start or stop instant must be within 10 minutes of now"],
+    [{ workdayProject: "ACME-SUP", task: "Login", minutes: 5 }, "invalid timer payload"],
+    [{ workdayProject: "ACME-SUP", task: "" }, "the task must be 1 to 200 characters"],
+  ]) {
+    assert.deepEqual(await call(fake, "POST", "/integration/entries/timer/start", body), { status: 400, body: { error } }, error);
+  }
+});
+
+test("the fake stops one entry by id: 409 once it no longer runs, 404 once it is gone", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const { body: started } = await call(fake, "POST", "/integration/entries/timer/start", { workdayProject: "ACME-SUP", task: "Login", startedAt: minutesAgo(9), clientRef: "key-1" });
+  const path = `/integration/entries/${started.timer.id}/stop`;
+
+  assert.deepEqual(await call(fake, "POST", path, { endedAt: minutesAgo(11) }), {
+    status: 400,
+    body: { error: "the start or stop instant must be within 10 minutes of now" },
+  });
+  const endedAt = minutesAgo(2);
+  const stopped = await call(fake, "POST", path, { endedAt });
+  assert.equal(stopped.status, 200);
+  assert.deepEqual([stopped.body.endedAt, stopped.body.minutes, stopped.body.clientRef], [endedAt, 7, "key-1"]);
+
+  assert.deepEqual(await call(fake, "POST", path), { status: 409, body: { error: "this entry is not running" } });
+  await call(fake, "DELETE", `/integration/entries/${started.timer.id}`);
+  assert.deepEqual(await call(fake, "POST", path), { status: 404, body: { error: "entry not found" } });
+  assert.deepEqual(await call(fake, "POST", "/integration/entries/not-an-id/stop"), { status: 400, body: { error: "invalid entry ID" } });
 });
 
 test("the fake limits requests like the Forwarder when asked, with 429", async (t) => {

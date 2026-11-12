@@ -9,16 +9,18 @@
 // - GET /integration/snapshot, fixture.json as is, with an ETag, and
 //   304 when If-None-Match matches.
 // - The Time Entry routes, on entries kept in memory: GET, POST
-//   /integration/entries, and PATCH, DELETE /integration/entries/{id}, with
-//   MineHunter's validation and messages, client references unique per
-//   source, `updatedAt`, and hard deletes. See the contract tests.
+//   /integration/entries, PATCH, DELETE /integration/entries/{id}, POST
+//   /integration/entries/timer/start and POST /integration/entries/{id}/stop,
+//   with MineHunter's validation and messages, client references unique per
+//   source, one running timer per person, `updatedAt`, and hard deletes. See
+//   the contract tests.
 // Every request needs X-ChronOps-Source, ajour or azure_devops, or gets 400,
 // and X-ChronOps-Token, any value, or gets 401, as does one once the chosen
 // expiry is past. A read token gets 403 on anything but GET, so an
 // integration can test the Forwarder's scope refusal. The real Forwarder
 // limits each address to 10 requests a second with a burst of 20; this fake
-// does only when its `rateLimit` option asks. It has no running timer route:
-// a running entry comes only from the `entries` option.
+// does only when its `rateLimit` option asks. It has no plain timer stop and
+// no GET of the timer, which the plugin never calls.
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -72,19 +74,23 @@ const validCode = (code) =>
 const validReference = (value, max) =>
   value !== "" && value === value.trim() && Buffer.byteLength(value) <= max && !isControl(value);
 
-/** Reads a JSON body with only the fields `allowed`, as Go's DisallowUnknownFields does. */
-function strictBody(text, allowed, types) {
+/**
+ * Reads a JSON body with only the fields `allowed`, as Go's
+ * DisallowUnknownFields does. `invalid` is the route's message for a body it
+ * can't read: the entry routes and the timer routes word it differently.
+ */
+function strictBody(text, allowed, types, invalid = "invalid entry payload") {
   let body;
   try {
     body = JSON.parse(text);
   } catch {
-    return refuse("invalid entry payload");
+    return refuse(invalid);
   }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) refuse("invalid entry payload");
+  if (typeof body !== "object" || body === null || Array.isArray(body)) refuse(invalid);
   for (const [key, value] of Object.entries(body)) {
-    if (!allowed.includes(key)) refuse("invalid entry payload");
+    if (!allowed.includes(key)) refuse(invalid);
     // Go refuses a value of the wrong type, and a null leaves the field unset.
-    if (value !== null && !types[key](value)) refuse("invalid entry payload");
+    if (value !== null && !types[key](value)) refuse(invalid);
   }
   return body;
 }
@@ -96,8 +102,20 @@ const fieldTypes = {
   workItem: (value) => typeof value === "object",
   clientRef: (value) => typeof value === "string",
   startedAt: isInstant,
+  endedAt: isInstant,
   minutes: (value) => Number.isInteger(value),
 };
+
+/** clickedAt: the instant a start or a stop sent, or now. MineHunter refuses one further than 10 minutes from its clock. */
+function clickedAt(sent) {
+  const now = Date.now();
+  if (sent == null) return now;
+  const at = Date.parse(sent);
+  if (at < now - CLOCK_SKEW || at > now + CLOCK_SKEW) refuse("the start or stop instant must be within 10 minutes of now");
+  return at;
+}
+
+const isEntryId = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
 /** entryFields.validate: trims the task and description, and checks every field. */
 function validateFields(fields) {
@@ -258,6 +276,62 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
     return answer(after);
   }
 
+  /**
+   * POST /integration/entries/timer/start: stops the person's running timer,
+   * whichever tool started it, at the instant the new one starts, and
+   * answers both. A repeated client reference answers the entry it made,
+   * running or not, and stops nothing.
+   */
+  function startTimer(text, source) {
+    const body = strictBody(text, ["workdayProject", "task", "description", "workItem", "clientRef", "startedAt"], fieldTypes, "invalid timer payload");
+    const { task, description } = validateFields(body);
+    if (body.clientRef) {
+      const repeat = [...stored.values()].find((entry) => entry.source === source && entry.clientRef === body.clientRef);
+      if (repeat) return [200, { timer: answer(repeat), stopped: null }];
+    }
+    let at = clickedAt(body.startedAt);
+    const now = Date.now();
+    let stopped = null;
+    const running = [...stored.values()].find((entry) => entry.endedAt === null);
+    if (running) {
+      // A start sent from a clock behind the running timer's start moves up to it, so the two never overlap.
+      at = Math.max(at, running.startedAt);
+      const ended = { ...running, endedAt: at, updatedAt: now };
+      stored.set(ended.id, ended);
+      stopped = answer(ended);
+    }
+    const timer = {
+      id: randomUUID(),
+      ownerEmail: email,
+      workdayProject: body.workdayProject,
+      task,
+      description,
+      startedAt: at,
+      endedAt: null,
+      source,
+      workItem: body.workItem ?? null,
+      clientRef: body.clientRef || null,
+      updatedAt: now,
+    };
+    stored.set(timer.id, timer);
+    return [200, { timer: answer(timer), stopped }];
+  }
+
+  /**
+   * POST /integration/entries/{id}/stop: stops that entry, at `endedAt` or
+   * now, never before its start. 409 when it no longer runs, 404 when it is
+   * gone. The body is optional.
+   */
+  function stopEntry(id, text) {
+    const body = text === "" ? {} : strictBody(text, ["endedAt"], fieldTypes, "invalid timer payload");
+    const at = clickedAt(body.endedAt);
+    const entry = ownEntry(id);
+    if (entry.endedAt !== null) throw new Refusal(409, "this entry is not running");
+    const stopped = { ...entry, endedAt: Math.max(entry.startedAt, at), updatedAt: Date.now() };
+    stored.set(id, stopped);
+    return answer(stopped);
+  }
+
   /** Answers one request, or throws a Refusal. */
   function route(request, path, query, text) {
     const method = request.method;
@@ -265,10 +339,17 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
     if (method === "GET" && path === "/integration/me") return [200, me];
     if (method === "GET" && path === "/integration/entries") return [200, listEntries(query)];
     if (method === "POST" && path === "/integration/entries") return addEntry(text, source);
+    if (method === "POST" && path === "/integration/entries/timer/start") return startTimer(text, source);
+    // MineHunter's ids are UUIDs: anything else is refused before the lookup.
+    const knownId = (id) => {
+      if (!isEntryId(id) && !stored.has(id)) refuse("invalid entry ID");
+      return id;
+    };
+    const stopId = /^\/integration\/entries\/([^/]+)\/stop$/.exec(path)?.[1];
+    if (stopId !== undefined && method === "POST") return [200, stopEntry(knownId(stopId), text)];
     const id = /^\/integration\/entries\/([^/]+)$/.exec(path)?.[1];
     if (id !== undefined && (method === "PATCH" || method === "DELETE")) {
-      // MineHunter's ids are UUIDs: anything else is refused before the lookup.
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) && !stored.has(id)) refuse("invalid entry ID");
+      knownId(id);
       if (method === "PATCH") return [200, updateEntry(id, text)];
       ownEntry(id);
       stored.delete(id);

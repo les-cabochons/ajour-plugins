@@ -1,8 +1,8 @@
-// The chronops plugin's entrypoint, one function per project source
-// operation. Each reaches MineHunter's ChronOps Forwarder through `ajour.http`,
-// which attaches the personal token, so the plugin never holds it.
+// The chronops plugin's entrypoint, one function per operation: the project
+// source's validateConnection and syncProjects, and the time sync's
+// syncTimeEntries. Each reaches MineHunter's ChronOps Forwarder through
+// `ajour.http`, which attaches the personal token, so the plugin never holds it.
 import type {
-  AjourResponse,
   PluginConnection,
   ProjectSourceSyncRequest,
   ProjectSourceSyncResult,
@@ -10,83 +10,12 @@ import type {
   ValidationResult,
 } from "@ajour/plugin-sdk";
 import { parseChronopsMe, parseChronopsSnapshot } from "./chronops.ts";
-import { PROJECT_SOURCE_BOUNDS, isAjourRequestError } from "./contract.ts";
+import { PROJECT_SOURCE_BOUNDS } from "./contract.ts";
+import { ChronopsError, forwarderGet, jsonBody } from "./forwarder.ts";
 import { mapChronopsSnapshot } from "./snapshot.ts";
 
-/** Every request names its integration, as the Forwarder's ADR-0030 asks. */
-const SOURCE_HEADER = { "X-ChronOps-Source": "ajour" } as const;
-
-/** A failure the connection page shows as is. Nothing is retried. */
-export class ChronopsError extends Error {
-  override name = "ChronopsError";
-}
-
-/** The `error` field of a Forwarder or ChronOps refusal, when there is one. */
-async function refusalReason(response: AjourResponse) {
-  try {
-    const body = await response.json<{ error?: unknown }>();
-    return typeof body.error === "string" ? body.error : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * A GET on the Forwarder, with each failure turned into a plain message:
- * a refused token, a forbidden request, the rate limit, or no answer. A 304
- * comes back as is, for the snapshot's cursor.
- */
-async function forwarderGet(
-  connection: PluginConnection,
-  path: string,
-  headers: Readonly<Record<string, string>> = {},
-  query?: Readonly<Record<string, string>>,
-): Promise<AjourResponse> {
-  let response: AjourResponse;
-  try {
-    response = await ajour.http({
-      connectionId: connection.id,
-      method: "GET",
-      path,
-      ...(query === undefined ? {} : { query }),
-      headers: { ...SOURCE_HEADER, ...headers },
-    });
-  } catch (error) {
-    if (!isAjourRequestError(error)) throw error;
-    switch (error.code) {
-      case "network":
-      case "timeout":
-        throw new ChronopsError("ChronOps could not be reached. Check the Forwarder URL and your network, then try again.");
-      case "limit":
-        throw new ChronopsError("Ajour sent ChronOps too many requests at once. Try again in a moment.");
-      default:
-        throw new ChronopsError(`Ajour refused the request to ChronOps. ${error.message}`);
-    }
-  }
-  switch (response.status) {
-    case 401:
-      throw new ChronopsError(
-        "ChronOps refused the personal token, which was revoked or expired. Create a new one on your ChronOps profile and paste it here.",
-      );
-    case 403: {
-      const reason = await refusalReason(response);
-      throw new ChronopsError(`ChronOps forbids this request${reason ? `. It said "${reason}"` : ""}.`);
-    }
-    case 429:
-      throw new ChronopsError("ChronOps rate limited Ajour. The Forwarder allows 10 requests a second. Try again in a moment.");
-    default:
-      if (response.ok || response.status === 304) return response;
-      throw new ChronopsError(`ChronOps answered HTTP ${response.status}.`);
-  }
-}
-
-async function jsonBody(response: AjourResponse): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    throw new ChronopsError("ChronOps answered something that is not JSON. Check the Forwarder URL.");
-  }
-}
+export { ChronopsError } from "./forwarder.ts";
+export { syncTimeEntries } from "./time-sync.ts";
 
 /** The date of an ISO instant, for the connection summary. */
 function dateOf(instant: string) {

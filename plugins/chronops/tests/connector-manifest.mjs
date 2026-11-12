@@ -125,11 +125,19 @@ export function assertProjectSourcePluginManifest(manifest) {
   assertString(manifest.iconSvg, "Plugin manifest iconSvg", { min: 1, max: 20000 });
   assertString(manifest.entrypoint, "Plugin manifest entrypoint", { min: 1, max: 240 });
 
+  // Ajour refuses timeSync without projectSource, and any option on timeSync.
   assertRecord(manifest.capabilities, "Plugin manifest capabilities");
-  if (Object.keys(manifest.capabilities).join() !== "projectSource") {
-    throw new Error("Plugin manifest capabilities must declare projectSource and nothing else.");
+  const capabilities = Object.keys(manifest.capabilities);
+  if (!capabilities.includes("projectSource") || capabilities.some((name) => name !== "projectSource" && name !== "timeSync")) {
+    throw new Error("Plugin manifest capabilities must declare projectSource, with timeSync beside it or not, and nothing else.");
   }
   assertRecord(manifest.capabilities.projectSource, "Plugin manifest capabilities.projectSource");
+  if (manifest.capabilities.timeSync !== undefined) {
+    assertRecord(manifest.capabilities.timeSync, "Plugin manifest capabilities.timeSync");
+    if (Object.keys(manifest.capabilities.timeSync).length > 0) {
+      throw new Error("Plugin manifest capabilities.timeSync takes no option.");
+    }
+  }
 
   if (!Array.isArray(manifest.connectionFields) || manifest.connectionFields.length < 1 || manifest.connectionFields.length > 50) {
     throw new Error("Plugin manifest connectionFields must contain 1 to 50 fields.");

@@ -25,6 +25,22 @@ export const PROJECT_SOURCE_BOUNDS = {
   cursor: 2_000,
 } as const;
 
+/**
+ * Ajour's bounds on a time sync round's answer, from its
+ * packages/shared/time-sync.ts (les-cabochons/ajour#691). Text bounds are in
+ * characters, after trimming. Ajour refuses the whole answer for one value
+ * past them.
+ */
+export const TIME_SYNC_BOUNDS = {
+  /** A remote entry's id and its project's remote id. */
+  remoteId: 100,
+  /** The sync key, which a remote entry carries back as its client reference. */
+  syncKey: 100,
+  taskName: 240,
+  /** A refused or failed change's message. */
+  message: 300,
+} as const;
+
 /** How `ajour.http` rejects when the broker did not send the request. */
 export function isAjourRequestError(error: unknown): error is AjourRequestError {
   return error instanceof Error && error.name === "AjourRequestError";

@@ -77,6 +77,7 @@ export const CATALOG_CAPABILITIES = Object.freeze([
   "agentTask",
   "handoff",
   "projectSource",
+  "timeSync",
   "schema",
 ]);
 const STATUSES = ["available", "coming-soon", "deprecated"];
@@ -93,6 +94,7 @@ const PLUGIN_CAPABILITIES = {
   agentTask: "agentTask",
   handoff: "handoff",
   projectSource: "projectSource",
+  timeSync: "timeSync",
   schema: "schema",
   projectDataShape: "schema",
   projectProperties: null,

@@ -421,6 +421,13 @@ describe("capability names", () => {
     assert.deepEqual(validateSource(source), []);
   });
 
+  test("a time sync plugin lists timeSync beside projectSource, so a release can include ChronOps 0.4.0", () => {
+    assert.deepEqual(catalogCapabilities({ projectSource: {}, timeSync: {} }), ["projectSource", "timeSync"]);
+    const source = validSource();
+    source.plugins[0].capabilities = ["projectSource", "timeSync"];
+    assert.deepEqual(validateSource(source), []);
+  });
+
   test("a capability ajour.json has no name for is refused", () => {
     assert.throws(() => catalogCapabilities({ somethingNew: {} }), /has no name for/);
   });

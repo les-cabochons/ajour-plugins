@@ -12,6 +12,11 @@ describe("instantAt", () => {
     ["2026-11-01", 9, "America/Toronto", "2026-11-01T14:00:00.000Z"],
     // It starts at 02:00 on March 8, 2026.
     ["2026-03-08", 9, "America/Toronto", "2026-03-08T13:00:00.000Z"],
+    // Chile skips midnight on September 6, 2026: the day starts at 01:00, UTC-3.
+    ["2026-09-06", 0, "America/Santiago", "2026-09-06T04:00:00.000Z"],
+    ["2026-09-06", 9, "America/Santiago", "2026-09-06T12:00:00.000Z"],
+    // A day east of UTC whose midnight is skipped: Beirut on March 29, 2026.
+    ["2026-03-29", 0, "Asia/Beirut", "2026-03-28T22:00:00.000Z"],
     // Offsets that are not whole hours, on both sides of UTC.
     ["2026-11-12", 9, "Asia/Kolkata", "2026-11-12T03:30:00.000Z"],
     ["2026-11-12", 9, "America/St_Johns", "2026-11-12T12:30:00.000Z"],

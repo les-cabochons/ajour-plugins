@@ -36,13 +36,18 @@ function offsetAt(instant: number, timeZone: string) {
 /**
  * The instant it is `hour`:00 on `localDate` in `timeZone`, in
  * milliseconds. The second pass corrects the offset on a day whose
- * daylight saving time changes between midnight UTC and that hour.
+ * daylight saving time changes between midnight UTC and that hour. When
+ * daylight saving time skips that hour, as Chile skips midnight, it is
+ * the instant the clock jumps, so a day never starts on the day before.
  */
 export function instantAt(localDate: string, hour: number, timeZone: string) {
   const [year, month, day] = localDate.split("-").map(Number) as [number, number, number];
   const wall = Date.UTC(year, month - 1, day, hour);
   const first = wall - offsetAt(wall, timeZone);
-  return wall - offsetAt(first, timeZone);
+  const second = wall - offsetAt(first, timeZone);
+  if (wall - second === offsetAt(second, timeZone)) return second;
+  // The two passes land on either side of the skipped hour.
+  return Math.max(first, second);
 }
 
 /** A function that gives an instant's local date, YYYY-MM-DD, in `timeZone`. */

@@ -44,7 +44,7 @@ const AJOUR_SOURCE = "ajour";
  * burst of 20 per address. A round holds at most 20 changes of up to four
  * requests each, such as an edit answered 404, the POST that finds a timer
  * under the key, its stop and a PATCH, then the listing. A delete's lookup
- * listing comes with a two-request change. Half the burst, then 8 a second,
+ * listing comes with a change of at most three requests. Half the burst, then 8 a second,
  * leaves room for a project sync and other tools behind the same address.
  * The longest round, 81 requests, then takes about 9 seconds, inside
  * Ajour's 30-second operation timeout.
@@ -445,12 +445,18 @@ async function update(round: Round, change: Upsert, remoteId: string) {
  * Deletes the entry. ChronOps deletes for good, so a 404 means it is
  * already gone. Without a remote id, the entry is found by the client
  * reference Ajour gave it, in case the create's answer was lost; with none,
- * there is nothing to delete.
+ * there is nothing to delete. A remote id answered 404 is looked up the same
+ * way: a Continue whose answer was lost deleted that entry and started a
+ * timer under the same reference, which must not keep running.
  */
 async function remove(round: Round, change: Delete) {
   const id = change.remoteId ?? (await ajourEntryWithKey(round, change.syncKey))?.id;
   if (id !== undefined) {
-    const response = await send(round, { method: "DELETE", path: entryPath(id) });
+    let response = await send(round, { method: "DELETE", path: entryPath(id) });
+    if (response.status === 404 && change.remoteId !== undefined) {
+      const underKey = (await ajourEntryWithKey(round, change.syncKey))?.id;
+      if (underKey !== undefined && underKey !== id) response = await send(round, { method: "DELETE", path: entryPath(underKey) });
+    }
     if (!response.ok && response.status !== 404) return unsuccessful(round, change, response);
   }
   round.counts.deleted += 1;

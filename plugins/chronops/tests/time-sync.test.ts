@@ -259,6 +259,8 @@ describe("syncTimeEntries deletes", () => {
     expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
       ["DELETE", `/integration/entries/${entry.id}`],
       ["DELETE", `/integration/entries/${MISSING_ID}`],
+      // The 404 looks for another entry under the key, and finds none.
+      ["GET", "/integration/entries"],
       ["GET", "/integration/entries"],
     ]);
     expect(fake.entries()).toEqual([]);
@@ -545,6 +547,23 @@ describe("syncTimeEntries runs the ChronOps timer", () => {
 
     expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [] });
     expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
+      ["DELETE", `/integration/entries/${running.id}`],
+      ["GET", "/integration/entries"],
+    ]);
+    expect(fake.entries()).toEqual([]);
+  });
+
+  it("discards the timer a lost Continue answer started, when the entry Ajour knows is gone", async () => {
+    // Continue deleted the saved entry and started this timer under the same
+    // key, but its answer was lost, so Ajour still holds the saved entry's id.
+    const running = timer();
+    const { ajour, fake } = await withFake({ entries: [running] });
+    const result = await syncTimeEntries(connection, request([{ kind: "delete", syncKey: "key-1", remoteId: MISSING_ID, agreed: savedValues(30) }]));
+
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [] });
+    expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
+      ["DELETE", `/integration/entries/${MISSING_ID}`],
+      ["GET", "/integration/entries"],
       ["DELETE", `/integration/entries/${running.id}`],
       ["GET", "/integration/entries"],
     ]);

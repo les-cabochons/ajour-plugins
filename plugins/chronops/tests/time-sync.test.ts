@@ -281,6 +281,296 @@ describe("syncTimeEntries deletes", () => {
   });
 });
 
+// Ajour's running entry is the ChronOps timer. A running entry and the saved
+// entry it becomes share one sync key, so ChronOps sees a stop, not a delete.
+describe("syncTimeEntries runs the ChronOps timer", () => {
+  /** Two hours ago, 11:00 in Toronto. */
+  const elevenOClock = "2026-11-12T16:00:00.000Z";
+  const startPath = "/integration/entries/timer/start";
+
+  /** Ajour's values for today's running entry, counting since `countingSince`. */
+  function runningValues(countingSince: string, overrides: Partial<TimeSyncEntryValues> = {}) {
+    const minutes = Math.floor((Date.parse(NOW) - Date.parse(countingSince)) / 60_000);
+    return values({ localDate: "2026-11-12", minutes, running: true, countingSince, ...overrides });
+  }
+
+  /** Ajour's values once it saved that entry: today, `minutes` long. */
+  function savedValues(minutes: number, overrides: Partial<TimeSyncEntryValues> = {}) {
+    return values({ localDate: "2026-11-12", minutes, ...overrides });
+  }
+
+  /** A timer Ajour started, as ChronOps holds it. */
+  function timer(overrides: Partial<FakeEntry> = {}) {
+    return held({ clientRef: "key-1", startedAt: elevenOClock, endedAt: null, updatedAt: elevenOClock, ...overrides });
+  }
+
+  /** Starts a timer through the fake's route as the Azure DevOps extension, which sends no client reference. */
+  async function startFromDevops(url: string, startedAt: string) {
+    const response = await fetch(`${url}${startPath}`, {
+      method: "POST",
+      headers: { "X-ChronOps-Token": "t", "X-ChronOps-Source": "azure_devops", "Content-Type": "application/json" },
+      body: JSON.stringify({ workdayProject: "ACME-SUP", task: "Billet #102 - Export CSV", startedAt }),
+    });
+    return ((await response.json()) as { timer: { id: string } }).timer;
+  }
+
+  it("starts the timer with the client reference and the instant its count began", async () => {
+    const { ajour, fake } = await withFake();
+    const countingSince = "2026-11-12T17:56:00.000Z";
+    const result = await syncTimeEntries(connection, request([upsert("key-1", runningValues(countingSince))]));
+
+    const [stored] = fake.entries();
+    const entry = {
+      remoteId: stored!.id,
+      clientRef: "key-1",
+      localDate: "2026-11-12",
+      minutes: 4,
+      running: true,
+      countingSince,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Billet #101 - Login",
+      updatedAt: NOW,
+    };
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry] });
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", startPath, { workdayProject: "ACME-SUP", task: "Billet #101 - Login", clientRef: "key-1", startedAt: countingSince }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+  });
+
+  it("starts the timer, then moves its start, when the count began more than 10 minutes ago", async () => {
+    const { ajour, fake } = await withFake();
+    const result = await syncTimeEntries(connection, request([upsert("key-1", runningValues(elevenOClock))]));
+
+    const [stored] = fake.entries();
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      // ChronOps takes a start within 10 minutes of its clock, so this one starts now.
+      ["POST", startPath, { workdayProject: "ACME-SUP", task: "Billet #101 - Login", clientRef: "key-1" }],
+      ["PATCH", `/integration/entries/${stored!.id}`, { startedAt: elevenOClock }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { running: true, countingSince: elevenOClock, minutes: 120 } });
+  });
+
+  it("starts nothing twice: a retry with the same client reference finds the timer the lost answer started", async () => {
+    const running = timer();
+    const { ajour, fake } = await withFake({ entries: [running] });
+    const result = await syncTimeEntries(connection, request([upsert("key-1", runningValues(elevenOClock))]));
+
+    expect(ajour.requests.map((sent) => sent.method)).toEqual(["POST", "GET"]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { remoteId: running.id, running: true, countingSince: elevenOClock } });
+    expect(fake.entries()).toHaveLength(1);
+  });
+
+  it("stops the timer another tool started, since ChronOps runs one timer per person, and lists that entry stopped", async () => {
+    const { fake } = await withFake();
+    const devops = await startFromDevops(fake.url, "2026-11-12T17:55:00.000Z");
+    const countingSince = "2026-11-12T17:59:00.000Z";
+    const result = await syncTimeEntries(connection, request([upsert("key-1", runningValues(countingSince))]));
+
+    expect(result.entries).toEqual([
+      expect.objectContaining({ clientRef: "key-1", running: true, countingSince }),
+      expect.objectContaining({ remoteId: devops.id, running: false, minutes: 4, taskName: "Billet #102 - Export CSV" }),
+    ]);
+    expect(result.entries[1]).not.toHaveProperty("countingSince");
+  });
+
+  it("edits the running entry's project, task and start, never its minutes, and keeps a start that moved less than a minute", async () => {
+    const running = timer();
+    const { ajour, fake } = await withFake({ entries: [running] });
+    const agreed = runningValues(elevenOClock, { minutes: 115 });
+    const moved = upsert("key-1", runningValues("2026-11-12T15:30:00.000Z", { taskName: "Billet #102 - Export CSV", taskRemoteId: "1002" }), {
+      remoteId: running.id,
+      agreed,
+    });
+    const first = await syncTimeEntries(connection, request([moved]));
+
+    expect(ajour.requests[0]).toEqual({
+      method: "PATCH",
+      path: `/integration/entries/${running.id}`,
+      headers: JSON_HEADERS,
+      body: { task: "Billet #102 - Export CSV", startedAt: "2026-11-12T15:30:00.000Z" },
+    });
+    expect(first.results[0]).toMatchObject({ status: "synced", entry: { running: true, countingSince: "2026-11-12T15:30:00.000Z", minutes: 150 } });
+
+    // Ajour keeps its own precision. Seconds apart is the same start, so only the project moves.
+    const task = { taskName: "Billet #102 - Export CSV", taskRemoteId: "1002" };
+    const projectOnly = upsert("key-1", runningValues("2026-11-12T15:30:20.000Z", { ...task, projectRemoteId: "GLOBEX-INT" }), {
+      remoteId: running.id,
+      agreed: runningValues("2026-11-12T15:30:00.000Z", task),
+    });
+    await syncTimeEntries(connection, request([projectOnly]));
+    expect(ajour.requests[2]?.body).toEqual({ workdayProject: "GLOBEX-INT" });
+    expect(fake.entries()[0]).toMatchObject({ startedAt: "2026-11-12T15:30:00.000Z", endedAt: null, workdayProject: "GLOBEX-INT" });
+  });
+
+  it("starts the timer again when the running entry is gone from ChronOps", async () => {
+    const { ajour, fake } = await withFake();
+    const change = upsert("key-1", runningValues(elevenOClock, { taskName: "Billet #102 - Export CSV" }), {
+      remoteId: MISSING_ID,
+      agreed: runningValues(elevenOClock, { minutes: 110 }),
+    });
+    const result = await syncTimeEntries(connection, request([change]));
+
+    const [stored] = fake.entries();
+    expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
+      ["PATCH", `/integration/entries/${MISSING_ID}`],
+      ["POST", startPath],
+      ["PATCH", `/integration/entries/${stored!.id}`],
+      ["GET", "/integration/entries"],
+    ]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { remoteId: stored!.id, running: true, countingSince: elevenOClock } });
+  });
+
+  it("stops the entry by its id at the instant its minutes end, so ChronOps keeps Ajour's minutes", async () => {
+    const running = timer();
+    const { ajour, fake } = await withFake({ entries: [running] });
+    const stop = upsert("key-1", savedValues(120), { remoteId: running.id, agreed: runningValues(elevenOClock, { minutes: 119 }) });
+    const result = await syncTimeEntries(connection, request([stop]));
+
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", `/integration/entries/${running.id}/stop`, { endedAt: NOW }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    const entry = {
+      remoteId: running.id,
+      clientRef: "key-1",
+      localDate: "2026-11-12",
+      minutes: 120,
+      running: false,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Billet #101 - Login",
+      updatedAt: NOW,
+    };
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry] });
+    expect(fake.entries()[0]).toMatchObject({ startedAt: elevenOClock, endedAt: NOW });
+  });
+
+  it("stops the entry now, then edits what the stop could not set, when Ajour changed it while stopping", async () => {
+    const running = timer();
+    const { ajour } = await withFake({ entries: [running] });
+    // Saved at 90 minutes on another task, so its end is half an hour ago, too far for a stop instant.
+    const stop = upsert("key-1", savedValues(90, { taskName: "Billet #102 - Export CSV", taskRemoteId: "1002" }), {
+      remoteId: running.id,
+      agreed: runningValues(elevenOClock, { minutes: 119 }),
+    });
+    const result = await syncTimeEntries(connection, request([stop]));
+
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", `/integration/entries/${running.id}/stop`, undefined],
+      ["PATCH", `/integration/entries/${running.id}`, { task: "Billet #102 - Export CSV", minutes: 90 }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { running: false, minutes: 90, taskName: "Billet #102 - Export CSV" } });
+  });
+
+  it("edits the entry to Ajour's values when ChronOps answers that it no longer runs", async () => {
+    // The extension's start stopped Ajour's timer at 12:00, and Ajour stopped it at 13:00.
+    const stopped = timer({ endedAt: "2026-11-12T17:00:00.000Z", updatedAt: "2026-11-12T17:00:00.000Z" });
+    const devops = held({ source: "azure_devops", task: "Billet #102 - Export CSV", startedAt: "2026-11-12T17:00:00.000Z", endedAt: null });
+    const { ajour, fake } = await withFake({ entries: [stopped, devops] });
+    const stop = upsert("key-1", savedValues(120), { remoteId: stopped.id, agreed: runningValues(elevenOClock, { minutes: 50 }) });
+    const result = await syncTimeEntries(connection, request([stop]));
+
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", `/integration/entries/${stopped.id}/stop`, { endedAt: NOW }],
+      ["PATCH", `/integration/entries/${stopped.id}`, { workdayProject: "ACME-SUP", task: "Billet #101 - Login", minutes: 120 }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { running: false, minutes: 120 } });
+    // The stop by id never touches the timer the other tool runs.
+    expect(fake.entries().find((entry) => entry.id === devops.id)).toMatchObject({ endedAt: null });
+  });
+
+  it("creates the finished entry again, at its real start, when ChronOps answers that it is gone", async () => {
+    const { ajour, fake } = await withFake();
+    const stop = upsert("key-1", savedValues(120), { remoteId: MISSING_ID, agreed: runningValues(elevenOClock, { minutes: 119 }) });
+    const result = await syncTimeEntries(connection, request([stop]));
+
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", `/integration/entries/${MISSING_ID}/stop`, { endedAt: NOW }],
+      [
+        "POST",
+        "/integration/entries",
+        { workdayProject: "ACME-SUP", task: "Billet #101 - Login", startedAt: elevenOClock, minutes: 120, clientRef: "key-1" },
+      ],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    const [stored] = fake.entries();
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { remoteId: stored!.id, clientRef: "key-1", running: false, minutes: 120 } });
+  });
+
+  it("stops by id a timer a lost answer left behind, when Ajour saved the entry since", async () => {
+    const running = timer();
+    const { ajour } = await withFake({ entries: [running] });
+    const result = await syncTimeEntries(connection, request([upsert("key-1", savedValues(120))]));
+
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["POST", "/integration/entries", expect.objectContaining({ clientRef: "key-1", minutes: 120 })],
+      ["POST", `/integration/entries/${running.id}/stop`, { endedAt: NOW }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    expect(result.results[0]).toMatchObject({ status: "synced", entry: { remoteId: running.id, running: false, minutes: 120 } });
+  });
+
+  it("continues a saved entry: deletes it, starts the timer with the same client reference, and moves the start", async () => {
+    // 30 minutes saved this morning, continued now: the count began 30 minutes ago.
+    const saved = held({ clientRef: "key-1", startedAt: "2026-11-12T14:00:00.000Z", minutes: 30 });
+    const { ajour, fake } = await withFake({ entries: [saved] });
+    const countingSince = "2026-11-12T17:30:00.000Z";
+    const change = upsert("key-1", runningValues(countingSince), { remoteId: saved.id, agreed: savedValues(30) });
+    const result = await syncTimeEntries(connection, request([change]));
+
+    const [stored] = fake.entries();
+    expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
+      ["DELETE", `/integration/entries/${saved.id}`, undefined],
+      ["POST", startPath, { workdayProject: "ACME-SUP", task: "Billet #101 - Login", clientRef: "key-1" }],
+      ["PATCH", `/integration/entries/${stored!.id}`, { startedAt: countingSince }],
+      ["GET", "/integration/entries", undefined],
+    ]);
+    expect(fake.entries()).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      status: "synced",
+      entry: { remoteId: stored!.id, clientRef: "key-1", running: true, countingSince, minutes: 30 },
+    });
+  });
+
+  it("discards the running entry by deleting it", async () => {
+    const running = timer();
+    const { ajour, fake } = await withFake({ entries: [running] });
+    const result = await syncTimeEntries(
+      connection,
+      request([{ kind: "delete", syncKey: "key-1", remoteId: running.id, agreed: runningValues(elevenOClock) }]),
+    );
+
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [] });
+    expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
+      ["DELETE", `/integration/entries/${running.id}`],
+      ["GET", "/integration/entries"],
+    ]);
+    expect(fake.entries()).toEqual([]);
+  });
+
+  it("lists a timer another tool started as running, with its start as the count's", async () => {
+    const { fake } = await withFake();
+    const devops = await startFromDevops(fake.url, "2026-11-12T17:52:00.000Z");
+    const result = await syncTimeEntries(connection, request([]));
+
+    expect(result.entries).toEqual([
+      {
+        remoteId: devops.id,
+        localDate: "2026-11-12",
+        minutes: 8,
+        running: true,
+        countingSince: "2026-11-12T17:52:00.000Z",
+        projectRemoteId: "ACME-SUP",
+        taskName: "Billet #102 - Export CSV",
+        updatedAt: NOW,
+      },
+    ]);
+  });
+});
+
 describe("syncTimeEntries answers a change it could not apply", () => {
   it("as refused, with ChronOps' message, when ChronOps refuses the values", async () => {
     await withFake();
@@ -335,21 +625,12 @@ describe("syncTimeEntries answers a change it could not apply", () => {
     expect(ajour.requests.map((sent) => sent.method)).toEqual(["POST", "POST", "POST", "GET"]);
   });
 
-  it("as failed, without a request, for a running entry and for a day after today", async () => {
+  it("as failed, without a request, for a day after today", async () => {
     const { ajour } = await withFake();
-    const result = await syncTimeEntries(
-      connection,
-      request([
-        upsert("key-1", values({ localDate: "2026-11-12", running: true, countingSince: "2026-11-12T16:00:00.000Z" })),
-        upsert("key-2", values({ localDate: "2026-11-12" }), { remoteId: MISSING_ID, agreed: values({ running: true, countingSince: "2026-11-12T16:00:00.000Z" }) }),
-        upsert("key-3", values({ localDate: "2026-11-13" })),
-      ]),
-    );
+    const result = await syncTimeEntries(connection, request([upsert("key-1", values({ localDate: "2026-11-13" }))]));
 
     expect(result.results).toEqual([
-      { syncKey: "key-1", status: "failed", message: "This version of the ChronOps plugin doesn't send running entries yet." },
-      { syncKey: "key-2", status: "failed", message: "This version of the ChronOps plugin doesn't send running entries yet." },
-      { syncKey: "key-3", status: "failed", message: "ChronOps takes no entry on a day after today. Ajour sends it on its day." },
+      { syncKey: "key-1", status: "failed", message: "ChronOps takes no entry on a day after today. Ajour sends it on its day." },
     ]);
     expect(ajour.requests.map((sent) => sent.method)).toEqual(["GET"]);
   });
@@ -436,20 +717,25 @@ describe("syncTimeEntries lists the window", () => {
 
 describe("syncTimeEntries paces and reports", () => {
   it(
-    "keeps a full round under the Forwarder's limit of 10 requests a second with a burst of 20",
+    "keeps the longest round under the Forwarder's limit of 10 requests a second with a burst of 20",
     async () => {
-      // 20 entries ChronOps holds under Ajour's keys with another task name:
-      // each change takes a POST and a PATCH, 41 requests with the listing.
+      // The longest path a change can take is four requests: an edit answered
+      // 404, a POST that finds a timer a lost answer left under the key, its
+      // stop, and a PATCH of what the stop could not set. ChronOps runs one
+      // timer per person, so 20 of them is the code's worst case, not a likely
+      // round. With the listing, 81 requests.
+      const today = { localDate: "2026-11-12" };
       const entries = Array.from({ length: 20 }, (_, index) =>
-        held({ clientRef: `key-${index}`, task: "Old name", startedAt: "2026-11-10T14:00:00.000Z" }),
+        held({ clientRef: `key-${index}`, task: "Old name", startedAt: "2026-11-12T16:00:00.000Z", endedAt: null }),
       );
       const { ajour } = await withFake({ entries, rateLimit: { perSecond: 10, burst: 20 } });
       const result = await syncTimeEntries(
         connection,
-        request(entries.map((_, index) => upsert(`key-${index}`, values()))),
+        request(entries.map((_, index) => upsert(`key-${index}`, values(today), { remoteId: MISSING_ID, agreed: values(today) }))),
       );
 
-      expect(ajour.requests).toHaveLength(41);
+      expect(ajour.requests).toHaveLength(81);
+      expect(ajour.requests.slice(0, 4).map((sent) => sent.method)).toEqual(["PATCH", "POST", "POST", "PATCH"]);
       expect(result.results.map((change) => change.status)).toEqual(Array(20).fill("synced"));
     },
     20_000,
@@ -464,6 +750,7 @@ describe("syncTimeEntries paces and reports", () => {
         upsert("key-1", values()),
         upsert("key-2", values({ minutes: 30 }), { remoteId: entry.id, agreed: values() }),
         upsert("key-3", values({ minutes: 1441 })),
+        upsert("key-4", values({ localDate: "2026-11-12", minutes: 4, running: true, countingSince: "2026-11-12T17:56:00.000Z" })),
       ]),
     );
 
@@ -474,17 +761,20 @@ describe("syncTimeEntries paces and reports", () => {
         fields: {
           connectionId: "c1",
           outcome: "synced",
-          changes: 3,
+          changes: 4,
           created: 1,
           adopted: 0,
+          started: 1,
+          stopped: 0,
+          stoppedElsewhere: 0,
           updated: 1,
           recreated: 0,
           deleted: 0,
           refused: 1,
           failed: 0,
-          listed: 2,
+          listed: 3,
           skipped: 0,
-          requests: 4,
+          requests: 5,
           durationMs: expect.any(Number),
         },
       },

@@ -51,7 +51,9 @@ describe("project source and time sync manifest packaging contract", () => {
     // tag on every request, the cursor sent as an ETag on the snapshot, and
     // the JSON type of a Time Entry write.
     expect(network.requestHeaders).toEqual(["X-ChronOps-Source", "If-None-Match", "Content-Type"]);
-    // Only the Time Entry routes the time sync calls. `*` is one path segment, the entry's id.
+    // Only the Time Entry routes the time sync calls. `*` is one path segment,
+    // the entry's id. The plain timer stop is left out on purpose: it stops
+    // whichever timer runs, such as one another tool started.
     expect(network.endpoints).toEqual([
       { method: "GET", path: "/integration/me" },
       { method: "GET", path: "/integration/snapshot" },
@@ -59,6 +61,8 @@ describe("project source and time sync manifest packaging contract", () => {
       { method: "POST", path: "/integration/entries" },
       { method: "PATCH", path: "/integration/entries/*" },
       { method: "DELETE", path: "/integration/entries/*" },
+      { method: "POST", path: "/integration/entries/timer/start" },
+      { method: "POST", path: "/integration/entries/*/stop" },
     ]);
   });
 

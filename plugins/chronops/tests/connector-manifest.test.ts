@@ -27,11 +27,11 @@ describe("project source manifest packaging contract", () => {
       template: "{secret}",
       secretField: "personalToken",
     });
-    expect(connectionFields.find((field: { id: string }) => field.id === "personalToken")).toMatchObject({
-      type: "password",
-      secret: true,
-      required: true,
-    });
+    const tokenField = connectionFields.find((field: { id: string }) => field.id === "personalToken");
+    expect(tokenField).toMatchObject({ type: "password", secret: true, required: true });
+    // Time entries writes, so the help no longer asks for a read token.
+    expect(tokenField.placeholder).not.toMatch(/read token/);
+    expect(tokenField.helpText).toMatch(/Time entries need a read-write token/);
     expect(network.baseAddress).toEqual({ field: "forwarderUrl", allowOnPremises: true });
     expect(connectionFields.find((field: { id: string }) => field.id === "forwarderUrl")).toMatchObject({
       type: "url",

@@ -26,8 +26,8 @@
       "type": "password",
       "required": true,
       "secret": true,
-      "placeholder": "Paste a read token from your ChronOps profile",
-      "helpText": "Create it on your ChronOps profile with the read scope. Ajour only reads your projects, so a read-write token gives it more than it needs."
+      "placeholder": "Paste a token from your ChronOps profile",
+      "helpText": "Create it on your ChronOps profile. A read token is enough for projects and budgets. Time entries need a read-write token."
     }
   ],
   "network": {

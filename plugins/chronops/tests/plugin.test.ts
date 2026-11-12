@@ -34,15 +34,23 @@ describe("validateConnection against the fake MineHunter", () => {
   describe("with a read token that never expires", () => {
     const withFake = useFake();
 
-    it("reports the email, sends the source tag, and warns about nothing", async () => {
+    it("reports the email, sends the source tag, and warns about nothing while Time entries is off", async () => {
       const ajour = withFake();
-      const result = await validateConnection(connection, { capabilities: [] });
-      expect(result.normalizedConfig).toEqual(connection.config);
-      expect(result.connectionSummary).toEqual({ Email: "marie.tremblay@example.com", Scope: "Read" });
-      expect(result.warnings).toBeUndefined();
+      const result = await validateConnection(connection, { capabilities: ["projectSource"] });
+      expect(result).toEqual({
+        normalizedConfig: connection.config,
+        connectionSummary: { Email: "marie.tremblay@example.com", Scope: "Read" },
+      });
       expect(ajour.requests).toEqual([
         { method: "GET", path: "/integration/me", headers: { "x-chronops-source": "ajour" } },
       ]);
+    });
+
+    it("refuses the token while Time entries is on, and asks for a read-write one", async () => {
+      withFake();
+      await expect(validateConnection(connection, { capabilities: ["projectSource", "timeSync"] })).rejects.toThrow(
+        "Time entries need a read-write token, and this one can only read. Create a read-write token on your ChronOps profile and paste it here.",
+      );
     });
   });
 
@@ -52,18 +60,21 @@ describe("validateConnection against the fake MineHunter", () => {
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const withFake = useFake({ scope: "read-write", expiresAt });
 
-    it("asks for a read-only token and says when this one expires", async () => {
-      withFake();
-      const result = await validateConnection(connection, { capabilities: [] });
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings?.[0]).toMatch(/read token/);
-      expect(result.connectionSummary).toEqual({
-        Email: "marie.tremblay@example.com",
-        Scope: "Read and write",
-        "Token expires": expiresAt.slice(0, 10),
-        Warning: result.warnings?.[0],
-      });
-    });
+    it.each([[["projectSource"]], [["projectSource", "timeSync"]]] as const)(
+      "says when it expires and warns about nothing, with %j on",
+      async (capabilities) => {
+        withFake();
+        const result = await validateConnection(connection, { capabilities: [...capabilities] });
+        expect(result).toEqual({
+          normalizedConfig: connection.config,
+          connectionSummary: {
+            Email: "marie.tremblay@example.com",
+            Scope: "Read and write",
+            "Token expires": expiresAt.slice(0, 10),
+          },
+        });
+      },
+    );
   });
 
   describe("with an expired token", () => {

@@ -96,31 +96,26 @@ function dateOf(instant: string) {
 
 /**
  * Asks the Forwarder who the token belongs to. The token's scope and expiry
- * come back on the connection page. A read-write token gets a warning,
- * since Ajour only reads.
+ * come back on the connection page. Time entries writes, so while it is on,
+ * or being turned on, a token that can only read is refused with a sentence
+ * Ajour shows. Projects alone only read, so any token does for them.
  */
 export async function validateConnection(
   connection: PluginConnection,
-  _context?: ValidationContext,
+  context?: ValidationContext,
 ): Promise<ValidationResult> {
   const me = parseChronopsMe(await jsonBody(await forwarderGet(connection, "/integration/me")));
+  if (me.scope === "read" && context?.capabilities.includes("timeSync")) {
+    throw new ChronopsError(
+      "Time entries need a read-write token, and this one can only read. Create a read-write token on your ChronOps profile and paste it here.",
+    );
+  }
   const connectionSummary: Record<string, string | number | boolean> = {
     Email: me.email,
     Scope: me.scope === "read" ? "Read" : "Read and write",
   };
   if (me.expiresAt !== null) connectionSummary["Token expires"] = dateOf(me.expiresAt);
-  const warnings =
-    me.scope === "read-write"
-      ? ["This token can also write time in ChronOps. Ajour only reads your projects, so create a read token on your ChronOps profile and use it here."]
-      : [];
-  // Ajour has no warnings channel on validation yet (les-cabochons/ajour#502,
-  // story 2), so the summary carries the warning too, as a row people see today.
-  if (warnings[0] !== undefined) connectionSummary["Warning"] = warnings[0];
-  return {
-    normalizedConfig: connection.config,
-    connectionSummary,
-    ...(warnings.length > 0 ? { warnings } : {}),
-  };
+  return { normalizedConfig: connection.config, connectionSummary };
 }
 
 /**

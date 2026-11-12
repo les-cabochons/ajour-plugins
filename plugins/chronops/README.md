@@ -20,8 +20,14 @@ since Ajour only reads.
 ## What Ajour gets
 
 Every sync calls `GET /integration/snapshot` with the last `ETag` in
-`If-None-Match`, so an unchanged snapshot costs one 304. The plugin maps
-MineHunter's answer to Ajour's generic snapshot:
+`If-None-Match`, so an unchanged snapshot costs one 304. ChronOps builds the
+snapshot from its copies of Chronops' answers. A sync you ask for, Sync now
+or opening a ChronOps project in Ajour, adds `sync=true`, so ChronOps asks
+Chronops again and a project you were just added to shows. The 15-minute
+sync uses the copies and lets Chronops sleep. Ajour sends whether you asked
+since les-cabochons/ajour#686; an older Ajour never adds `sync=true`.
+
+The plugin maps MineHunter's answer to Ajour's generic snapshot:
 
 | ChronOps | Ajour |
 | --- | --- |

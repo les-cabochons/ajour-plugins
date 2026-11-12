@@ -1,6 +1,6 @@
 {
   "id": "chronops",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "apiVersion": 4,
   "displayName": "ChronOps",
   "description": "Bring your ChronOps projects, tasks and budgets into Ajour through MineHunter's ChronOps Forwarder. Read-only.",

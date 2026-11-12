@@ -101,6 +101,19 @@ describe("syncProjects against the fake MineHunter", () => {
     expect(stale).toHaveProperty("snapshot");
   });
 
+  it("asks ChronOps to read Chronops again when the user asked for the sync", async () => {
+    const ajour = withFake();
+    const first = await syncProjects(connection, {});
+    const cursor = "cursor" in first ? first.cursor : undefined;
+
+    await syncProjects(connection, { cursor, trigger: "manual" });
+    await syncProjects(connection, { cursor, trigger: "auto" });
+
+    expect(ajour.requests[1]).toMatchObject({ path: "/integration/snapshot", query: { sync: "true" } });
+    expect(ajour.requests[1]?.headers).toEqual({ "x-chronops-source": "ajour", "if-none-match": cursor });
+    expect(ajour.requests[2]).not.toHaveProperty("query");
+  });
+
   it("logs one wide event per sync with counts and no names", async () => {
     const ajour = withFake();
     await syncProjects(connection, {});

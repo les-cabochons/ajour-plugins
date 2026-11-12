@@ -115,6 +115,12 @@ export const PROJECT_SOURCE_BOUNDS = {
 export interface ProjectSourceSyncRequest {
   /** The cursor the last sync returned, opaque to Ajour. An ETag for ChronOps. */
   cursor?: string;
+  /**
+   * What started the sync: manual when the user asked for it, such as Sync
+   * now, auto for the 15-minute sync. Ajour before les-cabochons/ajour#686
+   * sends none.
+   */
+  trigger?: "manual" | "auto";
 }
 
 export type ProjectSourceSyncResult =

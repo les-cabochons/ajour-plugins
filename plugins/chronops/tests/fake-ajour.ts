@@ -6,6 +6,7 @@ import type {
   Ajour,
   AjourRequestError,
   AjourRequestErrorCode,
+  AjourHttpRequest,
   AjourResponse,
   PluginConnection,
   PluginHttpMethod,
@@ -22,6 +23,7 @@ const manifest = JSON.parse(readFileSync(new URL("../plugin.json", import.meta.u
 export interface RecordedRequest {
   method: PluginHttpMethod;
   path: string;
+  query?: AjourHttpRequest["query"];
   /** Header names lowercase. */
   headers: Record<string, string>;
 }
@@ -70,7 +72,9 @@ export function answer(status: number, json?: unknown, headers: Record<string, s
  */
 export function forwardTo(url: string, token: string | undefined = "personal-token"): Responder {
   return async (request) => {
-    const response = await fetch(`${url}${request.path}`, {
+    const query = new URLSearchParams(Object.entries(request.query ?? {}).map(([name, value]) => [name, String(value)]));
+    const search = query.size > 0 ? `?${query}` : "";
+    const response = await fetch(`${url}${request.path}${search}`, {
       method: request.method,
       headers: { ...request.headers, ...(token === undefined ? {} : { "X-ChronOps-Token": token }) },
     });
@@ -110,6 +114,7 @@ export function createFakeAjour(respond: Responder): FakeAjour {
       const recorded: RecordedRequest = {
         method: request.method,
         path: request.path,
+        ...(request.query === undefined ? {} : { query: request.query }),
         headers: lowercaseHeaders(request.headers),
       };
       requests.push(recorded);

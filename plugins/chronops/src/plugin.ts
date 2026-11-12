@@ -42,6 +42,7 @@ async function forwarderGet(
   connection: PluginConnection,
   path: string,
   headers: Readonly<Record<string, string>> = {},
+  query?: Readonly<Record<string, string>>,
 ): Promise<AjourResponse> {
   let response: AjourResponse;
   try {
@@ -49,6 +50,7 @@ async function forwarderGet(
       connectionId: connection.id,
       method: "GET",
       path,
+      ...(query === undefined ? {} : { query }),
       headers: { ...SOURCE_HEADER, ...headers },
     });
   } catch (error) {
@@ -126,7 +128,9 @@ export async function validateConnection(
 /**
  * Reads the user's projects, tasks and budgets. The cursor is the last
  * answer's ETag, sent back as If-None-Match, so an unchanged snapshot costs
- * one 304.
+ * one 304. ChronOps builds the snapshot from its copies of Chronops' answers,
+ * so a sync the user asked for adds sync=true, and ChronOps asks Chronops
+ * again. The 15-minute sync leaves Chronops asleep.
  */
 export async function syncProjects(
   connection: PluginConnection,
@@ -136,6 +140,7 @@ export async function syncProjects(
     connection,
     "/integration/snapshot",
     request.cursor === undefined ? {} : { "If-None-Match": request.cursor },
+    request.trigger === "manual" ? { sync: "true" } : undefined,
   );
   if (response.status === 304) {
     ajour.log("info", "ChronOps snapshot synced", { connectionId: connection.id, unchanged: true });

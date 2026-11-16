@@ -106,12 +106,17 @@ export const argvOf = (request) => commandOf(request).argv;
 
 /**
  * Installs a fake broker. `answer` gets the command and returns a capture
- * result; a launch mode command starts without one.
+ * result; a launch mode command starts without one. `routes` answer
+ * `ajour.http` (the SDK fake refuses a path or header the manifest doesn't
+ * declare), and `connectionUrl` is the operation's connection address,
+ * which fills a `connection-url` slot.
  */
-export function fakeBroker(answer) {
+export function fakeBroker(answer, { routes, connectionUrl } = {}) {
   const calls = [];
   globalThis.ajour = createFakeAjour({
     manifest,
+    ...(routes ? { routes } : {}),
+    ...(connectionUrl === undefined ? {} : { connectionUrl }),
     processRun: async (request) => {
       const command = commandOf(request);
       const call = { ...command, stdin: request.stdin };

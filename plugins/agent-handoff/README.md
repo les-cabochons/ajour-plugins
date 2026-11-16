@@ -1,10 +1,10 @@
 # Ajour agent handoff
 
-An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com) and [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, or a Copilot CLI session with `copilot`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
+An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) and [OpenCode](https://opencode.ai). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, a Copilot CLI session with `copilot`, or an OpenCode session on the server `opencode serve` runs, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
 
-The plugin has no network access. It runs only the commands it declares, through Ajour's process broker, after you approve them in Access.
+The plugin runs only the commands it declares, through Ajour's process broker, after you approve them in Access. Its only network access is OpenCode's server, at the address of a connection you add, through Ajour's credential broker: the plugin names a path such as `/session/status`, never a URL.
 
-Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a tool after 20. The handoffs it hasn't read by then, or whose command Ajour timed out or cut short, keep their last state, with the reason "T3 Code took too long; refreshing again later." (or Claude Code). A start stops waiting for what it started 27 seconds in. When Ajour stops a start command before its output is whole, the plugin says the tool may have started the work, so the user checks before handing off again. When Ajour refuses a command, the plugin says what to do, such as allowing the plugin in its Access section in Settings › Plugins.
+Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a tool after 20. The handoffs it hasn't read by then, or whose command Ajour timed out or cut short, keep their last state, with the reason "T3 Code took too long; refreshing again later." (or Claude Code, or OpenCode). A start stops waiting for what it started 27 seconds in. When Ajour stops a start command before its output is whole, the plugin says the tool may have started the work, so the user checks before handing off again. When Ajour refuses a command, the plugin says what to do, such as allowing the plugin in its Access section in Settings › Plugins.
 
 ## T3 Code
 
@@ -132,6 +132,77 @@ The VS Code link `vscode://agents/agent-host-session/copilotcli/<uuid>` has the 
 
 The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
 
+## OpenCode
+
+OpenCode runs its sessions on a server you start, `opencode serve`, which the plugin reaches over HTTP. Its tool uses a connection: add one on the plugin's page with the server's address, mark it on-premises (the address is on this computer), and pick it in OpenCode's settings. Ajour checks that the address answers as OpenCode when you save the connection.
+
+Start the server in the repository folder, without a password, on 127.0.0.1:
+
+```sh
+opencode serve --hostname 127.0.0.1 --port 4096
+```
+
+Sessions work in the folder the server started in: Ajour never gives the plugin a folder's path, so it can't send one to OpenCode. For another repository, run another server on another port and add a connection for it. A server started with `OPENCODE_SERVER_PASSWORD` refuses the plugin's requests, which carry no password, and the plugin says so.
+
+The plugin talks to OpenCode's v1 API, tested on OpenCode 1.19.5. It refuses an older server with "Run opencode upgrade, then restart opencode serve.", a 2.x one as not supported yet, and a server without the v1 routes by name.
+
+### Requests it sends
+
+| Request                               | What for                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /global/health`                  | Detects OpenCode and its version, checks a connection before Ajour saves it, and comes first in a start.                                                                                                |
+| `POST /session` with the title        | Creates the session, titled on one line.                                                                                                                                                                |
+| `POST /session/<id>/prompt_async`     | Sends the prompt, whole, in the body: `parts: [{ type: "text", text }]`, with the Model and Agent settings when set. OpenCode answers 204 once it has taken the prompt, not once the work is done.      |
+| `DELETE /session/<id>`                | Removes a session the plugin just created when OpenCode refused its prompt, so no empty session stays. A prompt that times out may have been taken, so its session stays.                               |
+| `GET /session/status`                 | Once per refresh: the status of every busy session. Idle sessions aren't in it.                                                                                                                         |
+| `GET /permission` and `GET /question` | Once per refresh each: the pending permissions and questions of every session.                                                                                                                          |
+| `GET /session/<id>`                   | For each idle session without a pending request, whether it still exists. Also for a pending request's session that isn't a handoff's, to find the handoff a subagent works for, up to three levels up. |
+| `GET /session/<id>/message?limit=1`   | For a session that just stopped, its last message, to tell an answer from an error. The plugin keeps only the error's name and message, never the conversation.                                         |
+
+### Commands it runs
+
+| Command                                                               | What for                                                                                                                                                             |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opencode attach <address> -s <session> --dir <folder>` in a terminal | Opens the session on the same server: Open on the handoff. Ajour fills `<address>` from the handoff's connection; the plugin passes only the session and the folder. |
+| `opencode --version`                                                  | Detects the `opencode` command, which Open needs. Times out after 10 seconds.                                                                                        |
+
+Detection reports OpenCode available when the server answers with a version the plugin supports and `opencode` is on PATH, and gives the server's version.
+
+### States
+
+One status, one permission and one question read per refresh, for every handoff of a connection, then one read for each session that isn't busy.
+
+| OpenCode                                                                                                              | Ajour                                                                         |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| A pending permission or question for the session, or for a subagent's session under it                                | Waiting for you (`needs-you`), labeled Asks for permission or Asks a question |
+| `busy`                                                                                                                | Working                                                                       |
+| `retry`                                                                                                               | Working, labeled Retrying, with OpenCode's reason                             |
+| Idle or missing from the status map, just stopped, and its last message is an answer                                  | Ready for review                                                              |
+| The same, and the last answer was stopped (`MessageAbortedError`)                                                     | Ready, labeled Stopped                                                        |
+| The same, and the last answer has an error, such as `APIError`                                                        | Failed, with the error's name and message                                     |
+| The same, and the last message is still the prompt a minute after it was sent, such as for a model OpenCode can't use | Failed: "OpenCode stopped without answering."                                 |
+| The same, within a minute of the prompt: OpenCode hasn't marked it busy yet                                           | Working, labeled Starting                                                     |
+| Read as ready or failed before, and still stopped                                                                     | Keeps that state, label and reason                                            |
+| `GET /session/<id>` answers 404                                                                                       | Gone, labeled Deleted in OpenCode                                             |
+| The server doesn't answer, refuses, or isn't OpenCode                                                                 | Unknown, with the reason. Never gone.                                         |
+| No answer before the refresh deadline, or Ajour's request timed out                                                   | Keeps its last state, with the reason                                         |
+| No connection                                                                                                         | Unknown, with "OpenCode needs a connection to its server."                    |
+
+OpenCode has no settled state, and a stopped session can take another turn when you open it, so the plugin reports it as ready for review, never done. A session the server no longer has, such as one deleted or on a server restarted in another folder, is gone.
+
+The native state keeps the last state, the label, OpenCode's status, the counts of pending permissions and questions, the retry attempt and the error's name. Messages, paths and the server's address are never stored, and a handoff has no web link.
+
+### Settings
+
+The server's address is the connection's. The tool's settings:
+
+| Setting | Default | What it does                                                                                                       |
+| ------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| Model   | Empty   | A provider and model as `provider/model`, such as `anthropic/claude-sonnet-4-5`. Empty uses your OpenCode default. |
+| Agent   | Empty   | An OpenCode agent, such as `build` or `plan`. Empty uses your OpenCode default.                                    |
+
+The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
+
 ## Default prompt
 
 The manifest has no default prompt yet: `capabilities.handoff.promptTemplate` arrives with les-cabochons/ajour#739, which isn't on Ajour's main branch. Until then Ajour uses its own fallback. Once it lands, the manifest gets this template:
@@ -155,4 +226,4 @@ just test
 just typecheck
 ```
 
-The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, and `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, each from a throwaway repository with home paths replaced. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.
+The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, and OpenCode 1.19.5's server on Windows, with its own XDG folders, in `tests/fixtures/opencode`, each from a throwaway repository with home paths replaced. The OpenCode answers a live server gives only while a model works, such as a pending permission, are written from its `/doc` OpenAPI schema, in `tests/fixtures/opencode/schema`. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. The SDK's fake `ajour.http` answers OpenCode's requests and refuses one `plugin.json` doesn't declare. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.

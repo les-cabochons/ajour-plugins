@@ -1,9 +1,9 @@
 {
   "id": "agent-handoff",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
-  "description": "Hand off backlog items to T3 Code, Claude Code or Copilot CLI and follow their work.",
+  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI or OpenCode and follow their work.",
   "entrypoint": "src/plugin.ts",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
   "capabilities": {
@@ -105,9 +105,75 @@
               "helpText": "A model name, or auto to let Copilot choose. Leave empty for your Copilot CLI default."
             }
           ]
+        },
+        {
+          "id": "opencode",
+          "label": "OpenCode",
+          "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 17l6-5-6-5M12 19h8\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+          "connection": "required",
+          "settings": [
+            {
+              "id": "model",
+              "label": "Model",
+              "type": "text",
+              "placeholder": "anthropic/claude-sonnet-4-5",
+              "helpText": "A provider and model as provider/model. Leave empty for your OpenCode default."
+            },
+            {
+              "id": "agent",
+              "label": "Agent",
+              "type": "text",
+              "placeholder": "build",
+              "helpText": "An OpenCode agent, such as build or plan. Leave empty for your OpenCode default."
+            }
+          ]
         }
       ]
     }
+  },
+  "connectionFields": [
+    {
+      "id": "label",
+      "label": "Connection label",
+      "type": "text",
+      "required": true,
+      "defaultValue": "OpenCode",
+      "placeholder": "Name this connection"
+    },
+    {
+      "id": "tenantLabel",
+      "label": "Computer",
+      "type": "text",
+      "required": true,
+      "defaultValue": "This computer",
+      "placeholder": "Where the server runs"
+    },
+    {
+      "id": "serverUrl",
+      "label": "Server address",
+      "type": "url",
+      "required": true,
+      "defaultValue": "http://127.0.0.1:4096",
+      "helpText": "Where opencode serve listens. Start it in the repository folder with opencode serve --hostname 127.0.0.1 --port 4096, and mark this connection as on-premises."
+    }
+  ],
+  "network": {
+    "baseAddress": {
+      "field": "serverUrl",
+      "allowOnPremises": true
+    },
+    "endpoints": [
+      { "method": "GET", "path": "/global/health" },
+      { "method": "POST", "path": "/session" },
+      { "method": "GET", "path": "/session/status" },
+      { "method": "GET", "path": "/session/*" },
+      { "method": "DELETE", "path": "/session/*" },
+      { "method": "GET", "path": "/session/*/message" },
+      { "method": "POST", "path": "/session/*/prompt_async" },
+      { "method": "GET", "path": "/permission" },
+      { "method": "GET", "path": "/question" }
+    ],
+    "requestHeaders": ["Content-Type"]
   },
   "processes": {
     "executables": {
@@ -119,6 +185,9 @@
       },
       "copilot": {
         "names": ["copilot"]
+      },
+      "opencode": {
+        "names": ["opencode"]
       }
     },
     "commands": [
@@ -257,6 +326,26 @@
       {
         "id": "copilot-version",
         "executable": "copilot",
+        "args": ["--version"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "opencode-attach",
+        "executable": "opencode",
+        "args": [
+          "attach",
+          "{server:connection-url}",
+          "-s",
+          "{session:id}",
+          "--dir",
+          "{folder:folder}"
+        ],
+        "mode": "terminal"
+      },
+      {
+        "id": "opencode-version",
+        "executable": "opencode",
         "args": ["--version"],
         "mode": "capture",
         "timeoutSeconds": 10

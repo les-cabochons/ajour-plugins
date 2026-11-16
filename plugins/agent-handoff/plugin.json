@@ -126,7 +126,7 @@
                   "label": "In a terminal (codex resume)"
                 }
               ],
-              "helpText": "Where Open shows the thread. The Codex app opens it from its codex:// link; the terminal runs codex resume in the repository folder."
+              "helpText": "Where Open shows the thread. The Codex app opens it from its codex:// link; the terminal runs codex resume in the repository folder. Ajour runs at most two Codex handoffs at once."
             },
             {
               "id": "model",

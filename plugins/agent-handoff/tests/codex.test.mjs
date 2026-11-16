@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
 import {
+  BUSY_READING,
+  BUSY_STARTING,
   ELSEWHERE,
   GONE,
   NOT_RECORDED,
@@ -18,6 +20,7 @@ import {
   fakeBroker,
   flush,
   folders,
+  manifest,
   ok,
   refuse,
   refused,
@@ -104,6 +107,52 @@ function handoff(id, threadId, native) {
 
 const sessionsOf = () => globalThis.ajour.sessions;
 
+/**
+ * A program that answers each request with `answer(message)`: a result, an
+ * `{ error }`, or `undefined` for no answer. `{ lines }` writes those first.
+ */
+function answering(answer) {
+  return () => ({
+    receive(line) {
+      const message = JSON.parse(line);
+      if (message.id === undefined || !message.method) return [];
+      const answered = answer(message);
+      if (answered === undefined) return [];
+      const { lines = [], ...rest } = answered;
+      const reply = rest.error
+        ? { id: message.id, error: rest.error }
+        : { id: message.id, result: rest.result ?? rest };
+      return [...lines, JSON.stringify(reply)];
+    },
+  });
+}
+
+/** Opens a session as a start would have, and returns its id. */
+const openSession = () =>
+  globalThis.ajour.process.session.open({
+    command: "codex-app-server",
+    args: { folder: FOLDER },
+  });
+
+const idleThread = (status = { type: "idle" }) => ({
+  result: { thread: { id: ok1.thread, name: "Ajour live ok", status } },
+});
+
+/** Ticks mocked timers until `promise` settles, and returns its outcome. */
+async function settle(t, promise, steps = 1300) {
+  let outcome;
+  const pending = promise.then(
+    (value) => (outcome = { value }),
+    (error) => (outcome = { error }),
+  );
+  for (let i = 0; i < steps && !outcome; i++) {
+    await flush();
+    t.mock.timers.tick(25);
+  }
+  await pending;
+  return outcome;
+}
+
 test("detects Codex from codex --version", async () => {
   fakeCodex();
   const { tools } = await detectTools();
@@ -149,8 +198,9 @@ test("a start runs the app-server in the folder and sends the title and prompt a
       "turn/start",
     ],
   );
+  // Codex refuses initialize without a version; it is the plugin's own.
   assert.deepEqual(sent[0].params, {
-    clientInfo: { name: "ajour", title: "Ajour", version: "0.4.0" },
+    clientInfo: { name: "ajour", title: "Ajour", version: manifest.version },
   });
   // No model setting: the user's Codex config chooses.
   assert.deepEqual(sent[2].params, {});
@@ -223,8 +273,6 @@ test("a prompt over 1 MB as JSON is refused before a session opens", async () =>
 
 test("each refusal of the session names Codex and says what to do next", async () => {
   const cases = {
-    session_limit:
-      "Ajour keeps at most two Codex sessions running for this plugin, and both are busy with other handoffs. Hand off again once one of them is ready.",
     executable_missing:
       "Codex isn't installed, or its codex command isn't on PATH.",
     needs_consent:
@@ -239,13 +287,40 @@ test("each refusal of the session names Codex and says what to do next", async (
   }
 });
 
-test("a third session is refused while two handoffs run", async () => {
+test("a third start waits 3 seconds once, then says two handoffs are running", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   fakeCodex([program("start-ok"), program("start-bad"), program("start-cut")]);
   await startHandoff(startRequest());
   await startHandoff(startRequest());
-  await assert.rejects(startHandoff(startRequest()), {
-    code: "session_limit",
-  });
+  const began = Date.now();
+  const { error } = await settle(t, startHandoff(startRequest()));
+  assert.equal(error.code, "session_limit");
+  assert.equal(error.message, BUSY_STARTING);
+  assert.equal(
+    BUSY_STARTING,
+    "Ajour runs at most two Codex handoffs at once, and two are running. Hand off again when one finishes or waits for you.",
+  );
+  const waited = Date.now() - began;
+  assert.ok(waited >= 3000 && waited < 4000, `waited ${waited} ms`);
+  // The third program never ran.
+  assert.equal(sessionsOf().length, 2);
+});
+
+test("a start that meets a refresh's reader gets the session once the reader closes", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeCodex([
+    program("start-ok"),
+    answering(() => undefined),
+    program("start-ok"),
+  ]);
+  await startHandoff(startRequest());
+  // A refresh of another project holds the second session for a moment.
+  const reader = await openSession();
+  setTimeout(() => globalThis.ajour.process.session.close(reader), 1000);
+  const { value, error } = await settle(t, startHandoff(startRequest()));
+  assert.equal(error, undefined);
+  assert.equal(value.threadId, ok1.thread);
+  assert.equal(sessionsOf().at(-1).state, "open");
 });
 
 test("Codex refusing the thread fails the start and ends the session", async () => {
@@ -683,7 +758,7 @@ test("a live session that outlasts the refresh deadline keeps its state and sess
   assert.equal(sessionsOf()[0].state, "open");
 });
 
-test("when no session can open to read, every state is kept with the reason", async () => {
+test("when both sessions run handoffs, a refresh keeps every state and says so", async () => {
   fakeCodex([refuse("session_limit")]);
   const [update] = await readHandoffStates({
     tool: "codex",
@@ -693,7 +768,58 @@ test("when no session can open to read, every state is kept with the reason", as
   });
   assert.equal(update.state, "ready");
   assert.equal(update.native.label, "Completed");
-  assert.match(update.native.reason, /at most two Codex sessions/);
+  assert.equal(update.native.reason, BUSY_READING);
+  assert.equal(
+    BUSY_READING,
+    "Both of Ajour's Codex sessions are running handoffs; refreshing again once one is free.",
+  );
+});
+
+test("a refresh opens no reader with less than 2 seconds left", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const { calls } = fakeCodex([
+    (running) => ({
+      receive(line) {
+        const message = JSON.parse(line);
+        // The live thread answers 18.5 seconds in, completed.
+        const answer =
+          message.method === "thread/read"
+            ? idleThread().result
+            : {
+                data: [{ id: ok1.turn, status: "completed", completedAt: 1 }],
+              };
+        setTimeout(
+          () =>
+            running.write(JSON.stringify({ id: message.id, result: answer })),
+          18_500,
+        );
+        return [];
+      },
+    }),
+  ]);
+  const session = await openSession();
+  const { value } = await settle(
+    t,
+    readHandoffStates({
+      tool: "codex",
+      handoffs: [
+        handoff("live", ok1.thread, {
+          state: "working",
+          session,
+          turn: ok1.turn,
+        }),
+        handoff("other", cut.thread, { state: "ready", label: "Completed" }),
+      ],
+    }),
+  );
+  const [live, other] = value;
+  assert.equal(live.state, "ready");
+  assert.equal(other.state, "ready");
+  assert.equal(other.native.label, "Completed");
+  assert.match(other.native.reason, late);
+  // Only the live session ran; no reader opened.
+  assert.equal(calls.length, 1);
+  assert.equal(sessionsOf().length, 1);
 });
 
 test("a live working session reads the batch's other threads, with no new app-server", async () => {
@@ -759,6 +885,179 @@ test("a request Codex makes that isn't for the user gets an error answer", async
     id: 7,
     error: { code: -32601, message: "Ajour can't answer this request." },
   });
+});
+
+/** Reads one handoff whose turn runs in a session the test opened. */
+async function readLiveOne(native = {}) {
+  const session = await openSession();
+  const [update] = await readHandoffStates({
+    tool: "codex",
+    handoffs: [
+      handoff("h1", ok1.thread, {
+        state: "working",
+        label: "Working",
+        session,
+        turn: ok1.turn,
+        ...native,
+      }),
+    ],
+  });
+  return { update, session };
+}
+
+test("a live thread Codex no longer has is gone, and its session closes", async () => {
+  fakeCodex([
+    answering((m) => ({
+      error: {
+        code: -32600,
+        message: `thread not loaded: ${m.params.threadId}`,
+      },
+    })),
+  ]);
+  const { update } = await readLiveOne();
+  assert.equal(update.state, "gone");
+  assert.equal(update.native.reason, GONE);
+  assert.equal(update.native.session, undefined);
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("a live thread that isn't active closes its session even when its turns can't be read", async () => {
+  for (const status of [{ type: "idle" }, { type: "systemError" }]) {
+    fakeCodex([
+      answering((m) =>
+        m.method === "thread/read"
+          ? idleThread(status)
+          : { error: { code: -32603, message: "turns unavailable" } },
+      ),
+    ]);
+    const { update } = await readLiveOne();
+    assert.equal(update.state, "working", status.type);
+    assert.equal(
+      update.native.reason,
+      "Codex couldn't read this thread's turns. Refreshing again later.",
+    );
+    assert.equal(update.native.session, undefined, status.type);
+    assert.equal(sessionsOf()[0].state, "closed", status.type);
+  }
+});
+
+test("an active live thread whose turns can't be read keeps its session", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread({ type: "active", activeFlags: [] })
+        : { error: { code: -32603, message: "turns unavailable" } },
+    ),
+  ]);
+  const { update, session } = await readLiveOne();
+  assert.equal(update.state, "working");
+  assert.equal(update.native.session, session);
+  assert.equal(sessionsOf()[0].state, "open");
+});
+
+test("a Codex that doesn't know thread/read closes the live session", async () => {
+  fakeCodex([
+    answering(() => ({ error: { code: -32601, message: "Method not found" } })),
+  ]);
+  const { update } = await readLiveOne();
+  assert.equal(update.state, "working");
+  assert.equal(
+    update.native.reason,
+    "This Codex version doesn't answer the reads Ajour follows a handoff with. Check for an update of this plugin.",
+  );
+  assert.equal(update.native.session, undefined);
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("a live read Ajour refuses keeps the last state and the session", async () => {
+  fakeCodex([answering(() => undefined)]);
+  const session = await openSession();
+  globalThis.ajour.process.session.read = async () => {
+    throw refused("rate_limit");
+  };
+  const [update] = await readHandoffStates({
+    tool: "codex",
+    handoffs: [
+      handoff("h1", ok1.thread, {
+        state: "needs-you",
+        label: "Waiting for approval",
+        session,
+      }),
+    ],
+  });
+  assert.equal(update.state, "needs-you");
+  assert.equal(update.native.label, "Waiting for approval");
+  assert.equal(update.native.session, session);
+  assert.equal(
+    update.native.reason,
+    "Ajour is limiting this plugin's commands. Try again in a minute.",
+  );
+});
+
+test("answers that arrive with the session's exit still count", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread()
+        : { data: [{ id: ok1.turn, status: "completed", completedAt: 1 }] },
+    ),
+  ]);
+  const session = await openSession();
+  const sessions = globalThis.ajour.process.session;
+  const read = sessions.read.bind(sessions);
+  // Ajour reports the exit with the program's last lines.
+  sessions.read = async (id, options) => ({
+    ...(await read(id, options)),
+    exited: true,
+  });
+  const [update] = await readHandoffStates({
+    tool: "codex",
+    handoffs: [
+      handoff("h1", ok1.thread, { state: "working", session, turn: ok1.turn }),
+    ],
+  });
+  assert.equal(update.state, "ready");
+  assert.equal(update.native.session, undefined);
+  // No reader opened to read it again.
+  assert.equal(sessionsOf().length, 1);
+});
+
+test("a question Codex asks under a method the plugin doesn't know is still for the user", async () => {
+  const cases = [
+    ["item/newTool/requestApproval", "Waiting for approval"],
+    ["item/newTool/requestChoice", "Waiting for your answer"],
+  ];
+  for (const [method, label] of cases) {
+    const log = [];
+    fakeCodex([
+      () => {
+        const program = answering((m) =>
+          m.method === "thread/read"
+            ? {
+                ...idleThread({ type: "active", activeFlags: [] }),
+                lines: [
+                  JSON.stringify({
+                    id: 9,
+                    method,
+                    params: { threadId: ok1.thread },
+                  }),
+                ],
+              }
+            : { data: [{ id: ok1.turn, status: "inProgress" }] },
+        )();
+        return {
+          receive(line) {
+            log.push(line);
+            return program.receive(line);
+          },
+        };
+      },
+    ]);
+    const { update } = await readLiveOne();
+    assert.equal(update.state, "needs-you", method);
+    assert.equal(update.native.label, label, method);
+    assert.ok(!messages(log).some((m) => m.id === 9), method);
+  }
 });
 
 test("a refresh with no handoffs opens nothing", async () => {

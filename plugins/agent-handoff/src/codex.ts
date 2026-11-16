@@ -44,6 +44,8 @@ import {
 export const CODEX_TOOL = "codex";
 const SERVER = "codex-app-server";
 const RESUME = "codex-resume";
+// Codex refuses initialize without a client version, and Ajour gives a plugin
+// no way to read its own manifest: a test keeps this equal to plugin.json's.
 const CLIENT = { name: "ajour", title: "Ajour", version: "0.4.0" };
 // Ajour sends a session one line of at most 1 MB, in UTF-8.
 export const LINE_LIMIT = 1024 * 1024;
@@ -57,17 +59,29 @@ const THREAD_ID = /^[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$/;
 const NOT_FOUND = /^thread not loaded\b/i;
 // Codex keeps an archived thread's rollout in this folder.
 const ARCHIVED = /[\\/]archived_sessions[\\/]/i;
-// What Codex asks the user. Ajour can't answer, and while a session holds the
-// thread, neither can the Codex app.
-const ASKS = new Set([
-  "item/commandExecution/requestApproval",
-  "item/fileChange/requestApproval",
-  "item/permissions/requestApproval",
-  "item/tool/requestUserInput",
-  "mcpServer/elicitation/request",
-  "applyPatchApproval",
-  "execCommandApproval",
-]);
+// JSON-RPC's code for a method the server doesn't have.
+const NO_METHOD = -32601;
+// A start that finds both sessions taken waits this long once: a refresh's
+// reader holds a session only for a moment.
+const BUSY_RETRY_MS = 3000;
+// A refresh with less time left than this opens no reader: starting an
+// app-server takes about a second, and its reads take more.
+const READER_MIN_MS = 2000;
+
+/**
+ * What Codex asks the user, as the flag Codex sets for it, or undefined for a
+ * request that isn't for the user. Ajour can't answer, and while a session
+ * holds the thread, neither can the Codex app. A method this version doesn't
+ * name, such as `item/<tool>/requestApproval` or another `*\/request*`, is
+ * taken as a question too: answering it with an error would stop the turn.
+ */
+function askOf(
+  method: string,
+): "waitingOnApproval" | "waitingOnUserInput" | undefined {
+  if (/Approval$/.test(method)) return "waitingOnApproval";
+  if (/\/request/.test(method)) return "waitingOnUserInput";
+  return undefined;
+}
 const LABELS: Record<State, string> = {
   working: "Working",
   "needs-you": "Waiting for you",
@@ -87,6 +101,12 @@ export const ELSEWHERE =
   "Codex reports the last turn as interrupted, which is also how it shows a turn running in another Codex window. Open the thread to see it.";
 export const GONE =
   "Codex has no thread with this id, such as after codex delete.";
+export const BUSY_STARTING =
+  "Ajour runs at most two Codex handoffs at once, and two are running. Hand off again when one finishes or waits for you.";
+export const BUSY_READING =
+  "Both of Ajour's Codex sessions are running handoffs; refreshing again once one is free.";
+const NO_READS =
+  "This Codex version doesn't answer the reads Ajour follows a handoff with. Check for an update of this plugin.";
 const NOT_IN_TIME = "Codex didn't start the thread in time. Try again.";
 const MAYBE_STARTED =
   "Codex may have started the thread. Check Codex before handing off again.";
@@ -98,8 +118,7 @@ const codex: Tool = {
     invalid_request:
       "Ajour refused a value for codex. A terminal also needs a repository folder path without unusual characters.",
     output_limit: "Codex printed more than Ajour accepts.",
-    session_limit:
-      "Ajour keeps at most two Codex sessions running for this plugin, and both are busy with other handoffs. Hand off again once one of them is ready.",
+    session_limit: BUSY_STARTING,
     session_ended: "Ajour's session with Codex ended. Try again.",
     input_limit: "Codex isn't taking Ajour's input. Try again.",
   }),
@@ -151,7 +170,7 @@ interface Answer {
 
 /** What Codex asked the user about one thread, between reads. */
 interface Heard {
-  asked?: string;
+  asked: "waitingOnApproval" | "waitingOnUserInput";
 }
 
 /**
@@ -164,6 +183,8 @@ class Rpc {
   private readonly prefix = `ajour-${crypto.randomUUID().slice(0, 8)}`;
   private readonly answers = new Map<string, Answer>();
   readonly heard = new Map<string, Heard>();
+  /** The program exited: what it wrote before is read, nothing more comes. */
+  exited = false;
 
   readonly session: string;
 
@@ -211,7 +232,13 @@ class Rpc {
         throw sessionError(error);
       }
       for (const line of read.lines) await this.take(line);
-      if (read.exited) throw new SessionGone();
+      if (read.exited) {
+        this.exited = true;
+        // Ajour reports the exit with the program's last lines, which may
+        // hold every answer.
+        if (ids.every((id) => this.answers.has(id))) break;
+        throw new SessionGone();
+      }
       // Ajour's read waits for a line; this keeps a quick empty read from
       // spinning.
       if (read.lines.length === 0) await pause(25, deadline);
@@ -259,8 +286,9 @@ class Rpc {
       // Codex asks the client. A question for the user stays unanswered:
       // the thread's flags say Codex waits. Anything else gets an error, so
       // Codex doesn't wait for a client that can't answer.
-      if (ASKS.has(method)) {
-        if (thread) this.heard.set(thread, { asked: method });
+      const asked = askOf(method);
+      if (asked) {
+        if (thread) this.heard.set(thread, { asked });
       } else
         await this.write({
           id: id as string | number,
@@ -272,6 +300,11 @@ class Rpc {
 
 function errorOf(answer: Answer): string | undefined {
   return answer.error?.message;
+}
+
+/** Codex answered that it has no such method, such as after an update. */
+function missingMethod(answer: Answer): boolean {
+  return answer.error?.code === NO_METHOD;
 }
 
 /** Codex's answer to a request, or a failure with its message. */
@@ -318,6 +351,26 @@ async function connect(folder: string, deadline: number): Promise<Rpc> {
   }
 }
 
+function isBusy(error: unknown): boolean {
+  return error instanceof ToolError && error.code === "session_limit";
+}
+
+/**
+ * Connects for a start. Both sessions taken may mean a refresh's reader holds
+ * one for a moment, so the start waits once and tries again, when the
+ * deadline leaves time to start the thread after.
+ */
+async function connectToStart(folder: string, deadline: number): Promise<Rpc> {
+  try {
+    return await connect(folder, deadline);
+  } catch (error) {
+    if (!isBusy(error) || deadline - Date.now() < BUSY_RETRY_MS * 3)
+      throw error;
+    await pause(BUSY_RETRY_MS, deadline);
+    return connect(folder, deadline);
+  }
+}
+
 /** The turn's input: the prompt, as one JSON line Ajour can send. */
 function turnInput(prompt: string): Json[] {
   return [{ type: "text", text: prompt }];
@@ -346,7 +399,7 @@ export async function startCodex(
   try {
     // connect keeps to the deadline, and ends a session it opened on a
     // failure, so none outlives the operation unseen.
-    rpc = await connect(request.folder.id, deadline);
+    rpc = await connectToStart(request.folder.id, deadline);
   } catch (error) {
     if (isLate(error)) throw new ToolError(NOT_IN_TIME, "late");
     throw new ToolError(
@@ -626,6 +679,13 @@ function answeredUpdate(
 ): Update {
   const drop = { session: !session };
   const readError = errorOf(read);
+  if (missingMethod(read) || missingMethod(turns))
+    return keptUpdate(
+      handoff,
+      previousState(handoff.native),
+      { reason: NO_READS },
+      drop,
+    );
   if (readError) {
     // Only a record Codex doesn't have is gone. Another failure, such as a
     // thread whose first line isn't written yet, says nothing about it.
@@ -644,7 +704,9 @@ function answeredUpdate(
     );
   }
   const thread = record(read.result?.thread) ?? {};
-  if (errorOf(turns))
+  const status = record(thread.status) ?? {};
+  // An active thread's status says it all: working, or what it waits for.
+  if (errorOf(turns) && text(status.type) !== "active")
     return keptUpdate(
       handoff,
       previousState(handoff.native),
@@ -656,11 +718,7 @@ function answeredUpdate(
     );
   const list = turns.result?.data;
   const last = Array.isArray(list) ? record(list[0]) : undefined;
-  return updateOf(
-    handoff,
-    { thread, status: record(thread.status) ?? {}, last, live: !!session },
-    session,
-  );
+  return updateOf(handoff, { thread, status, last, live: !!session }, session);
 }
 
 /**
@@ -685,33 +743,38 @@ async function readLive(
   // What Codex said while nobody read: a question it asked without a flag.
   const heard = rpc.heard.get(handoff.threadId);
   const thread = record(read.result?.thread);
-  if (
-    heard?.asked &&
-    thread &&
-    text(record(thread.status)?.type) === "active"
-  ) {
+  const active = text(record(thread?.status)?.type) === "active";
+  if (heard && thread && active) {
     const status = record(thread.status) ?? {};
-    const flags = flagsOf(status);
-    if (!flags.length)
-      thread.status = {
-        ...status,
-        activeFlags: [
-          heard.asked === "item/tool/requestUserInput" ||
-          heard.asked === "mcpServer/elicitation/request"
-            ? "waitingOnUserInput"
-            : "waitingOnApproval",
-        ],
-      };
+    if (!flagsOf(status).length)
+      thread.status = { ...status, activeFlags: [heard.asked] };
   }
   const update = answeredUpdate(handoff, read, turns, session);
-  if (update.state === "working" && !errorOf(read) && !errorOf(turns))
-    return { update, rpc };
-  // The turn ended, or waits for the user: let go of the thread, so the
-  // Codex app can open it, and free the session. A kept state keeps it.
-  if (errorOf(read) || errorOf(turns)) return { update, rpc };
+  if (!rpc.exited && holds(update, read, turns, active)) return { update, rpc };
+  // The turn ended, waits for the user, or can't be followed here: let go of
+  // the thread, so the Codex app can open it, and free the session. A
+  // session kept for a turn that ended would never idle out, since each
+  // refresh reads it.
   await closeServer(session);
   delete (update.native as Native).session;
   return { update };
+}
+
+/** True while the session may still run the thread's turn. */
+function holds(
+  update: Update,
+  read: Answer,
+  turns: Answer,
+  active: boolean,
+): boolean {
+  // A thread Codex has no record of, or a read this Codex doesn't have.
+  if (update.state === "gone" || missingMethod(read) || missingMethod(turns))
+    return false;
+  // Another read failure says nothing about the thread.
+  if (errorOf(read)) return true;
+  // Without the turns, the thread's status alone says whether it runs.
+  if (errorOf(turns)) return active && update.state === "working";
+  return update.state === "working";
 }
 
 export async function readCodex(
@@ -738,12 +801,13 @@ export async function readCodex(
       updates.set(handoff.id, live.update);
       reader ??= live.rpc;
     } catch (error) {
+      // Neither says anything about the thread, so the state and the
+      // session stay as last read.
       updates.set(
         handoff.id,
         isLate(error)
           ? lateUpdate(handoff)
-          : keptUpdate(handoff, "unknown", {
-              label: LABELS.unknown,
+          : keptUpdate(handoff, previousState(handoff.native), {
               reason: reasonOf(codex, error),
             }),
       );
@@ -755,6 +819,8 @@ export async function readCodex(
     let opened: Rpc | undefined;
     try {
       if (!reader) {
+        if (deadline - Date.now() < READER_MIN_MS)
+          throw new LateError(codex.late);
         opened = await connect((rest[0] as Handoff).folderId, deadline);
         reader = opened;
       }
@@ -788,23 +854,23 @@ export async function readCodex(
         );
       }
     } catch (error) {
+      // A reader can't open when both sessions run handoffs: a refresh
+      // isn't a start, so it says why it waits instead.
+      const reason = isLate(error)
+        ? codex.late
+        : isBusy(error)
+          ? BUSY_READING
+          : reasonOf(codex, error);
       for (const handoff of rest)
         if (!updates.has(handoff.id))
           updates.set(
             handoff.id,
-            isLate(error)
-              ? keptUpdate(
-                  handoff,
-                  previousState(handoff.native),
-                  { reason: codex.late },
-                  { session: true },
-                )
-              : keptUpdate(
-                  handoff,
-                  previousState(handoff.native),
-                  { reason: reasonOf(codex, error) },
-                  { session: true },
-                ),
+            keptUpdate(
+              handoff,
+              previousState(handoff.native),
+              { reason },
+              { session: true },
+            ),
           );
     } finally {
       if (opened) await closeServer(opened.session);

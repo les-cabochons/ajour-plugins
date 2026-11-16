@@ -138,6 +138,10 @@ Every handoff is a Codex thread that `codex app-server` starts and runs. The app
 
 **A running turn ends when Ajour quits.** Ajour also ends the session, and the turn with it, when the plugin is turned off, updated or suspended, or after 30 minutes without a refresh. Codex then records the turn as interrupted, and the handoff shows Failed, labeled Stopped. Open the thread in Codex to go on.
 
+**At most two Codex handoffs run at once**, because Ajour keeps at most two sessions for a plugin (see [Sessions](#sessions)).
+
+**Removing a handoff leaves its turn running.** Ajour doesn't tell a plugin when a handoff is removed, and nothing refreshes it after, so its session keeps the turn running, and holds one of the two places, until the 30-minute idle timeout ends both. les-cabochons/ajour#755 asks Ajour to tell the plugin.
+
 ### Commands it runs
 
 | Command                                           | What for                                                                                                                                                                                                                         |
@@ -150,17 +154,21 @@ The plugin also declares the `codex` link scheme. Open on a handoff opens `codex
 
 ### Sessions
 
-Each handoff gets its own session, opened by its start. A plugin operation can't find a session another operation opened, except through the handoff that keeps its id in its native state. Ajour keeps at most two sessions for a plugin, so **at most two Codex handoffs run at once**. A third start fails with "Ajour keeps at most two Codex sessions running for this plugin, and both are busy with other handoffs. Hand off again once one of them is ready." One session for every handoff would have no such limit, but a start couldn't reach it.
+Each handoff gets its own session, opened by its start. A plugin operation can't find a session another operation opened, except through the handoff that keeps its id in its native state. Ajour keeps at most two sessions for a plugin, so **at most two Codex handoffs run at once**. One session for every handoff would have no such limit, but a start couldn't reach it.
+
+A refresh may hold one of the two for a moment to read threads (see below). So a start that finds both taken waits 3 seconds and tries once more. If both are still taken, it fails with "Ajour runs at most two Codex handoffs at once, and two are running. Hand off again when one finishes or waits for you." A refresh that can't open a session to read keeps every state, with "Both of Ajour's Codex sessions are running handoffs; refreshing again once one is free."
 
 A start opens the session, sends `initialize`, `initialized`, `thread/start` (with the model, if set), then `thread/name/set` and `turn/start`. The thread's id is the handoff's thread id. The app-server uses your Codex settings, such as its approval policy, sandbox and MCP servers; the plugin sets none of them. When `thread/start` answers but `turn/start` doesn't by 27 seconds, the handoff is kept with "Codex may have started the thread. Check Codex before handing off again.", and the session keeps running for a refresh to read.
 
-A refresh reads each live thread in its own session, with `thread/read` and `thread/turns/list` (the last turn, without its items), batched and within 20 seconds. Once the turn has ended, or Codex waits for you, the refresh closes the session. That frees one of the two places and lets go of the thread. While a session holds a thread, the Codex app shows it with "This is open in another app" and can't continue it.
+A refresh reads each live thread in its own session, with `thread/read` and `thread/turns/list` (the last turn, without its items), batched and within 20 seconds. The refresh closes the session once the turn has ended, Codex waits for you, Codex has no such thread, or the thread isn't `active` and its turns can't be read. That frees one of the two places and lets go of the thread. Every refresh resets the session's idle timeout, so a session kept for a turn that ended would never close. While a session holds a thread, the Codex app shows it with "This is open in another app" and can't continue it.
 
-Threads without a live session are read the same way through one other app-server for the whole batch: a session of the batch that still runs a turn, else a new one that the refresh closes. A thread that no app-server has loaded reads as `notLoaded`, and its last turn says what happened.
+Threads without a live session are read the same way through one other app-server for the whole batch: a session of the batch that still runs a turn, else a new one that the refresh closes. A refresh with less than 2 seconds left opens none, and those threads keep their last state with the late reason. A thread that no app-server has loaded reads as `notLoaded`, and its last turn says what happened.
+
+A new app-server starts no MCP servers to read: Codex starts them when it loads a thread to run it, with `thread/start`. With codex-cli 0.169.0 and a dummy MCP server in an isolated `CODEX_HOME`, `initialize`, `thread/read` and `thread/turns/list` of a thread on disk never started it, and `thread/start` did. So a refresh's reader costs one `codex` process for a few seconds, and nothing more.
 
 ### Questions and approvals
 
-Codex can ask before it runs a command or edits a file, as your approval policy says, or ask you a question. The plugin can't answer, and while Ajour's session holds the thread, the Codex app can't either. So a refresh that sees one closes the session and reports Waiting for you, with "Codex asked for your approval or an answer, which Ajour can't give. Ajour let go of the thread, which stopped the turn: open it in Codex and tell it to go on." The handoff stays Waiting for you until another turn runs. Other requests Codex makes of its client get a JSON-RPC error, so Codex never waits for them.
+Codex can ask before it runs a command or edits a file, as your approval policy says, or ask you a question. The plugin can't answer, and while Ajour's session holds the thread, the Codex app can't either. So a refresh that sees one closes the session and reports Waiting for you, with "Codex asked for your approval or an answer, which Ajour can't give. Ajour let go of the thread, which stopped the turn: open it in Codex and tell it to go on." The handoff stays Waiting for you until another turn runs. A request whose method the plugin doesn't name counts as a question too when it ends in `Approval` (an approval) or has `/request` in it (a question), so a newer Codex's question never gets an error that would stop the turn. Other requests Codex makes of its client get a JSON-RPC error, so Codex never waits for them.
 
 ### States
 
@@ -168,6 +176,7 @@ Codex can ask before it runs a command or edits a file, as your approval policy 
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | Thread `active` with `waitingOnApproval` or `waitingOnUserInput`, or a question asked   | Waiting for you (`needs-you`), and the session closes                     |
 | Thread `active`, or the session's own turn not recorded yet                             | Working                                                                   |
+| A live thread `idle` with no turn, and no turn id from the start                        | Failed: "Codex didn't start the turn"                                     |
 | Last turn `completed`                                                                   | Ready, labeled Completed                                                  |
 | Last turn `interrupted` with an end time, such as when you stopped it                   | Ready, labeled Interrupted                                                |
 | Last turn `failed`                                                                      | Failed, with Codex's error, such as an unsupported model                  |
@@ -175,11 +184,13 @@ Codex can ask before it runs a command or edits a file, as your approval policy 
 | Another turn `interrupted` without an end time                                          | Unknown: it may run in another Codex window, which reads the same way     |
 | No turn recorded, though the plugin started one                                         | Failed, labeled Stopped: the session ended before Codex recorded the turn |
 | Archived (its rollout is in `archived_sessions`)                                        | Done, labeled Archived                                                    |
-| `thread/read` answers `thread not loaded: <id>`, as for a thread `codex delete` removed | Gone                                                                      |
-| Another read failure, or the session can't open                                         | Keeps its last state, with the reason. Never gone.                        |
+| `thread/read` answers `thread not loaded: <id>`, as for a thread `codex delete` removed | Gone, and the live session closes                                         |
+| A live thread not `active` whose turns can't be read                                    | Keeps its last state, with the reason, and the session closes             |
+| Codex has no `thread/read` or `thread/turns/list` method                                | Keeps its last state, with the reason, and a live session closes          |
+| Another read failure, a refusal from Ajour, or the session can't open                   | Keeps its last state, with the reason. Never gone.                        |
 | No answer before the refresh deadline                                                   | Keeps its last state and its session, with the reason                     |
 
-A session id Ajour no longer knows, after a quit or the idle timeout, is no evidence about the thread: the refresh reads it from Codex's files. The native state keeps the last state read, the label, the Open setting, the turn the plugin started, the session id while the turn runs, Codex's thread status, active flags and last turn status. Messages and paths are never stored.
+A session id Ajour no longer knows, after a quit or the idle timeout, is no evidence about the thread: the refresh reads it from Codex's files. The native state keeps the last state read, the label, the Open setting, the turn the plugin started, the session id while the turn runs, Codex's thread status, active flags and last turn status. The reason may hold the first line of one of Codex's own error messages, such as a failed turn's. Chat messages and paths are never stored.
 
 ### Settings
 
@@ -189,6 +200,8 @@ A session id Ajour no longer knows, after a quit or the idle timeout, is no evid
 | Model   | Empty            | A model name for the thread. Codex checks it when the turn starts, so an unknown one fails the handoff with Codex's error.                                             |
 
 The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
+
+Open in a terminal while the handoff is Working runs `codex resume` beside Ajour's session, which still holds the thread and runs its turn. Two app-servers then work on one thread, and their turns may conflict. Wait until the handoff leaves Working, which closes the session, before opening it in a terminal. The Codex app refuses to continue a thread another app holds, so it can't conflict.
 
 ## Default prompt
 

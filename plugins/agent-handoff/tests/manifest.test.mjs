@@ -9,8 +9,20 @@ const manifest = JSON.parse(
   await readFile(new URL("../plugin.json", import.meta.url), "utf8"),
 );
 const { executables, commands } = manifest.processes;
+const copilotStart = (extra) => [
+  "-C",
+  "{folder:folder}",
+  "--session-id",
+  "{session:id}",
+  "-n",
+  "{title:text}",
+  { if: "model", args: ["--model", "{model:text}"] },
+  ...extra,
+  "-p",
+  "{prompt:text}",
+];
 
-test("the manifest is a handoff plugin with T3 Code and Claude Code tools and no network", () => {
+test("the manifest is a handoff plugin with T3 Code, Claude Code and Copilot CLI tools and no network", () => {
   assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.ts");
   assert.deepEqual(Object.keys(manifest.capabilities), ["handoff"]);
@@ -21,6 +33,7 @@ test("the manifest is a handoff plugin with T3 Code and Claude Code tools and no
     [
       ["t3", "T3 Code"],
       ["claude", "Claude Code"],
+      ["copilot", "Copilot CLI"],
     ],
   );
   for (const tool of tools) {
@@ -43,12 +56,21 @@ test("the manifest is a handoff plugin with T3 Code and Claude Code tools and no
     tools[1].settings[0].options.map((option) => option.value),
     ["background", "terminal"],
   );
+  assert.deepEqual(settings(tools[2]), [
+    ["tools", "select", "ask"],
+    ["model", "text", undefined],
+  ]);
+  assert.deepEqual(
+    tools[2].settings[0].options.map((option) => option.value),
+    ["ask", "allow"],
+  );
 });
 
-test("the declared commands are four t3 and four claude commands, with prompts on stdin", () => {
+test("the declared commands are four t3, four claude and four copilot commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
+    copilot: { names: ["copilot"] },
   });
   const shapes = Object.fromEntries(
     commands.map(({ id, ...command }) => [id, command]),
@@ -124,6 +146,30 @@ test("the declared commands are four t3 and four claude commands, with prompts o
     },
     "claude-version": {
       executable: "claude",
+      args: ["--version"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    // -p runs the task and exits when done, so it starts detached, and a
+    // detached command takes no stdin: the prompt is one argument. -C runs
+    // copilot in the folder; the plugin chooses the session id.
+    "copilot-start": {
+      executable: "copilot",
+      args: copilotStart([]),
+      mode: "detached",
+    },
+    "copilot-start-allow": {
+      executable: "copilot",
+      args: copilotStart(["--allow-all-tools"]),
+      mode: "detached",
+    },
+    "copilot-resume": {
+      executable: "copilot",
+      args: ["-C", "{folder:folder}", "--resume", "{session:id}"],
+      mode: "terminal",
+    },
+    "copilot-version": {
+      executable: "copilot",
       args: ["--version"],
       mode: "capture",
       timeoutSeconds: 10,

@@ -185,11 +185,12 @@ One status, one permission and one question read per refresh, for every handoff 
 | Read as ready or failed before, still stopped, and its `time.updated` unchanged                                       | Keeps that state, label and reason, without reading its messages              |
 | `GET /session/<id>` answers 404                                                                                       | Gone, labeled Not on this OpenCode server                                     |
 | The server doesn't answer, refuses, or isn't OpenCode                                                                 | Unknown, with the reason. Never gone.                                         |
+| Ajour refuses an answer it can't take, such as one larger than its 8 MB response cap                                  | Unknown, with Ajour's reason. Never gone.                                     |
 | A handoff whose session id isn't an OpenCode one (`ses_…`)                                                            | Unknown, and no request goes out with it                                      |
-| No answer before the refresh deadline, Ajour's request timed out, or Ajour is limiting the plugin's requests          | Keeps its last state, with the reason                                         |
+| No answer before the refresh deadline, Ajour's request timed out, or Ajour is rate limiting the plugin's requests     | Keeps its last state, with the reason                                         |
 | No connection                                                                                                         | Unknown, with "OpenCode needs a connection to its server."                    |
 
-OpenCode has no settled state, and a stopped session can take another turn when you open it, so the plugin reports it as ready for review, never done. A session the server answers 404 for, such as one deleted in OpenCode, is gone. A later turn, such as one you take after Open, changes the session's `time.updated`, so the plugin reads its last message again and the state follows it.
+OpenCode has no settled state, and a stopped session can take another turn when you open it, so the plugin reports it as ready for review, never done. A session the server answers 404 for, such as one deleted in OpenCode, is gone. A later turn, such as one you take after Open, changes the session's `time.updated`, so the plugin reads its last message again and the state follows it. A refresh that keeps the last state with another reason, or makes it unknown, forgets `time.updated`, so the next read takes the label and reason from the last message again.
 
 The native state keeps the last state, the label, OpenCode's status, the session's `time.updated`, the counts of pending permissions and questions, the retry attempt and the error's name. Messages, paths and the server's address are never stored, and a handoff has no web link.
 

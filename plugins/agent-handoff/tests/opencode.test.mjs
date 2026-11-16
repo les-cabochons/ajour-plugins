@@ -813,10 +813,19 @@ test("a broker timeout keeps every state, as the refresh deadline does", async (
   assert.match(update.native.reason, late);
 });
 
+// The broker's own messages for its limits (apps/api/src/broker-limits.ts and
+// credential-broker.ts in Ajour). The plugin sees the code and the message.
+const RATE_LIMITED =
+  "The plugin sent too many requests. Try again in a moment.";
+const TOO_MANY_QUEUED = "The plugin sent too many requests at once.";
+const RESPONSE_TOO_LARGE = "The service's answer is larger than 8 MB.";
+const UNCHECKED_RESPONSE =
+  "The service's answer couldn't be checked for secrets, so it was dropped.";
+
 test("a broker limit keeps every state, as the refresh deadline does", async () => {
   fakeOpenCode({
     "GET /session/status": () => {
-      throw requestError("limit");
+      throw requestError("limit", RATE_LIMITED);
     },
   });
   const [update] = await read(
@@ -838,12 +847,93 @@ test("a broker limit keeps every state, as the refresh deadline does", async () 
   // The same when the limit comes on one session's read.
   fakeOpenCode({
     [`GET /session/${SESSION}`]: () => {
-      throw requestError("limit");
+      throw requestError("limit", TOO_MANY_QUEUED);
     },
   });
   const [read2] = await read(handoff("h1", { state: "failed" }));
   assert.equal(read2.state, "failed");
   assert.match(read2.native.reason, /limiting this plugin's requests/);
+});
+
+test("an answer too large for the broker makes a session unknown with the broker's reason, not a retry", async () => {
+  for (const message of [RESPONSE_TOO_LARGE, UNCHECKED_RESPONSE]) {
+    fakeOpenCode({
+      [`GET /session/${SESSION}/message`]: () => {
+        throw requestError("limit", message);
+      },
+    });
+    const [update] = await read(
+      handoff("h1", { state: "ready", status: "idle", updated: UPDATED - 1 }),
+    );
+    assert.deepEqual(
+      [update.state, update.native],
+      [
+        "unknown",
+        {
+          state: "ready",
+          status: "idle",
+          label: "Unknown",
+          reason: `Ajour refused the request to OpenCode's server. ${message}`,
+        },
+      ],
+    );
+  }
+
+  // On the shared status read, every handoff is unknown for that reason.
+  fakeOpenCode({
+    "GET /session/status": () => {
+      throw requestError("limit", RESPONSE_TOO_LARGE);
+    },
+  });
+  const [listed] = await read(handoff("h1", { state: "working" }));
+  assert.equal(listed.state, "unknown");
+  assert.match(listed.native.reason, /larger than 8 MB/);
+});
+
+test("after a refused refresh, the next read takes the session's own reason back", async () => {
+  const failedHandoff = {
+    state: "failed",
+    label: "Failed",
+    status: "idle",
+    error: "APIError",
+    reason:
+      "APIError: Your credit balance is too low to access the Anthropic API.",
+    updated: UPDATED,
+  };
+  for (const message of [RATE_LIMITED, RESPONSE_TOO_LARGE]) {
+    fakeOpenCode({
+      [`GET /session/${SESSION}`]: () => {
+        throw requestError("limit", message);
+      },
+    });
+    const [refused] = await read(handoff("h1", failedHandoff));
+    assert.notEqual(refused.native.reason, failedHandoff.reason);
+
+    // The session hasn't changed, but its last message is read again.
+    fakeOpenCode({
+      [`GET /session/${SESSION}/message`]: answer(
+        recorded("schema/messages-error.json"),
+      ),
+    });
+    const [recovered] = await read(handoff("h1", refused.native));
+    assert.deepEqual(
+      [recovered.state, recovered.native],
+      [
+        "failed",
+        {
+          state: "failed",
+          label: "Failed",
+          status: "absent",
+          updated: UPDATED,
+          error: "APIError",
+          reason: failedHandoff.reason,
+        },
+      ],
+    );
+    // And a later read keeps it without reading the message.
+    const [kept] = await read(handoff("h1", recovered.native));
+    assert.deepEqual(kept.native, recovered.native);
+  }
 });
 
 test("a handoff whose session id isn't OpenCode's is unknown, and never goes in a path", async () => {

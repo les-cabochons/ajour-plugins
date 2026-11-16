@@ -111,6 +111,18 @@ function isRequestError(error: unknown): error is RequestError {
   );
 }
 
+// The broker's limit reasons that pass: `rate_limited` and `too_many_queued`.
+// A plugin sees only the `limit` code and the message, which says "too many
+// requests" for both; `response_too_large`, `request_too_large` and
+// `unchecked_response` don't.
+const TEMPORARY_LIMITS = new Set(["rate_limited", "too_many_queued"]);
+
+function isTemporaryLimit(error: RequestError): boolean {
+  const reason = (error as { reason?: unknown }).reason;
+  if (typeof reason === "string") return TEMPORARY_LIMITS.has(reason);
+  return /too many requests/i.test(error.message);
+}
+
 /** Why the broker didn't send a request, as what the user can do. */
 function requestRefusal(error: RequestError): ToolError {
   switch (error.code) {
@@ -121,12 +133,14 @@ function requestRefusal(error: RequestError): ToolError {
         "OpenCode's server didn't answer in time. Try again.",
         "timeout",
       );
-    case "limit":
-      return new ToolError(
-        "Ajour is limiting this plugin's requests to OpenCode. Try again in a minute.",
-        "limit",
-      );
     default: {
+      // Only a rate limit passes. An answer too large, or one the broker
+      // couldn't check, is refused again on every refresh, so it says why.
+      if (error.code === "limit" && isTemporaryLimit(error))
+        return new ToolError(
+          "Ajour is limiting this plugin's requests to OpenCode. Try again in a minute.",
+          "rate_limit",
+        );
       const reason = firstLine(error.message);
       return new ToolError(
         `Ajour refused the request to OpenCode's server.${reason ? ` ${reason}` : ""}`,
@@ -417,15 +431,17 @@ function nativeOf(previous: Json, state: State): Native {
   return kept;
 }
 
+/**
+ * Keeps the last state with another label or reason. It drops `updated`, so
+ * the next read takes the session's own label and reason from its last
+ * message again, even when the session hasn't changed.
+ */
 function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
-  return {
-    id: handoff.id,
-    state,
-    native: withNotes(
-      nativeOf(handoff.native, previousState(handoff.native)),
-      notes,
-    ),
-  };
+  const { updated: _updated, ...kept } = nativeOf(
+    handoff.native,
+    previousState(handoff.native),
+  );
+  return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
 function update(handoff: Handoff, state: State, native: Native): Update {
@@ -442,12 +458,13 @@ function lateUpdate(handoff: Handoff, reason = opencode.late): Update {
 
 /**
  * A request that didn't finish says nothing about the session: past the
- * deadline, cut short, or held back by Ajour's limit, it keeps its last
- * state. Any other failure makes it unknown, never gone.
+ * deadline, cut short, or held back by Ajour's rate limit, it keeps its last
+ * state. Any other failure, an answer too large for Ajour among them, makes
+ * it unknown, never gone.
  */
 function failedUpdate(handoff: Handoff, error: unknown): Update {
   if (isLate(error)) return lateUpdate(handoff);
-  if (error instanceof ToolError && error.code === "limit")
+  if (error instanceof ToolError && error.code === "rate_limit")
     return lateUpdate(handoff, error.message);
   return unknownUpdate(handoff, reasonOf(opencode, error));
 }

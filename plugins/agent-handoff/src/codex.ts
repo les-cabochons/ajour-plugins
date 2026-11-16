@@ -1,0 +1,816 @@
+// Hands backlog items off to Codex through `codex app-server`, its JSON-RPC
+// server on stdio. The app-server owns a turn: it must keep running until the
+// turn ends, so each handoff gets its own Ajour process session, started in
+// the handoff's repository folder, which runs its thread's one turn. The
+// session's id is kept in the handoff's native state, and a refresh reads the
+// thread there. Once the turn ends, or Codex waits for the user, the refresh
+// closes the session, which lets go of the thread so the Codex app can open
+// it. A thread no session of the plugin holds is read from the files Codex
+// keeps, through another app-server.
+import type {
+  DetectToolsResult,
+  ReadHandoffStatesRequest,
+  ReadHandoffStatesResult,
+  StartHandoffRequest,
+  StartHandoffResult,
+} from "@ajour/plugin-sdk";
+import {
+  LateError,
+  READ_DEADLINE_MS,
+  START_DEADLINE_MS,
+  ToolError,
+  capture,
+  each,
+  firstLine,
+  isLate,
+  oneLineTitle,
+  pause,
+  previousState,
+  reasonOf,
+  record,
+  refusal,
+  refusalsFor,
+  settingText,
+  text,
+  withNotes,
+  type Handoff,
+  type Json,
+  type Native,
+  type State,
+  type Tool,
+  type Update,
+} from "./shared.ts";
+
+export const CODEX_TOOL = "codex";
+const SERVER = "codex-app-server";
+const RESUME = "codex-resume";
+const CLIENT = { name: "ajour", title: "Ajour", version: "0.4.0" };
+// Ajour sends a session one line of at most 1 MB, in UTF-8.
+export const LINE_LIMIT = 1024 * 1024;
+// One read takes at most 1000 lines, and waits at most 30 seconds.
+const READ_LINES = 1000;
+const READ_WAIT_MS = 30_000;
+// A Codex thread id is a UUID.
+const THREAD_ID = /^[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$/;
+// How Codex answers a read of a thread it has no record of, such as one
+// deleted with `codex delete`. A thread it keeps reads as notLoaded instead.
+const NOT_FOUND = /^thread not loaded\b/i;
+// Codex keeps an archived thread's rollout in this folder.
+const ARCHIVED = /[\\/]archived_sessions[\\/]/i;
+// What Codex asks the user. Ajour can't answer, and while a session holds the
+// thread, neither can the Codex app.
+const ASKS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+  "applyPatchApproval",
+  "execCommandApproval",
+]);
+const LABELS: Record<State, string> = {
+  working: "Working",
+  "needs-you": "Waiting for you",
+  ready: "Completed",
+  done: "Archived",
+  failed: "Failed",
+  gone: "Deleted in Codex",
+  unknown: "Unknown",
+};
+export const RELEASED =
+  "Codex asked for your approval or an answer, which Ajour can't give. Ajour let go of the thread, which stopped the turn: open it in Codex and tell it to go on.";
+export const STOPPED =
+  "The turn stopped before it finished, when Ajour's Codex session ended: Ajour quit, the plugin was turned off or updated, or nothing refreshed it for 30 minutes. Open the thread in Codex to go on.";
+export const NOT_RECORDED =
+  "Ajour's Codex session ended before Codex recorded the turn, so the prompt never ran. Open the thread in Codex, or hand off again.";
+export const ELSEWHERE =
+  "Codex reports the last turn as interrupted, which is also how it shows a turn running in another Codex window. Open the thread to see it.";
+export const GONE =
+  "Codex has no thread with this id, such as after codex delete.";
+const NOT_IN_TIME = "Codex didn't start the thread in time. Try again.";
+const MAYBE_STARTED =
+  "Codex may have started the thread. Check Codex before handing off again.";
+
+const codex: Tool = {
+  name: "Codex",
+  exe: "codex",
+  refusals: refusalsFor("Codex", "codex", {
+    invalid_request:
+      "Ajour refused a value for codex. A terminal also needs a repository folder path without unusual characters.",
+    output_limit: "Codex printed more than Ajour accepts.",
+    session_limit:
+      "Ajour keeps at most two Codex sessions running for this plugin, and both are busy with other handoffs. Hand off again once one of them is ready.",
+    session_ended: "Ajour's session with Codex ended. Try again.",
+    input_limit: "Codex isn't taking Ajour's input. Try again.",
+  }),
+  late: "Codex took too long; refreshing again later.",
+  failureLine(value) {
+    return firstLine(value).replace(/^error:\s*/i, "");
+  },
+  explain(message) {
+    return message;
+  },
+};
+
+export async function detectCodex(): Promise<
+  DetectToolsResult["tools"][number]
+> {
+  try {
+    const output = firstLine(await capture(codex, "codex-version", {}));
+    const version = /^codex-cli\s+v?(\S+)$/i.exec(output)?.[1] ?? output;
+    if (!version || version.length > 200)
+      throw new ToolError("codex returned no version.");
+    return { id: CODEX_TOOL, available: true, version };
+  } catch (error) {
+    return {
+      id: CODEX_TOOL,
+      available: false,
+      reason: reasonOf(codex, error),
+    };
+  }
+}
+
+/** The session ended, or its program exited: no call reaches it. */
+class SessionGone extends ToolError {
+  constructor() {
+    super(codex.refusals.session_ended as string, "session_ended");
+  }
+}
+
+function sessionError(error: unknown): ToolError {
+  if (error instanceof ToolError) return error;
+  const refused = refusal(codex, error);
+  return refused.code === "session_ended" ? new SessionGone() : refused;
+}
+
+/** A JSON-RPC answer: the result, or the error Codex returned. */
+interface Answer {
+  result?: Json;
+  error?: { code?: number; message: string };
+}
+
+/** What Codex asked the user about one thread, between reads. */
+interface Heard {
+  asked?: string;
+}
+
+/**
+ * JSON-RPC over one of Ajour's process sessions. Ids are strings this
+ * operation alone uses, so an answer to an earlier operation's request is
+ * never taken for one of this operation's.
+ */
+class Rpc {
+  private next = 0;
+  private readonly prefix = `ajour-${crypto.randomUUID().slice(0, 8)}`;
+  private readonly answers = new Map<string, Answer>();
+  readonly heard = new Map<string, Heard>();
+
+  readonly session: string;
+
+  constructor(session: string) {
+    this.session = session;
+  }
+
+  private async write(message: Json): Promise<void> {
+    const line = JSON.stringify(message);
+    if (new TextEncoder().encode(line).length > LINE_LIMIT)
+      throw new ToolError(
+        "A message for Codex is longer than the 1 MB Ajour sends at once.",
+        "invalid_request",
+      );
+    try {
+      await ajour.process.session.send(this.session, line);
+    } catch (error) {
+      throw sessionError(error);
+    }
+  }
+
+  /** Sends a request and returns its id. */
+  async request(method: string, params: Json): Promise<string> {
+    const id = `${this.prefix}-${++this.next}`;
+    await this.write({ id, method, params });
+    return id;
+  }
+
+  async notify(method: string): Promise<void> {
+    await this.write({ method });
+  }
+
+  /** Reads until every id is answered, or throws once `deadline` passes. */
+  async answered(ids: string[], deadline: number): Promise<Answer[]> {
+    while (ids.some((id) => !this.answers.has(id))) {
+      const left = deadline - Date.now();
+      if (left <= 0) throw new LateError(codex.late);
+      let read: Awaited<ReturnType<typeof ajour.process.session.read>>;
+      try {
+        read = await ajour.process.session.read(this.session, {
+          max: READ_LINES,
+          waitMs: Math.max(0, Math.min(READ_WAIT_MS, Math.floor(left))),
+        });
+      } catch (error) {
+        throw sessionError(error);
+      }
+      for (const line of read.lines) await this.take(line);
+      if (read.exited) throw new SessionGone();
+      // Ajour's read waits for a line; this keeps a quick empty read from
+      // spinning.
+      if (read.lines.length === 0) await pause(25, deadline);
+    }
+    return ids.map((id) => this.answers.get(id) as Answer);
+  }
+
+  /** The answers to `ids`, once all came. */
+  peek(ids: string[]): Answer[] | undefined {
+    const answers = ids.map((id) => this.answers.get(id));
+    return answers.every((answer) => answer !== undefined)
+      ? (answers as Answer[])
+      : undefined;
+  }
+
+  private async take(line: string): Promise<void> {
+    let message: Json | undefined;
+    try {
+      message = record(JSON.parse(line));
+    } catch {
+      return;
+    }
+    if (!message) return;
+    const method = text(message.method, 200);
+    const id = message.id;
+    if (!method) {
+      if (typeof id !== "string" || !id.startsWith(this.prefix)) return;
+      const error = record(message.error);
+      this.answers.set(
+        id,
+        error
+          ? {
+              error: {
+                message: text(error.message, 2000) ?? "Codex failed.",
+                ...(typeof error.code === "number" ? { code: error.code } : {}),
+              },
+            }
+          : { result: record(message.result) ?? {} },
+      );
+      return;
+    }
+    const params = record(message.params) ?? {};
+    const thread = text(params.threadId, 100);
+    if (id !== undefined && id !== null) {
+      // Codex asks the client. A question for the user stays unanswered:
+      // the thread's flags say Codex waits. Anything else gets an error, so
+      // Codex doesn't wait for a client that can't answer.
+      if (ASKS.has(method)) {
+        if (thread) this.heard.set(thread, { asked: method });
+      } else
+        await this.write({
+          id: id as string | number,
+          error: { code: -32601, message: "Ajour can't answer this request." },
+        }).catch(() => undefined);
+    }
+  }
+}
+
+function errorOf(answer: Answer): string | undefined {
+  return answer.error?.message;
+}
+
+/** Codex's answer to a request, or a failure with its message. */
+function resultOf(answer: Answer): Json {
+  if (answer.error)
+    throw new ToolError(firstLine(answer.error.message) || "Codex failed.");
+  return answer.result ?? {};
+}
+
+async function openServer(folder: string): Promise<string> {
+  try {
+    return await ajour.process.session.open({
+      command: SERVER,
+      args: { folder },
+    });
+  } catch (error) {
+    throw refusal(codex, error);
+  }
+}
+
+async function closeServer(session: string): Promise<void> {
+  try {
+    await ajour.process.session.close(session);
+  } catch {
+    // It already ended.
+  }
+}
+
+/** Opens a session and initializes the app-server in it. */
+async function connect(folder: string, deadline: number): Promise<Rpc> {
+  const session = await openServer(folder);
+  const rpc = new Rpc(session);
+  try {
+    const [init] = await rpc.answered(
+      [await rpc.request("initialize", { clientInfo: CLIENT })],
+      deadline,
+    );
+    resultOf(init as Answer);
+    await rpc.notify("initialized");
+    return rpc;
+  } catch (error) {
+    await closeServer(session);
+    throw error;
+  }
+}
+
+/** The turn's input: the prompt, as one JSON line Ajour can send. */
+function turnInput(prompt: string): Json[] {
+  return [{ type: "text", text: prompt }];
+}
+
+export async function startCodex(
+  request: StartHandoffRequest,
+): Promise<StartHandoffResult> {
+  const deadline = Date.now() + START_DEADLINE_MS;
+  const open = request.settings.open === "terminal" ? "terminal" : "app";
+  const model = settingText(request.settings.model);
+  // The longest line is turn/start's: refuse it before starting anything.
+  const turnLine = JSON.stringify({
+    id: "ajour-00000000-0",
+    method: "turn/start",
+    params: {
+      threadId: "00000000-0000-0000-0000-000000000000",
+      input: turnInput(request.prompt),
+    },
+  });
+  if (new TextEncoder().encode(turnLine).length > LINE_LIMIT)
+    throw new ToolError(
+      "The prompt is longer than the 1 MB Ajour sends Codex at once. Shorten the handoff template, such as by leaving out the item's description.",
+    );
+  let rpc: Rpc;
+  try {
+    // connect keeps to the deadline, and ends a session it opened on a
+    // failure, so none outlives the operation unseen.
+    rpc = await connect(request.folder.id, deadline);
+  } catch (error) {
+    if (isLate(error)) throw new ToolError(NOT_IN_TIME, "late");
+    throw new ToolError(
+      reasonOf(codex, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  }
+  let threadId: string | undefined;
+  let turn: string | undefined;
+  let notes: Native = {};
+  try {
+    // The app-server works in the folder Ajour started it in, the handoff's
+    // repository folder, with the user's own Codex settings.
+    const [started] = await rpc.answered(
+      [await rpc.request("thread/start", model ? { model } : {})],
+      deadline,
+    );
+    const id = text(record(resultOf(started as Answer).thread)?.id, 100);
+    if (!id || !THREAD_ID.test(id))
+      throw new ToolError(
+        "Codex started a thread without an id Ajour can read.",
+      );
+    threadId = id;
+    const naming = await rpc.request("thread/name/set", {
+      threadId,
+      name: oneLineTitle(request.title),
+    });
+    const starting = await rpc.request("turn/start", {
+      threadId,
+      input: turnInput(request.prompt),
+    });
+    const [named, turned] = await rpc.answered([naming, starting], deadline);
+    const turnResult = resultOf(turned as Answer);
+    turn = text(record(turnResult.turn)?.id, 100);
+    const nameError = errorOf(named as Answer);
+    if (nameError)
+      notes = {
+        reason: `Codex didn't take the title: ${firstLine(nameError)}`,
+      };
+  } catch (error) {
+    if (threadId && isLate(error)) {
+      // The thread exists and its turn may run: keep the session and let a
+      // refresh read it.
+      notes = { reason: MAYBE_STARTED };
+    } else {
+      await closeServer(rpc.session);
+      if (isLate(error) || error instanceof SessionGone)
+        throw new ToolError(
+          threadId
+            ? MAYBE_STARTED
+            : isLate(error)
+              ? NOT_IN_TIME
+              : reasonOf(codex, error),
+          error instanceof ToolError ? error.code : undefined,
+        );
+      throw new ToolError(
+        `Codex didn't start the turn: ${reasonOf(codex, error)}`,
+        error instanceof ToolError ? error.code : undefined,
+      );
+    }
+  }
+  const native: Native = {
+    state: "working",
+    label: LABELS.working,
+    open,
+    session: rpc.session,
+  };
+  if (turn) native.turn = turn;
+  return {
+    threadId: threadId as string,
+    // The Codex app opens the thread from its link; the terminal resumes it.
+    ...(open === "app" ? { link: `codex://threads/${threadId}` } : {}),
+    resume: {
+      command: RESUME,
+      args: { thread: threadId as string, folder: request.folder.id },
+    },
+    native: withNotes(native, notes),
+  };
+}
+
+const KEPT = [
+  "label",
+  "open",
+  "turn",
+  "session",
+  "status",
+  "turnStatus",
+] as const;
+
+/** The handoff's native state without the reason, flags or a closed session. */
+function keptNative(
+  handoff: Handoff,
+  drop: { session?: boolean } = {},
+): Native {
+  const previous = handoff.native;
+  const native: Native = { state: previousState(previous) };
+  for (const key of KEPT) {
+    if (drop.session && key === "session") continue;
+    const value = text(previous[key], 200);
+    if (value) native[key] = value;
+  }
+  if (previous.released === true) native.released = true;
+  return native;
+}
+
+/** Keeps the last state read, with what is new about it. */
+function keptUpdate(
+  handoff: Handoff,
+  state: State,
+  notes: Native,
+  drop: { session?: boolean } = {},
+): Update {
+  return {
+    id: handoff.id,
+    state,
+    native: withNotes(keptNative(handoff, drop), notes),
+  };
+}
+
+function lateUpdate(handoff: Handoff): Update {
+  return keptUpdate(handoff, previousState(handoff.native), {
+    reason: codex.late,
+  });
+}
+
+/** The thread's runtime status and the last turn, as Codex reports them. */
+interface Reading {
+  thread: Json;
+  status: Json;
+  last: Json | undefined;
+  /** The turn is still running in this session. */
+  live: boolean;
+}
+
+function flagsOf(status: Json): string[] {
+  return Array.isArray(status.activeFlags)
+    ? status.activeFlags.filter(
+        (flag): flag is string => typeof flag === "string",
+      )
+    : [];
+}
+
+function turnError(turn: Json | undefined): string | undefined {
+  const message = text(record(turn?.error)?.message, 2000);
+  return message ? firstLine(message) : undefined;
+}
+
+/** The common state, label and reason for what Codex reports. */
+function stateOf(
+  handoff: Handoff,
+  reading: Reading,
+): { state: State; label: string; reason?: string; released?: boolean } {
+  const { thread, status, last, live } = reading;
+  const path = text(thread.path, 4096);
+  if (path && ARCHIVED.test(path)) return { state: "done", label: "Archived" };
+  const type = text(status.type, 64);
+  if (type === "active") {
+    const flags = flagsOf(status);
+    if (flags.includes("waitingOnApproval"))
+      return {
+        state: "needs-you",
+        label: "Waiting for approval",
+        reason: RELEASED,
+        released: true,
+      };
+    if (flags.includes("waitingOnUserInput"))
+      return {
+        state: "needs-you",
+        label: "Waiting for your answer",
+        reason: RELEASED,
+        released: true,
+      };
+    return { state: "working", label: LABELS.working };
+  }
+  const ours = text(handoff.native.turn, 100);
+  const turnStatus = text(last?.status, 64);
+  if (live && (!last || text(last.id, 100) !== ours)) {
+    // Codex records the turn a moment after turn/start answers, and until
+    // then reads the thread as idle: the session's own turn still runs.
+    if (ours) return { state: "working", label: LABELS.working };
+    if (!last)
+      return {
+        state: "failed",
+        label: "Failed",
+        reason: "Codex didn't start the turn. Hand off again.",
+      };
+  }
+  if (!last)
+    return ours
+      ? { state: "failed", label: "Stopped", reason: NOT_RECORDED }
+      : { state: "unknown", label: "No turn" };
+  if (turnStatus === "completed") return { state: "ready", label: "Completed" };
+  if (turnStatus === "failed")
+    return {
+      state: "failed",
+      label: "Failed",
+      reason: turnError(last) ?? "Codex reported the turn failed.",
+    };
+  if (turnStatus === "inProgress")
+    return { state: "working", label: LABELS.working };
+  if (turnStatus === "interrupted") {
+    // A turn the user stopped has an end time. One without was cut short,
+    // or runs in another app-server, which can't be told apart from here.
+    if (last.completedAt !== null && last.completedAt !== undefined)
+      return { state: "ready", label: "Interrupted" };
+    if (text(last.id, 100) === ours) {
+      if (handoff.native.released === true)
+        return {
+          state: "needs-you",
+          label: text(handoff.native.label) ?? LABELS["needs-you"],
+          reason: RELEASED,
+          released: true,
+        };
+      return { state: "failed", label: "Stopped", reason: STOPPED };
+    }
+    return { state: "unknown", label: "Interrupted", reason: ELSEWHERE };
+  }
+  if (type === "systemError")
+    return {
+      state: "failed",
+      label: "Failed",
+      reason: "Codex reported a system error.",
+    };
+  return { state: "unknown", label: LABELS.unknown };
+}
+
+function updateOf(
+  handoff: Handoff,
+  reading: Reading,
+  session?: string,
+): Update {
+  const { state, label, reason, released } = stateOf(handoff, reading);
+  const native: Native = { state, label };
+  const open = text(handoff.native.open, 16);
+  if (open) native.open = open;
+  // The turn the plugin started, which a stop is matched against. A start
+  // that ran out of time learns it from its session.
+  const turn =
+    text(handoff.native.turn, 100) ??
+    (reading.live ? text(reading.last?.id, 100) : undefined);
+  if (turn) native.turn = turn;
+  if (session) native.session = session;
+  const type = text(reading.status.type, 64);
+  if (type) native.status = type;
+  const flags = flagsOf(reading.status);
+  if (flags.length) native.flags = flags.join(",");
+  const turnStatus = text(reading.last?.status, 64);
+  if (turnStatus) native.turnStatus = turnStatus;
+  if (released) native.released = true;
+  const title = text(reading.thread.name, 500);
+  return {
+    id: handoff.id,
+    state,
+    native: withNotes(native, reason ? { reason } : {}),
+    ...(title ? { title } : {}),
+  };
+}
+
+/** Asks for a thread and its last turn, without its messages. */
+async function ask(rpc: Rpc, threadId: string): Promise<[string, string]> {
+  return [
+    await rpc.request("thread/read", { threadId }),
+    await rpc.request("thread/turns/list", {
+      threadId,
+      limit: 1,
+      itemsView: "notLoaded",
+    }),
+  ];
+}
+
+/** The update for a thread from its answers, or a kept state on a failure. */
+function answeredUpdate(
+  handoff: Handoff,
+  read: Answer,
+  turns: Answer,
+  session?: string,
+): Update {
+  const drop = { session: !session };
+  const readError = errorOf(read);
+  if (readError) {
+    // Only a record Codex doesn't have is gone. Another failure, such as a
+    // thread whose first line isn't written yet, says nothing about it.
+    if (NOT_FOUND.test(readError))
+      return keptUpdate(
+        handoff,
+        "gone",
+        { label: LABELS.gone, reason: GONE },
+        drop,
+      );
+    return keptUpdate(
+      handoff,
+      previousState(handoff.native),
+      { reason: "Codex couldn't read this thread. Refreshing again later." },
+      drop,
+    );
+  }
+  const thread = record(read.result?.thread) ?? {};
+  if (errorOf(turns))
+    return keptUpdate(
+      handoff,
+      previousState(handoff.native),
+      {
+        reason:
+          "Codex couldn't read this thread's turns. Refreshing again later.",
+      },
+      drop,
+    );
+  const list = turns.result?.data;
+  const last = Array.isArray(list) ? record(list[0]) : undefined;
+  return updateOf(
+    handoff,
+    { thread, status: record(thread.status) ?? {}, last, live: !!session },
+    session,
+  );
+}
+
+/**
+ * Reads a thread in the session running its turn. Returns the update and the
+ * session, still open, when the turn goes on; undefined once the session is
+ * gone, for a read from Codex's files instead.
+ */
+async function readLive(
+  handoff: Handoff,
+  session: string,
+  deadline: number,
+): Promise<{ update: Update; rpc?: Rpc } | undefined> {
+  const rpc = new Rpc(session);
+  let answers: Answer[];
+  try {
+    answers = await rpc.answered(await ask(rpc, handoff.threadId), deadline);
+  } catch (error) {
+    if (error instanceof SessionGone) return undefined;
+    throw error;
+  }
+  const [read, turns] = answers as [Answer, Answer];
+  // What Codex said while nobody read: a question it asked without a flag.
+  const heard = rpc.heard.get(handoff.threadId);
+  const thread = record(read.result?.thread);
+  if (
+    heard?.asked &&
+    thread &&
+    text(record(thread.status)?.type) === "active"
+  ) {
+    const status = record(thread.status) ?? {};
+    const flags = flagsOf(status);
+    if (!flags.length)
+      thread.status = {
+        ...status,
+        activeFlags: [
+          heard.asked === "item/tool/requestUserInput" ||
+          heard.asked === "mcpServer/elicitation/request"
+            ? "waitingOnUserInput"
+            : "waitingOnApproval",
+        ],
+      };
+  }
+  const update = answeredUpdate(handoff, read, turns, session);
+  if (update.state === "working" && !errorOf(read) && !errorOf(turns))
+    return { update, rpc };
+  // The turn ended, or waits for the user: let go of the thread, so the
+  // Codex app can open it, and free the session. A kept state keeps it.
+  if (errorOf(read) || errorOf(turns)) return { update, rpc };
+  await closeServer(session);
+  delete (update.native as Native).session;
+  return { update };
+}
+
+export async function readCodex(
+  request: ReadHandoffStatesRequest,
+): Promise<ReadHandoffStatesResult> {
+  if (request.handoffs.length === 0) return [];
+  const deadline = Date.now() + READ_DEADLINE_MS;
+  const updates = new Map<string, Update>();
+  const rest: Handoff[] = [];
+  let reader: Rpc | undefined;
+  // First the threads whose turn runs in a session of the plugin.
+  await each(request.handoffs, 2, async (handoff) => {
+    const session = text(handoff.native.session, 100);
+    if (!session) {
+      rest.push(handoff);
+      return;
+    }
+    try {
+      const live = await readLive(handoff, session, deadline);
+      if (!live) {
+        rest.push({ ...handoff, native: { ...handoff.native, session: null } });
+        return;
+      }
+      updates.set(handoff.id, live.update);
+      reader ??= live.rpc;
+    } catch (error) {
+      updates.set(
+        handoff.id,
+        isLate(error)
+          ? lateUpdate(handoff)
+          : keptUpdate(handoff, "unknown", {
+              label: LABELS.unknown,
+              reason: reasonOf(codex, error),
+            }),
+      );
+    }
+  });
+  if (rest.length > 0) {
+    // The others from Codex's files, through a session still running a turn
+    // in this batch, else through a new app-server that the refresh ends.
+    let opened: Rpc | undefined;
+    try {
+      if (!reader) {
+        opened = await connect((rest[0] as Handoff).folderId, deadline);
+        reader = opened;
+      }
+      const rpc = reader;
+      const asked = new Map<string, [string, string]>();
+      for (const handoff of rest)
+        asked.set(handoff.id, await ask(rpc, handoff.threadId));
+      // Answers come in any order; take each thread's as it comes.
+      await rpc
+        .answered([...asked.values()].flat(), deadline)
+        .catch((error) => {
+          if (!isLate(error)) throw error;
+        });
+      for (const handoff of rest) {
+        const [readId, turnsId] = asked.get(handoff.id) as [string, string];
+        const answers = rpc.peek([readId, turnsId]);
+        updates.set(
+          handoff.id,
+          answers
+            ? answeredUpdate(
+                handoff,
+                answers[0] as Answer,
+                answers[1] as Answer,
+              )
+            : keptUpdate(
+                handoff,
+                previousState(handoff.native),
+                { reason: codex.late },
+                { session: true },
+              ),
+        );
+      }
+    } catch (error) {
+      for (const handoff of rest)
+        if (!updates.has(handoff.id))
+          updates.set(
+            handoff.id,
+            isLate(error)
+              ? keptUpdate(
+                  handoff,
+                  previousState(handoff.native),
+                  { reason: codex.late },
+                  { session: true },
+                )
+              : keptUpdate(
+                  handoff,
+                  previousState(handoff.native),
+                  { reason: reasonOf(codex, error) },
+                  { session: true },
+                ),
+          );
+    } finally {
+      if (opened) await closeServer(opened.session);
+    }
+  }
+  return request.handoffs.map(
+    (handoff) => updates.get(handoff.id) ?? lateUpdate(handoff),
+  );
+}

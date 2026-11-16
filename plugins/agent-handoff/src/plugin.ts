@@ -1,8 +1,9 @@
 // Hands backlog items off to coding agents and reads back the state of their
 // work: T3 Code threads through the `t3` CLI, Claude Code background
-// sessions through `claude`, and Copilot CLI sessions through `copilot`. Every
-// command runs through Ajour's process broker, as declared in plugin.json's
-// `processes` block.
+// sessions through `claude`, Copilot CLI sessions through `copilot`, and
+// Codex threads through `codex app-server`, which Ajour keeps running as a
+// process session while a turn runs. Every command runs through Ajour's
+// process broker, as declared in plugin.json's `processes` block.
 import type {
   DetectToolsResult,
   PluginModule,
@@ -17,6 +18,7 @@ import {
   readClaude,
   startClaude,
 } from "./claude.ts";
+import { CODEX_TOOL, detectCodex, readCodex, startCodex } from "./codex.ts";
 import {
   COPILOT_TOOL,
   detectCopilot,
@@ -34,6 +36,7 @@ export async function detectTools(): Promise<DetectToolsResult> {
     detectT3(),
     detectClaude(),
     detectCopilot(),
+    detectCodex(),
   ]);
   return { tools };
 }
@@ -44,6 +47,7 @@ export async function startHandoff(
   if (request.tool === T3_TOOL) return startT3(request);
   if (request.tool === CLAUDE_TOOL) return startClaude(request);
   if (request.tool === COPILOT_TOOL) return startCopilot(request);
+  if (request.tool === CODEX_TOOL) return startCodex(request);
   return unknownTool(request.tool);
 }
 
@@ -53,6 +57,7 @@ export async function readHandoffStates(
   if (request.tool === T3_TOOL) return readT3(request);
   if (request.tool === CLAUDE_TOOL) return readClaude(request);
   if (request.tool === COPILOT_TOOL) return readCopilot(request);
+  if (request.tool === CODEX_TOOL) return readCodex(request);
   return unknownTool(request.tool);
 }
 

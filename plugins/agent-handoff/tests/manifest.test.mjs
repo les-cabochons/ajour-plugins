@@ -22,7 +22,7 @@ const copilotStart = (extra) => [
   "{prompt:text}",
 ];
 
-test("the manifest is a handoff plugin with T3 Code, Claude Code and Copilot CLI tools and no network", () => {
+test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI and Codex tools and no network", () => {
   assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.ts");
   assert.deepEqual(Object.keys(manifest.capabilities), ["handoff"]);
@@ -34,6 +34,7 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code and Copilot CLI
       ["t3", "T3 Code"],
       ["claude", "Claude Code"],
       ["copilot", "Copilot CLI"],
+      ["codex", "Codex"],
     ],
   );
   for (const tool of tools) {
@@ -64,13 +65,24 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code and Copilot CLI
     tools[2].settings[0].options.map((option) => option.value),
     ["ask", "allow"],
   );
+  assert.deepEqual(settings(tools[3]), [
+    ["open", "select", "app"],
+    ["model", "text", undefined],
+  ]);
+  assert.deepEqual(
+    tools[3].settings[0].options.map((option) => option.value),
+    ["app", "terminal"],
+  );
+  // The Codex app opens a thread from its codex://threads/<id> link.
+  assert.deepEqual(manifest.processes.openSchemes, ["codex"]);
 });
 
-test("the declared commands are four t3, four claude and four copilot commands", () => {
+test("the declared commands are four t3, four claude, four copilot and three codex commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
     copilot: { names: ["copilot"] },
+    codex: { names: ["codex"] },
   });
   const shapes = Object.fromEntries(
     commands.map(({ id, ...command }) => [id, command]),
@@ -174,6 +186,26 @@ test("the declared commands are four t3, four claude and four copilot commands",
       mode: "capture",
       timeoutSeconds: 10,
     },
+    // The app-server must outlive the operation that starts a turn, so it is
+    // a session. It ignores -C: the folder is there so Ajour starts it in the
+    // repository folder, its first folder argument.
+    "codex-app-server": {
+      executable: "codex",
+      args: ["-C", "{folder:folder}", "app-server"],
+      mode: "session",
+      idleTimeoutSeconds: 1800,
+    },
+    "codex-resume": {
+      executable: "codex",
+      args: ["resume", "-C", "{folder:folder}", "{thread:id}"],
+      mode: "terminal",
+    },
+    "codex-version": {
+      executable: "codex",
+      args: ["--version"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
   });
 });
 
@@ -188,6 +220,15 @@ test("every command ends well inside the host's 30-second operation", () => {
         command.id,
       );
     else assert.equal(command.timeoutSeconds, undefined, command.id);
+  // A session ends after its idle timeout, 1 to 3600 seconds; a refresh
+  // every 30 to 120 seconds keeps a running turn's session well inside it.
+  for (const command of commands)
+    if (command.mode === "session")
+      assert.ok(
+        command.idleTimeoutSeconds >= 600 && command.idleTimeoutSeconds <= 3600,
+        command.id,
+      );
+    else assert.equal(command.idleTimeoutSeconds, undefined, command.id);
 });
 
 test("each command passes the broker's declaration rules", () => {

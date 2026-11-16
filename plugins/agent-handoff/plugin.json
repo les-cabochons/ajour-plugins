@@ -1,9 +1,9 @@
 {
   "id": "agent-handoff",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
-  "description": "Hand off backlog items to T3 Code, Claude Code or Copilot CLI and follow their work.",
+  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI or Codex and follow their work.",
   "entrypoint": "src/plugin.ts",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
   "capabilities": {
@@ -105,6 +105,37 @@
               "helpText": "A model name, or auto to let Copilot choose. Leave empty for your Copilot CLI default."
             }
           ]
+        },
+        {
+          "id": "codex",
+          "label": "Codex",
+          "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 17l6-5-6-5M12 19h8\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+          "settings": [
+            {
+              "id": "open",
+              "label": "Open",
+              "type": "select",
+              "defaultValue": "app",
+              "options": [
+                {
+                  "value": "app",
+                  "label": "In the Codex app"
+                },
+                {
+                  "value": "terminal",
+                  "label": "In a terminal (codex resume)"
+                }
+              ],
+              "helpText": "Where Open shows the thread. The Codex app opens it from its codex:// link; the terminal runs codex resume in the repository folder."
+            },
+            {
+              "id": "model",
+              "label": "Model",
+              "type": "text",
+              "placeholder": "gpt-5.5",
+              "helpText": "A model name for the thread. Leave empty for your Codex default."
+            }
+          ]
         }
       ]
     }
@@ -119,6 +150,9 @@
       },
       "copilot": {
         "names": ["copilot"]
+      },
+      "codex": {
+        "names": ["codex"]
       }
     },
     "commands": [
@@ -260,7 +294,28 @@
         "args": ["--version"],
         "mode": "capture",
         "timeoutSeconds": 10
+      },
+      {
+        "id": "codex-app-server",
+        "executable": "codex",
+        "args": ["-C", "{folder:folder}", "app-server"],
+        "mode": "session",
+        "idleTimeoutSeconds": 1800
+      },
+      {
+        "id": "codex-resume",
+        "executable": "codex",
+        "args": ["resume", "-C", "{folder:folder}", "{thread:id}"],
+        "mode": "terminal"
+      },
+      {
+        "id": "codex-version",
+        "executable": "codex",
+        "args": ["--version"],
+        "mode": "capture",
+        "timeoutSeconds": 10
       }
-    ]
+    ],
+    "openSchemes": ["codex"]
   }
 }

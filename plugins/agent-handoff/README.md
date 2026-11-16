@@ -1,10 +1,10 @@
 # Ajour agent handoff
 
-An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com) and [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, or a Copilot CLI session with `copilot`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
+An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) and [Codex](https://developers.openai.com/codex). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, a Copilot CLI session with `copilot`, or a Codex thread through `codex app-server`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
 
 The plugin has no network access. It runs only the commands it declares, through Ajour's process broker, after you approve them in Access.
 
-Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a tool after 20. The handoffs it hasn't read by then, or whose command Ajour timed out or cut short, keep their last state, with the reason "T3 Code took too long; refreshing again later." (or Claude Code). A start stops waiting for what it started 27 seconds in. When Ajour stops a start command before its output is whole, the plugin says the tool may have started the work, so the user checks before handing off again. When Ajour refuses a command, the plugin says what to do, such as allowing the plugin in its Access section in Settings › Plugins.
+Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a tool after 20. The handoffs it hasn't read by then, or whose command Ajour timed out or cut short, keep their last state, with the reason "T3 Code took too long; refreshing again later." (or Claude Code, or Codex). A start stops waiting for what it started 27 seconds in. When Ajour stops a start command before its output is whole, the plugin says the tool may have started the work, so the user checks before handing off again. When Ajour refuses a command, the plugin says what to do, such as allowing the plugin in its Access section in Settings › Plugins.
 
 ## T3 Code
 
@@ -132,6 +132,64 @@ The VS Code link `vscode://agents/agent-host-session/copilotcli/<uuid>` has the 
 
 The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
 
+## Codex
+
+Every handoff is a Codex thread that `codex app-server` starts and runs. The app-server is Codex's JSON-RPC server on stdio, and it owns a turn: the turn stops if the app-server ends before the turn is done. So the plugin doesn't run it as a command that returns. It runs it as an Ajour process session, which Ajour keeps running between plugin operations. The prompt and the title go to the app-server's stdin as JSON (`turn/start` and `thread/name/set`), never on a command line.
+
+**A running turn ends when Ajour quits.** Ajour also ends the session, and the turn with it, when the plugin is turned off, updated or suspended, or after 30 minutes without a refresh. Codex then records the turn as interrupted, and the handoff shows Failed, labeled Stopped. Open the thread in Codex to go on.
+
+### Commands it runs
+
+| Command                                           | What for                                                                                                                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `codex -C <folder> app-server` as a session       | Runs the thread's turn, and reads threads. Ajour starts it in `<folder>`, the repository folder, which becomes the thread's working folder; the app-server itself ignores `-C`. It ends after 30 minutes without a send or read. |
+| `codex resume -C <folder> <thread>` in a terminal | Opens the thread: Open on the handoff, when Open is set to a terminal.                                                                                                                                                           |
+| `codex --version`                                 | Detects Codex. Times out after 10 seconds.                                                                                                                                                                                       |
+
+The plugin also declares the `codex` link scheme. Open on a handoff opens `codex://threads/<thread>` in the Codex app.
+
+### Sessions
+
+Each handoff gets its own session, opened by its start. A plugin operation can't find a session another operation opened, except through the handoff that keeps its id in its native state. Ajour keeps at most two sessions for a plugin, so **at most two Codex handoffs run at once**. A third start fails with "Ajour keeps at most two Codex sessions running for this plugin, and both are busy with other handoffs. Hand off again once one of them is ready." One session for every handoff would have no such limit, but a start couldn't reach it.
+
+A start opens the session, sends `initialize`, `initialized`, `thread/start` (with the model, if set), then `thread/name/set` and `turn/start`. The thread's id is the handoff's thread id. The app-server uses your Codex settings, such as its approval policy, sandbox and MCP servers; the plugin sets none of them. When `thread/start` answers but `turn/start` doesn't by 27 seconds, the handoff is kept with "Codex may have started the thread. Check Codex before handing off again.", and the session keeps running for a refresh to read.
+
+A refresh reads each live thread in its own session, with `thread/read` and `thread/turns/list` (the last turn, without its items), batched and within 20 seconds. Once the turn has ended, or Codex waits for you, the refresh closes the session. That frees one of the two places and lets go of the thread. While a session holds a thread, the Codex app shows it with "This is open in another app" and can't continue it.
+
+Threads without a live session are read the same way through one other app-server for the whole batch: a session of the batch that still runs a turn, else a new one that the refresh closes. A thread that no app-server has loaded reads as `notLoaded`, and its last turn says what happened.
+
+### Questions and approvals
+
+Codex can ask before it runs a command or edits a file, as your approval policy says, or ask you a question. The plugin can't answer, and while Ajour's session holds the thread, the Codex app can't either. So a refresh that sees one closes the session and reports Waiting for you, with "Codex asked for your approval or an answer, which Ajour can't give. Ajour let go of the thread, which stopped the turn: open it in Codex and tell it to go on." The handoff stays Waiting for you until another turn runs. Other requests Codex makes of its client get a JSON-RPC error, so Codex never waits for them.
+
+### States
+
+| Codex                                                                                   | Ajour                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Thread `active` with `waitingOnApproval` or `waitingOnUserInput`, or a question asked   | Waiting for you (`needs-you`), and the session closes                     |
+| Thread `active`, or the session's own turn not recorded yet                             | Working                                                                   |
+| Last turn `completed`                                                                   | Ready, labeled Completed                                                  |
+| Last turn `interrupted` with an end time, such as when you stopped it                   | Ready, labeled Interrupted                                                |
+| Last turn `failed`                                                                      | Failed, with Codex's error, such as an unsupported model                  |
+| The plugin's turn `interrupted` without an end time, its session gone                   | Failed, labeled Stopped: the session ended mid-turn                       |
+| Another turn `interrupted` without an end time                                          | Unknown: it may run in another Codex window, which reads the same way     |
+| No turn recorded, though the plugin started one                                         | Failed, labeled Stopped: the session ended before Codex recorded the turn |
+| Archived (its rollout is in `archived_sessions`)                                        | Done, labeled Archived                                                    |
+| `thread/read` answers `thread not loaded: <id>`, as for a thread `codex delete` removed | Gone                                                                      |
+| Another read failure, or the session can't open                                         | Keeps its last state, with the reason. Never gone.                        |
+| No answer before the refresh deadline                                                   | Keeps its last state and its session, with the reason                     |
+
+A session id Ajour no longer knows, after a quit or the idle timeout, is no evidence about the thread: the refresh reads it from Codex's files. The native state keeps the last state read, the label, the Open setting, the turn the plugin started, the session id while the turn runs, Codex's thread status, active flags and last turn status. Messages and paths are never stored.
+
+### Settings
+
+| Setting | Default          | What it does                                                                                                                                                           |
+| ------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open    | In the Codex app | Or in a terminal. The app opens the handoff's `codex://threads/<id>` link; the terminal runs `codex resume` in the folder. A handoff keeps the choice it started with. |
+| Model   | Empty            | A model name for the thread. Codex checks it when the turn starts, so an unknown one fails the handoff with Codex's error.                                             |
+
+The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
+
 ## Default prompt
 
 The manifest has no default prompt yet: `capabilities.handoff.promptTemplate` arrives with les-cabochons/ajour#739, which isn't on Ajour's main branch. Until then Ajour uses its own fallback. Once it lands, the manifest gets this template:
@@ -155,4 +213,4 @@ just test
 just typecheck
 ```
 
-The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, and `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, each from a throwaway repository with home paths replaced. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.
+The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, and JSON-RPC exchanges with `codex app-server` 0.169.0 on Windows in `tests/fixtures/codex` (see its README), each from a throwaway repository with home paths replaced. `tests/codex-replay.mjs` replays a Codex exchange through the SDK fake's process sessions. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.

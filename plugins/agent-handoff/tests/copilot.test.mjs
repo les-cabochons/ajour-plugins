@@ -82,6 +82,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
       ["t3", false],
       ["claude", false],
       ["copilot", false],
+      ["codex", false],
     ],
   );
   assert.equal(
@@ -336,7 +337,7 @@ test("a session started signed out keeps its id and name, and resumes", () => {
 test("another tool id is still refused", async () => {
   fakeCopilot();
   await assert.rejects(
-    readHandoffStates({ tool: "codex", handoffs: [] }),
-    /This plugin has no handoff tool "codex"/,
+    readHandoffStates({ tool: "aider", handoffs: [] }),
+    /This plugin has no handoff tool "aider"/,
   );
 });

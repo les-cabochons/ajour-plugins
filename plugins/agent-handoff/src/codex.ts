@@ -583,8 +583,9 @@ function stateOf(
   if (live && (!last || text(last.id, 100) !== ours)) {
     // Codex records the turn a moment after turn/start answers, and until
     // then reads the thread as idle: the session's own turn still runs.
-    if (ours) return { state: "working", label: LABELS.working };
-    if (!last)
+    if (ours && justStarted(handoff))
+      return { state: "working", label: LABELS.working };
+    if (!last || ours)
       return {
         state: "failed",
         label: "Failed",
@@ -749,14 +750,18 @@ async function readLive(
   // What Codex said while nobody read: a question it asked without a flag.
   const heard = rpc.heard.get(handoff.threadId);
   const thread = record(read.result?.thread);
-  const active = text(record(thread?.status)?.type) === "active";
+  const type = text(record(thread?.status)?.type);
+  const active = type === "active";
   if (heard && thread && active) {
     const status = record(thread.status) ?? {};
     if (!flagsOf(status).length)
       thread.status = { ...status, activeFlags: [heard.asked] };
   }
   const update = answeredUpdate(handoff, read, turns, session);
-  if (!rpc.exited && holds(handoff, update, read, turns, active))
+  if (
+    !rpc.exited &&
+    holds(handoff, update, read, turns, active, type === "idle")
+  )
     return { update, rpc };
   // The turn ended, waits for the user, or can't be followed here: let go of
   // the thread, so the Codex app can open it, and free the session. A
@@ -790,6 +795,7 @@ function holds(
   read: Answer,
   turns: Answer,
   active: boolean,
+  idle: boolean,
 ): boolean {
   // A thread Codex has no record of, or a read this Codex doesn't have.
   if (update.state === "gone" || missingMethod(read) || missingMethod(turns))
@@ -798,7 +804,9 @@ function holds(
   if (errorOf(read)) return true;
   // Without the turns, the thread's status alone says whether it runs.
   if (errorOf(turns))
-    return (active || justStarted(handoff)) && update.state === "working";
+    return (
+      (active || (idle && justStarted(handoff))) && update.state === "working"
+    );
   return update.state === "working";
 }
 

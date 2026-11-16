@@ -977,6 +977,35 @@ test("past its grace, an idle thread whose turns can't be read closes its sessio
   assert.equal(sessionsOf()[0].state, "closed");
 });
 
+test("a fresh turn's grace doesn't keep a session whose thread reports a system error", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread({ type: "systemError" })
+        : { error: { code: -32603, message: "turns unavailable" } },
+    ),
+  ]);
+  const { update } = await readLiveOne({ started: String(Date.now()) });
+  assert.equal(update.native.session, undefined);
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("past its grace, a live idle thread that never recorded the plugin's turn fails and closes its session", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread({ type: "idle" })
+        : { result: { data: [] } },
+    ),
+  ]);
+  const { update } = await readLiveOne({
+    started: String(Date.now() - 60_000),
+  });
+  assert.equal(update.state, "failed");
+  assert.equal(update.native.session, undefined);
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
 test("an active live thread whose turns can't be read keeps its session", async () => {
   fakeCodex([
     answering((m) =>

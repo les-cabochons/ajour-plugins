@@ -1,0 +1,1 @@
+No running T3 Code server uses C:\Users\example\.t3. Start T3 Code, then retry.

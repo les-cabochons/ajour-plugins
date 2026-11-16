@@ -12,6 +12,7 @@ Node's type stripping, so nothing is built.
 
 | Folder | Plugin ID | Plugin | Capabilities | Formerly |
 | --- | --- | --- | --- | --- |
+| [`plugins/agent-handoff`](plugins/agent-handoff) | `agent-handoff` | Agent handoff | Handoff | |
 | [`plugins/azure-devops`](plugins/azure-devops) | `azure_devops` | Azure DevOps | Connector, code host | [ajc-azure-devops](https://github.com/les-cabochons/ajc-azure-devops) |
 | [`plugins/github`](plugins/github) | `github` | GitHub | Connector, code host | [ajc-github](https://github.com/les-cabochons/ajc-github) |
 | [`plugins/chronops`](plugins/chronops) | `chronops` | ChronOps | Project source | |

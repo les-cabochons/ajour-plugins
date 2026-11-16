@@ -8,6 +8,18 @@ importers:
 
   .: {}
 
+  plugins/agent-handoff:
+    devDependencies:
+      '@ajour/plugin-sdk':
+        specifier: file:../../vendor/ajour-plugin-sdk-0.2.0.tgz
+        version: file:vendor/ajour-plugin-sdk-0.2.0.tgz
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   plugins/azure-devops:
     devDependencies:
       '@ajour/plugin-sdk':
@@ -112,6 +124,10 @@ packages:
   '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz':
     resolution: {integrity: sha512-RHOa1J2cq58N0kyFWwM3NjZQ6lS1osSI5EpM7jA5g0tnxCVWueEgEPyus1ZEOGSMZNr55Z2d3mkRlevRTE8ilA==, tarball: file:vendor/ajour-plugin-sdk-0.1.0.tgz}
     version: 0.1.0
+
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.2.0.tgz':
+    resolution: {integrity: sha512-qN1oLfCuq6F8StObSt3fSRwSIbG4tuOH1LIRVf4LLKCA91aNbqHYzRuAipmvxF/8iFwC5p3y+mVarOh3tshGtw==, tarball: file:vendor/ajour-plugin-sdk-0.2.0.tgz}
+    version: 0.2.0
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
@@ -551,6 +567,8 @@ packages:
 snapshots:
 
   '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.1.0.tgz': {}
+
+  '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.2.0.tgz': {}
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 

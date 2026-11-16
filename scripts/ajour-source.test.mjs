@@ -414,6 +414,13 @@ describe("capability names", () => {
     assert.deepEqual(validateSource(source), []);
   });
 
+  test("a handoff plugin lists handoff, so a release can include Agent handoff", () => {
+    assert.deepEqual(catalogCapabilities({ handoff: { tools: [] } }), ["handoff"]);
+    const source = validSource();
+    source.plugins[0].capabilities = ["handoff"];
+    assert.deepEqual(validateSource(source), []);
+  });
+
   test("a capability ajour.json has no name for is refused", () => {
     assert.throws(() => catalogCapabilities({ somethingNew: {} }), /has no name for/);
   });

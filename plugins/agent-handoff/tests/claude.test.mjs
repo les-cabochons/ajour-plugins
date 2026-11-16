@@ -47,8 +47,8 @@ afterEach(() => {
 /** Installs a fake claude. `answer` gets argv and returns a capture result. */
 function fakeClaude(answer) {
   return fakeBroker((argv, call) => {
-    // Detection asks every tool; these tests have no t3.
-    if (argv[0] === "t3") throw refused("executable_missing");
+    // Detection asks every tool; these tests have only claude.
+    if (argv[0] !== "claude") throw refused("executable_missing");
     return answer(argv, call);
   });
 }
@@ -112,6 +112,7 @@ test("detection says Claude Code isn't installed when claude is missing", async 
     [
       ["t3", false],
       ["claude", false],
+      ["copilot", false],
     ],
   );
   assert.equal(

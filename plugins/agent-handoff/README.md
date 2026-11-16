@@ -1,6 +1,6 @@
 # Ajour agent handoff
 
-An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes) and [Claude Code](https://code.claude.com). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, or a Claude Code background session with `claude`, and reads its state back: working, waiting for you, ready for review, settled.
+An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com) and [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, or a Copilot CLI session with `copilot`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
 
 The plugin has no network access. It runs only the commands it declares, through Ajour's process broker, after you approve them in Access.
 
@@ -96,6 +96,42 @@ The native state keeps the last state read, the label, and Claude's `kind`, `sta
 
 A terminal is Windows Terminal on Windows and Terminal on macOS, set in Settings › General › Terminal. On Windows it takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path; with others, the session still starts and the handoff says the terminal couldn't open.
 
+## Copilot CLI
+
+The plugin chooses each session's id, a new UUID, and starts `copilot -p` detached in the repository folder. `-p` works on the prompt and exits when the task is done, which takes longer than a plugin operation. Ajour stops a capture command, and the work with it, at its timeout, and only a capture command takes stdin. So the prompt is one command-line argument: line breaks become spaces, a leading `-` is dropped, and a prompt over 12,000 characters is refused before `copilot` runs, with "Shorten the handoff template, such as by leaving out the item's description." Ajour passes the argument straight to the executable, never through a shell.
+
+### Commands it runs
+
+| Command                                                          | What for                                                                                                                                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `copilot -C <folder> --session-id <uuid> -n <title> -p <prompt>` | Starts the session, detached, in the folder. `-n` names it, which Copilot CLI allows only for a new session. With a model, adds `--model <model>` after the title. Returns once started. |
+| The same with `--allow-all-tools` before `-p`                    | The start when Tools is Allow all tools. It is a separate command, so Access shows it on its own.                                                                                        |
+| `copilot -C <folder> --resume <uuid>` in a terminal              | Opens the session: Open on the handoff. It shows the session's work, and takes another turn. Without a terminal, `copilot --resume` refuses: "No prompt provided."                       |
+| `copilot --version`                                              | Detects Copilot CLI. Times out after 10 seconds.                                                                                                                                         |
+
+The UUID is the handoff's thread id. A detached command gives no output and no exit code, so a start that `copilot` fails, such as when it isn't signed in, still leaves the handoff: Copilot CLI writes the session with its id and name before it signs in, without the prompt, and Open resumes that empty session. Sign in with `copilot` and `/login` before handing off.
+
+### Tools
+
+`-p` can't ask before Copilot edits a file or runs a command. It runs only what is already allowed: read-only commands, and what you allowed with "Yes, and don't ask again" in this repository. It skips the rest. Open the session to allow them and continue. Allow all tools adds `--allow-all-tools`, so the session edits files and runs commands without asking.
+
+### States
+
+Copilot CLI has no command that reports a session's state. It keeps each session's events in `session-state/<uuid>/events.jsonl` under `COPILOT_HOME`, but no declared command can read them, and an event log alone can't tell a finished task from one that waits for you or failed. So every refresh reports Unknown with "Copilot CLI doesn't report a session's state.", runs no command, keeps the last state read in the native state, and never says gone.
+
+The native state keeps the last state, the label and the Tools setting. Nothing else about the session is read, so a handoff has no web link.
+
+The VS Code link `vscode://agents/agent-host-session/copilotcli/<uuid>` has the format VS Code builds, but nobody has seen VS Code adopt a session the standalone CLI started. Until that is tested, the plugin declares no `vscode` scheme and Open uses the terminal.
+
+### Settings
+
+| Setting | Default                           | What it does                                                                        |
+| ------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| Tools   | Only the ones you already allowed | Or Allow all tools, which adds `--allow-all-tools` to the start.                    |
+| Model   | Empty                             | A model name, or `auto` to let Copilot choose. Empty uses your Copilot CLI default. |
+
+The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
+
 ## Default prompt
 
 The manifest has no default prompt yet: `capabilities.handoff.promptTemplate` arrives with les-cabochons/ajour#739, which isn't on Ajour's main branch. Until then Ajour uses its own fallback. Once it lands, the manifest gets this template:
@@ -119,4 +155,4 @@ just test
 just typecheck
 ```
 
-The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), and `claude` 2.1.325 on Windows in `tests/fixtures/claude`, from a throwaway repository with home paths replaced. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.
+The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, and `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, each from a throwaway repository with home paths replaced. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.

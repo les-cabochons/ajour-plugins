@@ -35,8 +35,8 @@ const late = /T3 Code took too long; refreshing again later/;
 function fakeT3(answer) {
   const calls = [];
   fakeBroker((argv, call) => {
-    // Detection asks every tool; these tests have no claude.
-    if (argv[0] === "claude") throw refused("executable_missing");
+    // Detection asks every tool; these tests have only t3.
+    if (argv[0] !== "t3") throw refused("executable_missing");
     if (argv[2] === "show")
       assert.deepEqual(argv.slice(-3), ["--json", "--messages", "0"]);
     calls.push({ argv, stdin: call.stdin });

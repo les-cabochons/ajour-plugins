@@ -1,0 +1,2 @@
+error: option '-n, --name <name>' cannot be used with option '--session-id <id>' when it resolves to an existing or remote session or task.
+--name only names a brand-new session created by --session-id=<new-uuid>; the resolved session was not renamed.

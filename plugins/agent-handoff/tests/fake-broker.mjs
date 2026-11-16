@@ -108,15 +108,20 @@ export const argvOf = (request) => commandOf(request).argv;
 
 /**
  * Installs a fake broker. `answer` gets the command and returns a capture
- * result; a launch mode command starts without one. `session`, when given,
- * gets each session the plugin opens, with its command, and returns the
- * program's handler, as the SDK fake's `processSession` does. `ajour.sessions`
- * then records what the plugin sent each one.
+ * result; a launch mode command starts without one. `routes` answer
+ * `ajour.http` (the SDK fake refuses a path or header the manifest doesn't
+ * declare), and `connectionUrl` is the operation's connection address,
+ * which fills a `connection-url` slot. `session`, when given, gets each
+ * session the plugin opens, with its command, and returns the program's
+ * handler, as the SDK fake's `processSession` does. `ajour.sessions` then
+ * records what the plugin sent each one.
  */
-export function fakeBroker(answer, { session } = {}) {
+export function fakeBroker(answer, { routes, connectionUrl, session } = {}) {
   const calls = [];
   globalThis.ajour = createFakeAjour({
     manifest,
+    ...(routes ? { routes } : {}),
+    ...(connectionUrl === undefined ? {} : { connectionUrl }),
     ...(session
       ? {
           processSession: async (request, program) => {

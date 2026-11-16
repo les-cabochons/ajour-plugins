@@ -22,19 +22,19 @@ const copilotStart = (extra) => [
   "{prompt:text}",
 ];
 
-test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI and Codex tools and no network", () => {
+test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, OpenCode and Codex tools", () => {
   assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.ts");
   assert.deepEqual(Object.keys(manifest.capabilities), ["handoff"]);
-  assert.equal(manifest.network, undefined);
   const tools = manifest.capabilities.handoff.tools;
   assert.deepEqual(
-    tools.map((tool) => [tool.id, tool.label]),
+    tools.map((tool) => [tool.id, tool.label, tool.connection]),
     [
-      ["t3", "T3 Code"],
-      ["claude", "Claude Code"],
-      ["copilot", "Copilot CLI"],
-      ["codex", "Codex"],
+      ["t3", "T3 Code", undefined],
+      ["claude", "Claude Code", undefined],
+      ["copilot", "Copilot CLI", undefined],
+      ["opencode", "OpenCode", "required"],
+      ["codex", "Codex", undefined],
     ],
   );
   for (const tool of tools) {
@@ -66,22 +66,65 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI an
     ["ask", "allow"],
   );
   assert.deepEqual(settings(tools[3]), [
+    ["model", "text", undefined],
+    ["agent", "text", undefined],
+  ]);
+  assert.deepEqual(settings(tools[4]), [
     ["open", "select", "app"],
     ["model", "text", undefined],
   ]);
   assert.deepEqual(
-    tools[3].settings[0].options.map((option) => option.value),
+    tools[4].settings[0].options.map((option) => option.value),
     ["app", "terminal"],
   );
   // The Codex app opens a thread from its codex://threads/<id> link.
   assert.deepEqual(manifest.processes.openSchemes, ["codex"]);
 });
 
-test("the declared commands are four t3, four claude, four copilot and three codex commands", () => {
+test("OpenCode's connection is its loopback server, reached on-premises through the broker", () => {
+  // packages/shared/plugin-api-4.ts: a tool that uses a connection needs
+  // connection fields and a network, and the base address field is a url
+  // that isn't secret. Ajour's form needs label and tenantLabel.
+  assert.deepEqual(
+    manifest.connectionFields.map((f) => [
+      f.id,
+      f.type,
+      f.required,
+      f.secret,
+      f.defaultValue,
+    ]),
+    [
+      ["label", "text", true, undefined, "OpenCode"],
+      ["tenantLabel", "text", true, undefined, "This computer"],
+      ["serverUrl", "url", true, undefined, "http://127.0.0.1:4096"],
+    ],
+  );
+  // No credential: the server runs without a password, on 127.0.0.1, so the
+  // connection must be on-premises to reach a private address over http.
+  assert.deepEqual(manifest.network, {
+    baseAddress: { field: "serverUrl", allowOnPremises: true },
+    endpoints: [
+      { method: "GET", path: "/global/health" },
+      { method: "POST", path: "/session" },
+      { method: "GET", path: "/session/status" },
+      { method: "GET", path: "/session/*" },
+      { method: "DELETE", path: "/session/*" },
+      { method: "GET", path: "/session/*/message" },
+      { method: "POST", path: "/session/*/prompt_async" },
+      { method: "GET", path: "/permission" },
+      { method: "GET", path: "/question" },
+    ],
+    requestHeaders: ["Content-Type"],
+  });
+  assert.equal(manifest.connectionAccess, undefined);
+});
+
+test("the declared commands are four t3, four claude, four copilot, two opencode and three codex commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
     copilot: { names: ["copilot"] },
+    opencode: { names: ["opencode"] },
     codex: { names: ["codex"] },
   });
   const shapes = Object.fromEntries(
@@ -186,6 +229,27 @@ test("the declared commands are four t3, four claude, four copilot and three cod
       mode: "capture",
       timeoutSeconds: 10,
     },
+    // Ajour fills {server:connection-url} from the handoff's connection; the
+    // plugin passes only the session. A terminal opens in its first folder,
+    // and --dir names the same folder to OpenCode.
+    "opencode-attach": {
+      executable: "opencode",
+      args: [
+        "attach",
+        "{server:connection-url}",
+        "-s",
+        "{session:id}",
+        "--dir",
+        "{folder:folder}",
+      ],
+      mode: "terminal",
+    },
+    "opencode-version": {
+      executable: "opencode",
+      args: ["--version"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
     // The app-server must outlive the operation that starts a turn, so it is
     // a session. It ignores -C: the folder is there so Ajour starts it in the
     // repository folder, its first folder argument.
@@ -233,7 +297,10 @@ test("every command ends well inside the host's 30-second operation", () => {
 
 test("each command passes the broker's declaration rules", () => {
   const slot =
-    /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):(text|id|ref|number|https-url|folder)\}$/;
+    /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):(text|id|ref|number|https-url|folder|connection-url)\}$/;
+  const connected = manifest.capabilities.handoff.tools.some(
+    (tool) => tool.connection === "required",
+  );
   for (const command of commands) {
     assert.ok(Object.hasOwn(executables, command.executable), command.id);
     const names = [];
@@ -245,11 +312,23 @@ test("each command passes the broker's declaration rules", () => {
         assert.ok(match, `${command.id}: ${a} is a whole typed slot`);
         return [match[1]];
       });
-      if (typeof arg !== "string")
+      if (typeof arg !== "string") {
         assert.ok(
           slots.includes(arg.if),
           `${command.id}: group tests its own slot`,
         );
+        // Ajour fills a connection-url slot, so the plugin can't pass it.
+        assert.ok(
+          !group.includes(`{${arg.if}:connection-url}`),
+          `${command.id}: a group can't test a connection-url slot`,
+        );
+      }
+      // A connection-url slot is filled from the base address, only in an
+      // operation of a tool that uses a connection.
+      if (group.some((a) => a.endsWith(":connection-url}"))) {
+        assert.ok(manifest.network?.baseAddress, `${command.id}: base address`);
+        assert.ok(connected, `${command.id}: a tool that uses a connection`);
+      }
       names.push(...slots);
     }
     assert.equal(

@@ -74,7 +74,7 @@
         ],
         "stdin": "text",
         "mode": "capture",
-        "timeoutSeconds": 25
+        "timeoutSeconds": 20
       },
       {
         "id": "thread-list",

@@ -85,6 +85,16 @@ function argvOf(request) {
   return argv;
 }
 
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+};
+const late = /T3 Code took too long; refreshing again later/;
+
+/** Makes the fake broker refuse the command, as Ajour does. */
+const refuse = (code) => () => {
+  throw refused(code);
+};
+
 const ok = (stdout) => ({ exitCode: 0, stdout, stderr: "" });
 const fail = (stderr) => ({ exitCode: 1, stdout: "", stderr });
 const out = (value) => ok(`${JSON.stringify(value)}\n`);
@@ -318,6 +328,42 @@ test("a start keeps the thread when reading its link fails", async () => {
   assert.match(result.native.reason, /isn't running/);
 });
 
+test("a start Ajour ends before t3 answers says the thread may exist", async () => {
+  for (const code of ["timeout", "capture_incomplete", "output_limit"]) {
+    fakeT3(refuse(code));
+    await assert.rejects(startHandoff(startRequest()), {
+      message:
+        "T3 Code may have started the thread. Check T3 Code before handing off again.",
+    });
+  }
+});
+
+test("a start keeps the new thread when thread show outlasts the start deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const calls = fakeT3((argv) =>
+    argv[2] === "start" ? out(started) : new Promise(() => {}),
+  );
+  let settled = false;
+  const pending = startHandoff(startRequest()).finally(() => {
+    settled = true;
+  });
+  await flush();
+  // Ajour ends the operation at 30 s; the start stops waiting at 27 s.
+  t.mock.timers.tick(26_999);
+  await flush();
+  assert.equal(settled, false);
+  t.mock.timers.tick(1);
+  const result = await pending;
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.native.projectId, started.projectId);
+  assert.equal(result.native.state, "working");
+  assert.match(result.native.reason, late);
+  assert.deepEqual(
+    calls.map((c) => c.argv[2]),
+    ["start", "show"],
+  );
+});
+
 test("a failed start returns T3's message", async () => {
   fakeT3(() => fail(read("no-project.txt")));
   await assert.rejects(
@@ -479,7 +525,7 @@ test("an archived thread missing from the list takes its state from thread show,
   });
   assert.equal(update.state, "done");
   assert.equal(update.native.state, "done");
-  assert.equal(update.native.label, "Settled");
+  assert.equal(update.native.label, "Archived");
   assert.equal(update.native.status, "completed");
   assert.equal(update.native.archived, true);
   assert.equal(update.native.missing, true);
@@ -515,6 +561,19 @@ test("a listed thread that is archived settles", async () => {
     handoffs: [handoff("h1")],
   });
   assert.equal(update.state, "done");
+  assert.equal(update.native.label, "Archived");
+});
+
+test("a settled thread reads Settled, archived or not", async () => {
+  for (const archived of [false, true]) {
+    fakeT3(() => out([{ ...completed, settled: true, archived }]));
+    const [update] = await readHandoffStates({
+      tool: "t3",
+      handoffs: [handoff("h1")],
+    });
+    assert.equal(update.state, "done");
+    assert.equal(update.native.label, "Settled", String(archived));
+  }
 });
 
 test("a thread T3 says doesn't exist is gone", async () => {
@@ -586,11 +645,6 @@ test("one thread list runs per folder, and answers follow the request order", as
   for (const update of updates) assertNativeFits(update.native);
 });
 
-const flush = async () => {
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-};
-const late = /T3 Code took too long; refreshing again later/;
-
 test("a refresh stops waiting at its deadline and keeps the threads it couldn't read", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const never = new Promise(() => {});
@@ -659,6 +713,53 @@ test("a thread list that outlasts the deadline keeps every state, never unknown"
   assert.match(update.native.reason, late);
 });
 
+for (const code of ["timeout", "capture_incomplete"]) {
+  test(`a thread list Ajour ends with ${code} keeps every state, never unknown`, async () => {
+    fakeT3(refuse(code));
+    const updates = await readHandoffStates({
+      tool: "t3",
+      handoffs: [
+        handoff("h1", { state: "ready", status: "completed" }),
+        handoff("h2", { state: "needs-you", status: "running" }),
+      ],
+    });
+    assert.deepEqual(
+      updates.map((u) => [u.id, u.state, u.native.state]),
+      [
+        ["h1", "ready", "ready"],
+        ["h2", "needs-you", "needs-you"],
+      ],
+    );
+    for (const update of updates) {
+      assert.match(update.native.reason, late);
+      assert.notEqual(update.native.label, "Unknown");
+    }
+  });
+
+  test(`a thread show Ajour ends with ${code} keeps the last state`, async () => {
+    fakeT3((argv) =>
+      argv[2] === "list"
+        ? out([{ ...listed, status: "running" }])
+        : refuse(code)(),
+    );
+    const [update] = await readHandoffStates({
+      tool: "t3",
+      handoffs: [handoff("h1", { state: "needs-you", status: "running" })],
+    });
+    assert.equal(update.state, "needs-you");
+    assert.equal(update.native.state, "needs-you");
+    assert.match(update.native.reason, late);
+
+    fakeT3((argv) => (argv[2] === "list" ? out([]) : refuse(code)()));
+    const [missing] = await readHandoffStates({
+      tool: "t3",
+      handoffs: [handoff("h1", { state: "ready", status: "completed" })],
+    });
+    assert.equal(missing.state, "ready");
+    assert.match(missing.native.reason, late);
+  });
+}
+
 test("T3's not-running and not-found messages count on any stderr line", async () => {
   const warning = "(node:1) Warning: something deprecated\n";
   fakeT3((argv) =>
@@ -684,7 +785,8 @@ test("T3's not-running and not-found messages count on any stderr line", async (
 
 test("each broker refusal reads as what to do next", async () => {
   const cases = {
-    needs_consent: "Approve T3 Code's commands in this plugin's Access tab.",
+    needs_consent:
+      "Open this plugin's Access section in Settings › Plugins and choose Allow and activate.",
     unsigned_processes_off:
       "Turn on Unsigned plugins can start processes in Settings › Plugins.",
     process_acceptance_required:
@@ -692,7 +794,8 @@ test("each broker refusal reads as what to do next", async () => {
     concurrency: "Ajour is busy with other T3 Code commands; try again.",
     executable_missing: /isn't installed/,
     package_unverified: /verify this plugin's package/,
-    spawn_refused: /Reinstall T3 Code/,
+    spawn_refused:
+      "Ajour couldn't start t3 safely (an unusual launcher, an argument it can't pass, or a command line that's too long). Check the T3 Code install and this handoff's title.",
     output_limit: /more output than Ajour accepts/,
     timeout: /didn't answer in time/,
     invalid_request: /Check the branch, base ref, provider and model/,

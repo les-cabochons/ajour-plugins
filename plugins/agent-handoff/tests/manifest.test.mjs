@@ -56,7 +56,7 @@ test("the declared commands are the four t3 commands, with prompts on stdin", ()
       ],
       stdin: "text",
       mode: "capture",
-      timeoutSeconds: 25,
+      timeoutSeconds: 20,
     },
     "thread-list": {
       executable: "t3",
@@ -81,9 +81,11 @@ test("the declared commands are the four t3 commands, with prompts on stdin", ()
 });
 
 test("every command ends well inside the host's 30-second operation", () => {
+  // A start runs thread start, then thread show until 27 s, so thread start
+  // leaves room for the show and for spawning both.
   for (const command of commands)
     assert.ok(
-      command.timeoutSeconds !== undefined && command.timeoutSeconds <= 25,
+      command.timeoutSeconds !== undefined && command.timeoutSeconds <= 20,
       command.id,
     );
 });

@@ -1,0 +1,101 @@
+{
+  "id": "agent-handoff",
+  "version": "0.1.0",
+  "apiVersion": 4,
+  "displayName": "Agent handoff",
+  "description": "Hand off backlog items to T3 Code and follow their threads.",
+  "entrypoint": "src/plugin.ts",
+  "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
+  "capabilities": {
+    "handoff": {
+      "tools": [
+        {
+          "id": "t3",
+          "label": "T3 Code",
+          "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
+          "settings": [
+            {
+              "id": "worktree",
+              "label": "Create a worktree",
+              "type": "checkbox",
+              "defaultValue": true,
+              "helpText": "Run the thread in a new git worktree on the handoff branch, instead of the project folder."
+            },
+            {
+              "id": "base",
+              "label": "Worktree base",
+              "type": "text",
+              "defaultValue": "main",
+              "helpText": "The branch, tag or commit the worktree starts from."
+            },
+            {
+              "id": "provider",
+              "label": "Provider",
+              "type": "text",
+              "placeholder": "claudeAgent",
+              "helpText": "A T3 Code provider instance ID. Set the provider and the model together, or leave both empty for the project defaults."
+            },
+            {
+              "id": "model",
+              "label": "Model",
+              "type": "text",
+              "placeholder": "claude-opus-5-5",
+              "helpText": "A model slug the provider offers."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "processes": {
+    "executables": {
+      "t3": {
+        "names": ["t3"]
+      }
+    },
+    "commands": [
+      {
+        "id": "thread-start",
+        "executable": "t3",
+        "args": [
+          "thread",
+          "start",
+          "{folder:folder}",
+          "-",
+          "--title",
+          "{title:text}",
+          "--json",
+          {
+            "if": "branch",
+            "args": ["--worktree", "{base:ref}", "--branch", "{branch:ref}"]
+          },
+          {
+            "if": "provider",
+            "args": ["--provider", "{provider:id}", "--model", "{model:id}"]
+          }
+        ],
+        "stdin": "text",
+        "mode": "capture",
+        "timeoutSeconds": 60
+      },
+      {
+        "id": "thread-list",
+        "executable": "t3",
+        "args": ["thread", "list", "--project", "{folder:folder}", "--json"],
+        "mode": "capture"
+      },
+      {
+        "id": "thread-show",
+        "executable": "t3",
+        "args": ["thread", "show", "{thread:id}", "--json"],
+        "mode": "capture"
+      },
+      {
+        "id": "version",
+        "executable": "t3",
+        "args": ["--version"],
+        "mode": "capture"
+      }
+    ]
+  }
+}

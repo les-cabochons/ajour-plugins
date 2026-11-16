@@ -75,6 +75,7 @@ export const CATALOG_CAPABILITIES = Object.freeze([
   "calendar",
   "team",
   "agentTask",
+  "handoff",
   "projectSource",
   "schema",
 ]);
@@ -90,6 +91,7 @@ const PLUGIN_CAPABILITIES = {
   calendar: "calendar",
   team: "team",
   agentTask: "agentTask",
+  handoff: "handoff",
   projectSource: "projectSource",
   schema: "schema",
   projectDataShape: "schema",

@@ -1,0 +1,65 @@
+# Ajour agent handoff
+
+An Ajour plugin that hands a backlog item off to a coding agent and follows its thread. Its first tool is [T3 Code](https://t3.codes). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI and reads the thread's state back: working, waiting for you, ready for review, settled.
+
+The plugin has no network access. It runs only the four `t3` commands it declares, through Ajour's process broker, after you approve them in Access.
+
+## Commands it runs
+
+| Command                                             | What for                                                                                                                                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `t3 thread start <folder> - --title <title> --json` | Starts the thread. The prompt goes on stdin. With a worktree, adds `--worktree <base> --branch <branch>`; with a provider, adds `--provider <provider> --model <model>`. Times out after 60 seconds. |
+| `t3 thread list --project <folder> --json`          | Reads every thread of a repository folder, once per folder on each refresh.                                                                                                                          |
+| `t3 thread show <thread> --json`                    | Reads a live thread's pending requests, a new thread's link, and whether a thread missing from the list still exists.                                                                                |
+| `t3 --version`                                      | Detects T3 Code.                                                                                                                                                                                     |
+
+`<folder>` is one of the project's repository folders, which Ajour resolves. The folder must already be a T3 Code project.
+
+## States
+
+| T3 Code                                                                           | Ajour                                      |
+| --------------------------------------------------------------------------------- | ------------------------------------------ |
+| A pending request, such as a question or an approval, even while `running`        | Waiting for you (`needs-you`)              |
+| `preparing`, `queued`, `starting`, `running`, `waiting`                           | Working                                    |
+| `idle`, `completed`, `interrupted`, `cancelled`, `rolled_back`, while not settled | Ready                                      |
+| Settled                                                                           | Done                                       |
+| `failed`                                                                          | Failed                                     |
+| `thread show` says the thread is no longer available                              | Gone                                       |
+| Archived, so missing from the list                                                | Keeps its last state, with `missing: true` |
+| No T3 Code server answers                                                         | Unknown, with the reason. Never gone.      |
+
+The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `archived`, `pendingRequestCount` and `projectId`, plus the last state read. Only HTTPS pull request links are kept. Messages and worktree paths are never stored.
+
+## Settings
+
+| Setting           | Default | What it does                                                                                                                  |
+| ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Create a worktree | On      | Runs the thread in a new git worktree on the handoff branch. Off runs it in the project folder.                               |
+| Worktree base     | `main`  | The branch, tag or commit the worktree starts from.                                                                           |
+| Provider          | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. Set it with the model, or leave both empty for the project's defaults. |
+| Model             | Empty   | A model slug the provider offers, such as `claude-opus-5-5`.                                                                  |
+
+## Default prompt
+
+The manifest has no default prompt yet: `capabilities.handoff.promptTemplate` arrives with les-cabochons/ajour#739, which isn't on Ajour's main branch. Until then Ajour uses its own fallback. Once it lands, the manifest gets this template:
+
+```text
+Work on {{item.key}}: {{item.title}}
+{{item.url}}
+
+{{item.description}}
+
+Work on the branch you are on, and open a pull request when you are done.
+```
+
+## Development
+
+Requirements: Node.js 24, Corepack with pnpm 10.7.0, and `just`.
+
+```sh
+just install
+just test
+just typecheck
+```
+
+The tests run the plugin against outputs recorded from the real `t3` CLI (`tests/fixtures`, version in `version.txt`), through a fake `t3` that expands each request into argv from `plugin.json` the way the broker does. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.

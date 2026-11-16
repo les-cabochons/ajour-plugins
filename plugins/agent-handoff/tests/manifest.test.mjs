@@ -51,27 +51,41 @@ test("the declared commands are the four t3 commands, with prompts on stdin", ()
           if: "branch",
           args: ["--worktree", "{base:ref}", "--branch", "{branch:ref}"],
         },
-        {
-          if: "provider",
-          args: ["--provider", "{provider:id}", "--model", "{model:id}"],
-        },
+        { if: "provider", args: ["--provider", "{provider:text}"] },
+        { if: "model", args: ["--model", "{model:text}"] },
       ],
       stdin: "text",
       mode: "capture",
-      timeoutSeconds: 60,
+      timeoutSeconds: 25,
     },
     "thread-list": {
       executable: "t3",
       args: ["thread", "list", "--project", "{folder:folder}", "--json"],
       mode: "capture",
+      timeoutSeconds: 10,
     },
+    // --messages 0 keeps conversation text out of the plugin.
     "thread-show": {
       executable: "t3",
-      args: ["thread", "show", "{thread:id}", "--json"],
+      args: ["thread", "show", "{thread:id}", "--json", "--messages", "0"],
       mode: "capture",
+      timeoutSeconds: 10,
     },
-    version: { executable: "t3", args: ["--version"], mode: "capture" },
+    version: {
+      executable: "t3",
+      args: ["--version"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
   });
+});
+
+test("every command ends well inside the host's 30-second operation", () => {
+  for (const command of commands)
+    assert.ok(
+      command.timeoutSeconds !== undefined && command.timeoutSeconds <= 25,
+      command.id,
+    );
 });
 
 test("each command passes the broker's declaration rules", () => {

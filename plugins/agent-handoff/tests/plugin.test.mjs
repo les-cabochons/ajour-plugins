@@ -23,32 +23,65 @@ const completed = json("completed").thread;
 const link = listed.link;
 const FOLDER = "folder-1";
 
+const refused = (code) =>
+  Object.assign(new Error(`Process request refused: ${code}.`), {
+    name: "AjourProcessError",
+    code,
+  });
+
+/** A slot value, checked with the rules of Ajour's process-broker.ts. */
+function slotValue(kind, raw) {
+  if (typeof raw !== "string" && typeof raw !== "number")
+    throw refused("invalid_request");
+  if (kind !== "number" && typeof raw !== "string")
+    throw refused("invalid_request");
+  const value = String(raw);
+  if (
+    (!value && kind !== "text") ||
+    value.startsWith("-") ||
+    /[\0\r\n]/.test(value)
+  )
+    throw refused("invalid_request");
+  if (kind === "id" && !/^[A-Za-z0-9:._-]+$/.test(value))
+    throw refused("invalid_request");
+  if (
+    kind === "ref" &&
+    (value === "@" ||
+      value.endsWith(".") ||
+      /[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|\/\/|^\/|\/$/.test(value) ||
+      value.split("/").some((p) => p.startsWith(".") || p.endsWith(".lock")))
+  )
+    throw refused("invalid_request");
+  return value;
+}
+
 /** The argv the broker would run for a request, or a thrown refusal. */
 function argvOf(request) {
   const command = manifest.processes.commands.find(
     (c) => c.id === request.command,
   );
+  if (!command) throw refused("undeclared");
   const executable = manifest.processes.executables[command.executable];
-  const used = new Set();
+  const has = (name) => Object.hasOwn(request.args, name);
+  const slotOf = (arg) => /^\{(\w+):([\w-]+)\}$/.exec(arg);
+  const slots = command.args
+    .flatMap((a) => (typeof a === "string" ? [a] : a.args))
+    .flatMap((a) => slotOf(a)?.[1] ?? []);
+  if (Object.keys(request.args).some((name) => !slots.includes(name)))
+    throw refused("invalid_request");
   const fill = (arg) => {
-    const slot = /^\{(\w+):(\w+)\}$/.exec(arg);
-    if (!slot) return arg;
-    const value = request.args[slot[1]];
-    if (value === undefined) throw new Error(`Missing slot ${slot[1]}.`);
-    if (String(value).startsWith("-")) throw new Error("Starts with -.");
-    used.add(slot[1]);
-    return String(value);
+    const slot = slotOf(arg);
+    return slot ? slotValue(slot[2], request.args[slot[1]]) : arg;
   };
   const argv = [executable.names[0]];
   for (const arg of command.args) {
     if (typeof arg === "string") argv.push(fill(arg));
-    else if (request.args[arg.if] !== undefined)
-      argv.push(...arg.args.map(fill));
+    else if (has(arg.if)) argv.push(...arg.args.map(fill));
+    else if (arg.args.some((a) => has(slotOf(a)?.[1] ?? "")))
+      throw refused("invalid_request");
   }
-  for (const name of Object.keys(request.args))
-    if (!used.has(name)) throw new Error(`Undeclared slot ${name}.`);
   if (request.stdin !== undefined && command.stdin !== "text")
-    throw new Error("The command takes no stdin.");
+    throw refused("invalid_request");
   return argv;
 }
 
@@ -63,6 +96,8 @@ function fakeT3(answer) {
     manifest,
     processRun: async (request) => {
       const argv = argvOf(request);
+      if (argv[2] === "show")
+        assert.deepEqual(argv.slice(-3), ["--json", "--messages", "0"]);
       calls.push({ argv, stdin: request.stdin });
       return answer(argv);
     },
@@ -111,7 +146,7 @@ test("detection returns the recorded version when T3 Code runs", async () => {
     calls.map((c) => c.argv),
     [
       ["t3", "--version"],
-      ["t3", "thread", "show", "ajour-detect", "--json"],
+      ["t3", "thread", "show", "ajour-detect", "--json", "--messages", "0"],
     ],
   );
 });
@@ -165,7 +200,15 @@ test("a start runs thread start in a worktree with the prompt on stdin", async (
     ],
     stdin: request.prompt,
   });
-  assert.deepEqual(calls[1].argv, ["t3", "thread", "show", threadId, "--json"]);
+  assert.deepEqual(calls[1].argv, [
+    "t3",
+    "thread",
+    "show",
+    threadId,
+    "--json",
+    "--messages",
+    "0",
+  ]);
   assert.equal(result.threadId, threadId);
   assert.equal(result.link, link);
   assert.equal(result.native.projectId, started.projectId);
@@ -214,11 +257,48 @@ test("a start without a worktree passes the provider and model", async () => {
   ]);
 });
 
+test("a start passes a model without a provider, and slugs with slashes stay one argument", async () => {
+  const calls = fakeT3((argv) =>
+    argv[2] === "start" ? out(started) : out({ thread: shown }),
+  );
+  await startHandoff(
+    startRequest({ worktree: false, model: "anthropic/claude-opus-5-5" }),
+  );
+  await startHandoff(
+    startRequest({
+      worktree: false,
+      provider: "openrouter/main",
+      model: "anthropic/claude-opus-5-5",
+    }),
+  );
+  const starts = calls.filter((c) => c.argv[2] === "start");
+  assert.deepEqual(starts[0].argv.slice(8), [
+    "--model",
+    "anthropic/claude-opus-5-5",
+  ]);
+  assert.deepEqual(starts[1].argv.slice(8), [
+    "--provider",
+    "openrouter/main",
+    "--model",
+    "anthropic/claude-opus-5-5",
+  ]);
+});
+
+test("a start sends the title on one line", async () => {
+  const calls = fakeT3((argv) =>
+    argv[2] === "start" ? out(started) : out({ thread: shown }),
+  );
+  await startHandoff(
+    startRequest({}, { title: "- AJ-38\tHand off\r\n\nto  T3 Code \n" }),
+  );
+  assert.equal(calls[0].argv[6], "AJ-38 Hand off to T3 Code");
+});
+
 test("a start refuses a provider without a model, or a worktree without a branch", async () => {
   const calls = fakeT3(() => out(started));
   await assert.rejects(
     startHandoff(startRequest({ provider: "claudeAgent" })),
-    /provider and the model together/,
+    /Set a model for the provider/,
   );
   await assert.rejects(
     startHandoff(startRequest({}, { branch: undefined })),
@@ -267,7 +347,7 @@ test("a live thread is read with thread show, and a pending request wins over ru
     calls.map((c) => c.argv),
     [
       ["t3", "thread", "list", "--project", FOLDER, "--json"],
-      ["t3", "thread", "show", threadId, "--json"],
+      ["t3", "thread", "show", threadId, "--json", "--messages", "0"],
     ],
   );
 });
@@ -354,7 +434,40 @@ test("native keeps status, settled and snooze, and pull requests are https only"
   assert.equal(JSON.stringify(update).includes("Reply with OK"), false);
 });
 
-test("an archived thread missing from the list keeps its previous state", async () => {
+test("a pull request T3 gives no title is named repository#number", async () => {
+  // The shape thread list printed for a real thread with pull requests.
+  fakeT3(() =>
+    out([
+      {
+        ...completed,
+        pullRequests: [
+          {
+            host: "github.com",
+            repository: "les-cabochons/ajour",
+            number: 738,
+            url: "https://github.com/les-cabochons/ajour/pull/738",
+            source: "agent",
+            state: "open",
+          },
+          { url: "https://example.com/pull/9", repository: "x/y" },
+        ],
+      },
+    ]),
+  );
+  const [update] = await readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1")],
+  });
+  assert.deepEqual(update.pullRequests, [
+    {
+      url: "https://github.com/les-cabochons/ajour/pull/738",
+      title: "les-cabochons/ajour#738",
+    },
+    { url: "https://example.com/pull/9" },
+  ]);
+});
+
+test("an archived thread missing from the list takes its state from thread show, and settles", async () => {
   const calls = fakeT3((argv) =>
     argv[2] === "list"
       ? out([])
@@ -362,13 +475,46 @@ test("an archived thread missing from the list keeps its previous state", async 
   );
   const [update] = await readHandoffStates({
     tool: "t3",
+    handoffs: [handoff("h1", { state: "working", status: "running" })],
+  });
+  assert.equal(update.state, "done");
+  assert.equal(update.native.state, "done");
+  assert.equal(update.native.label, "Settled");
+  assert.equal(update.native.status, "completed");
+  assert.equal(update.native.archived, true);
+  assert.equal(update.native.missing, true);
+  // thread show prints no pull request list, so the host keeps the last one.
+  assert.equal(update.pullRequests, undefined);
+  assert.equal(update.link, link);
+  assert.equal(calls.length, 2);
+});
+
+test("a thread missing from the list but not archived takes its state from thread show", async () => {
+  fakeT3((argv) =>
+    argv[2] === "list"
+      ? out([])
+      : out({
+          thread: { ...shown, status: "running", pendingRequestCount: 2 },
+        }),
+  );
+  const [update] = await readHandoffStates({
+    tool: "t3",
     handoffs: [handoff("h1", { state: "ready", status: "completed" })],
   });
-  assert.equal(update.state, "ready");
-  assert.equal(update.native.state, "ready");
+  assert.equal(update.state, "needs-you");
+  assert.equal(update.native.state, "needs-you");
+  assert.equal(update.native.status, "running");
+  assert.equal(update.native.archived, false);
   assert.equal(update.native.missing, true);
-  assert.equal(update.native.archived, true);
-  assert.equal(calls.length, 2);
+});
+
+test("a listed thread that is archived settles", async () => {
+  fakeT3(() => out([{ ...completed, status: "running", archived: true }]));
+  const [update] = await readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1")],
+  });
+  assert.equal(update.state, "done");
 });
 
 test("a thread T3 says doesn't exist is gone", async () => {
@@ -438,6 +584,132 @@ test("one thread list runs per folder, and answers follow the request order", as
     [FOLDER, "folder-2"],
   );
   for (const update of updates) assertNativeFits(update.native);
+});
+
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+};
+const late = /T3 Code took too long; refreshing again later/;
+
+test("a refresh stops waiting at its deadline and keeps the threads it couldn't read", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const never = new Promise(() => {});
+  const slow = { ...listed, threadId: "mcp:slow", status: "running" };
+  const calls = fakeT3((argv) => {
+    if (argv[2] === "list")
+      return out([{ ...listed, status: "running" }, slow]);
+    return argv[3] === threadId
+      ? out({ thread: { ...shown, status: "running", pendingRequestCount: 1 } })
+      : never;
+  });
+  const pending = readHandoffStates({
+    tool: "t3",
+    handoffs: [
+      handoff("h1"),
+      {
+        ...handoff("h2", { state: "needs-you", status: "running" }),
+        threadId: "mcp:slow",
+      },
+      handoff("h3", { state: "ready" }, "folder-2"),
+      handoff("h4", { state: "done" }, "folder-3"),
+    ],
+  });
+  await flush();
+  t.mock.timers.tick(19_999);
+  await flush();
+  t.mock.timers.tick(1);
+  const updates = await pending;
+  assert.deepEqual(
+    updates.map((u) => [u.id, u.state, u.native.state]),
+    [
+      ["h1", "needs-you", "needs-you"],
+      ["h2", "needs-you", "needs-you"],
+      ["h3", "ready", "ready"],
+      ["h4", "done", "done"],
+    ],
+  );
+  assert.equal(updates[0].native.reason, undefined);
+  for (const update of updates.slice(1))
+    assert.match(update.native.reason, late);
+  // Folders after the deadline are never listed.
+  assert.deepEqual(
+    calls.map((c) => [
+      c.argv[2],
+      c.argv[3] === "--project" ? c.argv[4] : c.argv[3],
+    ]),
+    [
+      ["list", FOLDER],
+      ["show", threadId],
+      ["show", "mcp:slow"],
+    ],
+  );
+});
+
+test("a thread list that outlasts the deadline keeps every state, never unknown", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeT3(() => new Promise(() => {}));
+  const pending = readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1", { state: "ready" })],
+  });
+  await flush();
+  t.mock.timers.tick(20_000);
+  const [update] = await pending;
+  assert.equal(update.state, "ready");
+  assert.match(update.native.reason, late);
+});
+
+test("T3's not-running and not-found messages count on any stderr line", async () => {
+  const warning = "(node:1) Warning: something deprecated\n";
+  fakeT3((argv) =>
+    argv[1] === "--version"
+      ? ok(version)
+      : fail(`${warning}${read("no-server.txt")}`),
+  );
+  const [tool] = (await detectTools()).tools;
+  assert.equal(tool.available, false);
+  assert.match(tool.reason, /isn't running/);
+
+  fakeT3((argv) =>
+    argv[2] === "list"
+      ? out([])
+      : fail(`${warning}${read("not-found.txt").replace(/mcp:\S+/, threadId)}`),
+  );
+  const [update] = await readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1", { state: "ready" })],
+  });
+  assert.equal(update.state, "gone");
+});
+
+test("each broker refusal reads as what to do next", async () => {
+  const cases = {
+    needs_consent: "Approve T3 Code's commands in this plugin's Access tab.",
+    unsigned_processes_off:
+      "Turn on Unsigned plugins can start processes in Settings › Plugins.",
+    process_acceptance_required:
+      "Allow this plugin to start processes on its page.",
+    concurrency: "Ajour is busy with other T3 Code commands; try again.",
+    executable_missing: /isn't installed/,
+    package_unverified: /verify this plugin's package/,
+    spawn_refused: /Reinstall T3 Code/,
+    output_limit: /more output than Ajour accepts/,
+    timeout: /didn't answer in time/,
+    invalid_request: /Check the branch, base ref, provider and model/,
+    plugin_off: /Turn this plugin on/,
+    something_new: "Ajour couldn't run t3 (something_new).",
+  };
+  for (const [code, expected] of Object.entries(cases)) {
+    globalThis.ajour = createFakeAjour({
+      manifest,
+      processRun: async () => {
+        throw refused(code);
+      },
+    });
+    const [tool] = (await detectTools()).tools;
+    if (typeof expected === "string") assert.equal(tool.reason, expected, code);
+    else assert.match(tool.reason, expected, code);
+  }
 });
 
 test("another tool id is refused", async () => {

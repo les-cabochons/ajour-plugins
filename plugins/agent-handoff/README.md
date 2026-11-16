@@ -6,29 +6,32 @@ The plugin has no network access. It runs only the four `t3` commands it declare
 
 ## Commands it runs
 
-| Command                                             | What for                                                                                                                                                                                             |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `t3 thread start <folder> - --title <title> --json` | Starts the thread. The prompt goes on stdin. With a worktree, adds `--worktree <base> --branch <branch>`; with a provider, adds `--provider <provider> --model <model>`. Times out after 60 seconds. |
-| `t3 thread list --project <folder> --json`          | Reads every thread of a repository folder, once per folder on each refresh.                                                                                                                          |
-| `t3 thread show <thread> --json`                    | Reads a live thread's pending requests, a new thread's link, and whether a thread missing from the list still exists.                                                                                |
-| `t3 --version`                                      | Detects T3 Code.                                                                                                                                                                                     |
+| Command                                             | What for                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `t3 thread start <folder> - --title <title> --json` | Starts the thread. The prompt goes on stdin, and the title on one line. With a worktree, adds `--worktree <base> --branch <branch>`; with a provider, adds `--provider <provider>`; with a model, adds `--model <model>`. Times out after 25 seconds. |
+| `t3 thread list --project <folder> --json`          | Reads every thread of a repository folder, once per folder on each refresh. Times out after 10 seconds.                                                                                                                                               |
+| `t3 thread show <thread> --json --messages 0`       | Reads a live thread's pending requests, a new thread's link, and the state of a thread missing from the list. `--messages 0` keeps the conversation out of the plugin. Times out after 10 seconds.                                                    |
+| `t3 --version`                                      | Detects T3 Code. Times out after 10 seconds.                                                                                                                                                                                                          |
 
 `<folder>` is one of the project's repository folders, which Ajour resolves. The folder must already be a T3 Code project.
 
+Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for T3 Code after 20. The threads it hasn't read by then keep their last state, with the reason "T3 Code took too long; refreshing again later." When Ajour refuses a command, the plugin says what to do, such as approving T3 Code's commands in the plugin's Access tab.
+
 ## States
 
-| T3 Code                                                                           | Ajour                                      |
-| --------------------------------------------------------------------------------- | ------------------------------------------ |
-| A pending request, such as a question or an approval, even while `running`        | Waiting for you (`needs-you`)              |
-| `preparing`, `queued`, `starting`, `running`, `waiting`                           | Working                                    |
-| `idle`, `completed`, `interrupted`, `cancelled`, `rolled_back`, while not settled | Ready                                      |
-| Settled                                                                           | Done                                       |
-| `failed`                                                                          | Failed                                     |
-| `thread show` says the thread is no longer available                              | Gone                                       |
-| Archived, so missing from the list                                                | Keeps its last state, with `missing: true` |
-| No T3 Code server answers                                                         | Unknown, with the reason. Never gone.      |
+| T3 Code                                                                           | Ajour                                         |
+| --------------------------------------------------------------------------------- | --------------------------------------------- |
+| A pending request, such as a question or an approval, even while `running`        | Waiting for you (`needs-you`)                 |
+| `preparing`, `queued`, `starting`, `running`, `waiting`                           | Working                                       |
+| `idle`, `completed`, `interrupted`, `cancelled`, `rolled_back`, while not settled | Ready                                         |
+| Settled or archived                                                               | Done. Ajour stops refreshing it a day later.  |
+| `failed`                                                                          | Failed                                        |
+| `thread show` says the thread is no longer available                              | Gone                                          |
+| Missing from the list, such as when archived                                      | Read with `thread show`, with `missing: true` |
+| No T3 Code server answers                                                         | Unknown, with the reason. Never gone.         |
+| No answer before the refresh deadline                                             | Keeps its last state, with the reason         |
 
-The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `archived`, `pendingRequestCount` and `projectId`, plus the last state read. Only HTTPS pull request links are kept. Messages and worktree paths are never stored.
+The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `archived`, `pendingRequestCount` and `projectId`, plus the last state read. Only HTTPS pull request links are kept; one without a title is named `repository#number`. Messages and worktree paths are never stored.
 
 ## Settings
 
@@ -36,8 +39,8 @@ The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `arc
 | ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Create a worktree | On      | Runs the thread in a new git worktree on the handoff branch. Off runs it in the project folder.                               |
 | Worktree base     | `main`  | The branch, tag or commit the worktree starts from.                                                                           |
-| Provider          | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. Set it with the model, or leave both empty for the project's defaults. |
-| Model             | Empty   | A model slug the provider offers, such as `claude-opus-5-5`.                                                                  |
+| Provider          | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. A provider needs a model. Leave both empty for the project's defaults. |
+| Model             | Empty   | A model slug, such as `claude-opus-5-5` or one with slashes. It can be set without a provider.                                |
 
 ## Default prompt
 

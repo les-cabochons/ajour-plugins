@@ -48,13 +48,19 @@ const LABELS: Record<State, string> = {
 };
 // A thread id that never exists, to ask whether a T3 server answers.
 const PROBE_THREAD = "ajour-detect";
-const NOT_RUNNING = /^No running T3 Code server\b/i;
+// T3 can print warnings first, so these match on any line.
+const NOT_RUNNING = /No running T3 Code server\b/i;
 const NOT_FOUND =
-  /^Thread \S+ (?:is no longer available|was not found|does not exist)/i;
+  /Thread \S+ (?:is no longer available|was not found|does not exist)/i;
 const NATIVE_LIMIT = 4096;
 const SHOW_CONCURRENCY = 3;
+// The host ends an operation after 30 seconds. A refresh stops waiting for
+// T3 before that, and a start stops waiting for the new thread's link.
+const READ_DEADLINE_MS = 20_000;
+const START_DEADLINE_MS = 26_000;
+const LATE = "T3 Code took too long; refreshing again later.";
 
-/** A failed or refused `t3` command, with the first line T3 printed. */
+/** A failed or refused `t3` command, with the line T3 printed about it. */
 class T3Error extends Error {
   readonly code: string | undefined;
   constructor(message: string, code?: string) {
@@ -64,34 +70,88 @@ class T3Error extends Error {
   }
 }
 
+/** The operation's deadline passed before T3 answered. */
+class LateError extends T3Error {
+  constructor() {
+    super(LATE, "late");
+  }
+}
+
 function firstLine(value: string | undefined): string {
   return (value ?? "").trim().split(/\r?\n/, 1)[0]?.slice(0, 500) ?? "";
 }
+
+/** The line of T3's output that says why it failed. */
+function t3Line(value: string | undefined): string {
+  const lines = (value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const known = lines.find(
+    (line) => NOT_RUNNING.test(line) || NOT_FOUND.test(line),
+  );
+  return (known ?? lines[0] ?? "").slice(0, 500);
+}
+
+// What the user can do about each refusal from Ajour's process broker.
+const REFUSALS: Record<string, string> = {
+  executable_missing:
+    "T3 Code isn't installed, or its t3 command isn't on PATH.",
+  timeout: "T3 Code didn't answer in time. Try again.",
+  invalid_request:
+    "Ajour refused a value for t3. Check the branch, base ref, provider and model.",
+  needs_consent: "Approve T3 Code's commands in this plugin's Access tab.",
+  unsigned_processes_off:
+    "Turn on Unsigned plugins can start processes in Settings › Plugins.",
+  process_acceptance_required:
+    "Allow this plugin to start processes on its page.",
+  package_unverified:
+    "Ajour can't verify this plugin's package, so it blocks its commands. Reinstall the plugin.",
+  plugin_off: "Turn this plugin on in Settings › Plugins.",
+  undeclared:
+    "This plugin asked for a command it doesn't declare. Update the plugin.",
+  folder_refused:
+    "Ajour couldn't use this project's repository folder. Check the folder in the project's settings.",
+  spawn_refused:
+    "Ajour won't start t3 the way it's installed. Reinstall T3 Code, then try again.",
+  spawn_failed: "t3 failed to start. Try again.",
+  concurrency: "Ajour is busy with other T3 Code commands; try again.",
+  rate_limit:
+    "Ajour is limiting this plugin's commands. Try again in a minute.",
+  output_limit:
+    "T3 Code returned more output than Ajour accepts. Archive old threads in this project, then try again.",
+  capture_incomplete: "Ajour couldn't read all of T3 Code's output. Try again.",
+  operation_ended: "Ajour stopped waiting for T3 Code. Try again.",
+};
 
 function refusal(error: unknown): T3Error {
   const code =
     error && typeof error === "object" && "code" in error
       ? String(error.code)
       : undefined;
-  switch (code) {
-    case "executable_missing":
-      return new T3Error(
-        "T3 Code isn't installed, or its t3 command isn't on PATH.",
-        code,
-      );
-    case "timeout":
-      return new T3Error("T3 Code didn't answer in time.", code);
-    case "invalid_request":
-      return new T3Error(
-        "Ajour refused a value for t3. Check the branch, base ref, provider and model.",
-        code,
-      );
-    default:
-      return new T3Error(
-        firstLine(error instanceof Error ? error.message : undefined) ||
-          "Ajour couldn't run t3.",
-        code,
-      );
+  if (code && Object.hasOwn(REFUSALS, code))
+    return new T3Error(REFUSALS[code] as string, code);
+  if (code) return new T3Error(`Ajour couldn't run t3 (${code}).`, code);
+  return new T3Error(
+    firstLine(error instanceof Error ? error.message : undefined) ||
+      "Ajour couldn't run t3.",
+  );
+}
+
+/** Runs `work`, or throws a LateError once `deadline` passes. */
+async function before<T>(deadline: number, work: () => Promise<T>): Promise<T> {
+  const left = deadline - Date.now();
+  if (left <= 0) throw new LateError();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new LateError()), left);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -115,8 +175,8 @@ async function capture(
     throw new T3Error("t3 started without returning its output.");
   if (result.exitCode !== 0) {
     throw new T3Error(
-      firstLine(result.stderr) ||
-        firstLine(result.stdout) ||
+      t3Line(result.stderr) ||
+        t3Line(result.stdout) ||
         `t3 exited with ${result.exitCode ?? "a signal"}.`,
     );
   }
@@ -222,7 +282,9 @@ export async function detectTools(): Promise<DetectToolsResult> {
 
 /** The common state of a thread T3 returned. */
 function stateOf(thread: Json): State {
-  if (thread.settled === true) return "done";
+  // An archived thread is put away like a settled one, so the host stops
+  // refreshing it after a day.
+  if (thread.settled === true || thread.archived === true) return "done";
   if (
     typeof thread.pendingRequestCount === "number" &&
     thread.pendingRequestCount > 0
@@ -264,17 +326,33 @@ function withNotes(native: Native, notes: Native): Native {
     : { ...native, ...notes, reason: null };
 }
 
-function pullRequestsOf(thread: Json): PullRequest[] {
-  const candidates = [
-    ...(Array.isArray(thread.pullRequests) ? thread.pullRequests : []),
-    thread.linkedPullRequest,
-  ];
+/** T3's title for a pull request, or `repository#number` when it gives none. */
+function pullRequestTitle(pr: Json): string | undefined {
+  const title = text(pr.title, 500);
+  if (title) return title;
+  const repository = text(pr.repository, 400);
+  return repository &&
+    typeof pr.number === "number" &&
+    Number.isSafeInteger(pr.number) &&
+    pr.number > 0
+    ? `${repository}#${pr.number}`
+    : undefined;
+}
+
+/**
+ * The thread's pull requests. Only `thread list` prints the list, so a
+ * thread read with `thread show` alone returns none, and the host keeps the
+ * ones it had.
+ */
+function pullRequestsOf(thread: Json): PullRequest[] | undefined {
+  if (!Array.isArray(thread.pullRequests)) return undefined;
+  const candidates = [...thread.pullRequests, thread.linkedPullRequest];
   const result: PullRequest[] = [];
   for (const candidate of candidates) {
     const pr = record(candidate);
     const url = https(pr?.url);
     if (!pr || !url || result.some((known) => known.url === url)) continue;
-    const title = text(pr.title, 500);
+    const title = pullRequestTitle(pr);
     result.push(title ? { url, title } : { url });
     if (result.length === 100) break;
   }
@@ -286,11 +364,12 @@ function updateOf(id: string, thread: Json, notes: Native = {}): Update {
   const title = text(thread.title, 500);
   const branch = text(thread.branch, 500);
   const link = https(thread.link);
+  const pullRequests = pullRequestsOf(thread);
   return {
     id,
     state,
     native: withNotes(nativeOf(thread, state), notes),
-    pullRequests: pullRequestsOf(thread),
+    ...(pullRequests ? { pullRequests } : {}),
     ...(title ? { title } : {}),
     ...(branch ? { branch } : {}),
     ...(link ? { link } : {}),
@@ -318,8 +397,14 @@ export async function startHandoff(
   request: StartHandoffRequest,
 ): Promise<StartHandoffResult> {
   tool(request.tool);
-  // The broker refuses a value that starts with "-", which t3 would read as a flag.
-  const title = request.title.replace(/^[\s-]+/, "") || "Ajour handoff";
+  const began = Date.now();
+  // One line: the broker refuses line breaks, and a value that starts with
+  // "-", which t3 would read as a flag.
+  const title =
+    request.title
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^[\s-]+/, "") || "Ajour handoff";
   const args: Record<string, string> = {
     folder: request.folder.id,
     title,
@@ -335,12 +420,13 @@ export async function startHandoff(
   }
   const provider = settingText(request.settings.provider);
   const model = settingText(request.settings.model);
-  if (Boolean(provider) !== Boolean(model))
-    throw new Error("Set the provider and the model together, or neither.");
-  if (provider && model) {
-    args.provider = provider;
-    args.model = model;
-  }
+  // t3 takes --model alone, but --provider only with --model.
+  if (provider && !model)
+    throw new Error(
+      "Set a model for the provider, or leave the provider empty.",
+    );
+  if (provider) args.provider = provider;
+  if (model) args.model = model;
   const started = record(
     await captureJson("thread-start", args, request.prompt),
   );
@@ -353,7 +439,10 @@ export async function startHandoff(
   let thread: Json = started;
   let notes: Native = {};
   try {
-    thread = { ...started, ...(await showThread(threadId)) };
+    thread = {
+      ...started,
+      ...(await before(began + START_DEADLINE_MS, () => showThread(threadId))),
+    };
   } catch (error) {
     notes = { reason: reasonOf(error) };
   }
@@ -383,22 +472,26 @@ async function each<T>(
 
 type Handoff = ReadHandoffStatesRequest["handoffs"][number];
 
-async function readThread(handoff: Handoff, listed: Json | undefined) {
+/** The last state read, kept because T3 didn't answer before the deadline. */
+function lateUpdate(handoff: Handoff): Update {
+  return keptUpdate(handoff.id, handoff.native, previousState(handoff.native), {
+    reason: LATE,
+  });
+}
+
+async function readThread(
+  handoff: Handoff,
+  listed: Json | undefined,
+  deadline: number,
+) {
+  const show = () => before(deadline, () => showThread(handoff.threadId));
   if (!listed) {
     // Archived threads leave the list, but `thread show` still finds them.
     // Only T3 saying the thread doesn't exist makes it gone.
     try {
-      const shown = await showThread(handoff.threadId);
-      return keptUpdate(
-        handoff.id,
-        handoff.native,
-        previousState(handoff.native),
-        {
-          ...nativeOf(shown, previousState(handoff.native)),
-          missing: true,
-        },
-      );
+      return updateOf(handoff.id, await show(), { missing: true });
     } catch (error) {
+      if (error instanceof LateError) return lateUpdate(handoff);
       if (isNotFound(error))
         return keptUpdate(handoff.id, handoff.native, "gone", {
           state: "gone",
@@ -412,15 +505,13 @@ async function readThread(handoff: Handoff, listed: Json | undefined) {
       );
     }
   }
-  if (listed.settled === true || !LIVE.has(String(listed.status)))
+  if (stateOf(listed) === "done" || !LIVE.has(String(listed.status)))
     return updateOf(handoff.id, listed);
   // The list leaves out pendingRequestCount, so read each live thread.
   try {
-    return updateOf(handoff.id, {
-      ...listed,
-      ...(await showThread(handoff.threadId)),
-    });
+    return updateOf(handoff.id, { ...listed, ...(await show()) });
   } catch (error) {
+    if (error instanceof LateError) return lateUpdate(handoff);
     if (isNotFound(error))
       return keptUpdate(handoff.id, handoff.native, "gone", {
         state: "gone",
@@ -434,6 +525,8 @@ export async function readHandoffStates(
   request: ReadHandoffStatesRequest,
 ): Promise<ReadHandoffStatesResult> {
   tool(request.tool);
+  // Past the deadline, the remaining threads keep their last state.
+  const deadline = Date.now() + READ_DEADLINE_MS;
   const updates = new Map<string, Update>();
   const folders = new Map<string, Handoff[]>();
   for (const handoff of request.handoffs)
@@ -444,7 +537,9 @@ export async function readHandoffStates(
   for (const [folder, handoffs] of folders) {
     let threads: Map<string, Json>;
     try {
-      const list = await captureJson("thread-list", { folder });
+      const list = await before(deadline, () =>
+        captureJson("thread-list", { folder }),
+      );
       if (!Array.isArray(list))
         throw new T3Error("T3 Code returned a thread list Ajour can't read.");
       threads = new Map(
@@ -455,6 +550,11 @@ export async function readHandoffStates(
         }),
       );
     } catch (error) {
+      if (error instanceof LateError) {
+        for (const handoff of handoffs)
+          updates.set(handoff.id, lateUpdate(handoff));
+        continue;
+      }
       // An unreachable server says nothing about the threads. Never gone.
       for (const handoff of handoffs)
         updates.set(
@@ -469,7 +569,7 @@ export async function readHandoffStates(
     await each(handoffs, SHOW_CONCURRENCY, async (handoff) => {
       updates.set(
         handoff.id,
-        await readThread(handoff, threads.get(handoff.threadId)),
+        await readThread(handoff, threads.get(handoff.threadId), deadline),
       );
     });
   }

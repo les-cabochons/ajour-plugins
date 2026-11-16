@@ -1,0 +1,1 @@
+Workspace not trusted. Run `claude` in C:\Users\me\repos\probe once and accept the trust prompt, then retry.

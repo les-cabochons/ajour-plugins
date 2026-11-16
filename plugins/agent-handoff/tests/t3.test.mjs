@@ -1,18 +1,25 @@
-// The plugin against outputs recorded from the real t3 CLI (v0.1.10 nightly,
-// see fixtures/version.txt). A fake t3 answers each declared command, after
-// expanding it to argv from plugin.json the way Ajour's process broker does.
+// The T3 Code tool against outputs recorded from the real t3 CLI (v0.1.10
+// nightly, see fixtures/version.txt). A fake t3 answers each declared command,
+// after the fake broker expands it to argv from plugin.json the way Ajour does.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import { createFakeAjour } from "@ajour/plugin-sdk/testing";
 import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
+import {
+  fail,
+  fakeBroker,
+  flush,
+  manifest,
+  ok,
+  out,
+  refuse,
+  refused,
+} from "./fake-broker.mjs";
 
 const read = (name) =>
   readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8");
 const json = (name) => JSON.parse(read(`${name}.json`));
-const manifest = JSON.parse(
-  readFileSync(new URL("../plugin.json", import.meta.url), "utf8"),
-);
 
 const version = read("version.txt");
 const started = json("start");
@@ -22,95 +29,18 @@ const shown = json("show").thread;
 const completed = json("completed").thread;
 const link = listed.link;
 const FOLDER = "folder-1";
-
-const refused = (code) =>
-  Object.assign(new Error(`Process request refused: ${code}.`), {
-    name: "AjourProcessError",
-    code,
-  });
-
-/** A slot value, checked with the rules of Ajour's process-broker.ts. */
-function slotValue(kind, raw) {
-  if (typeof raw !== "string" && typeof raw !== "number")
-    throw refused("invalid_request");
-  if (kind !== "number" && typeof raw !== "string")
-    throw refused("invalid_request");
-  const value = String(raw);
-  if (
-    (!value && kind !== "text") ||
-    value.startsWith("-") ||
-    /[\0\r\n]/.test(value)
-  )
-    throw refused("invalid_request");
-  if (kind === "id" && !/^[A-Za-z0-9:._-]+$/.test(value))
-    throw refused("invalid_request");
-  if (
-    kind === "ref" &&
-    (value === "@" ||
-      value.endsWith(".") ||
-      /[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|\/\/|^\/|\/$/.test(value) ||
-      value.split("/").some((p) => p.startsWith(".") || p.endsWith(".lock")))
-  )
-    throw refused("invalid_request");
-  return value;
-}
-
-/** The argv the broker would run for a request, or a thrown refusal. */
-function argvOf(request) {
-  const command = manifest.processes.commands.find(
-    (c) => c.id === request.command,
-  );
-  if (!command) throw refused("undeclared");
-  const executable = manifest.processes.executables[command.executable];
-  const has = (name) => Object.hasOwn(request.args, name);
-  const slotOf = (arg) => /^\{(\w+):([\w-]+)\}$/.exec(arg);
-  const slots = command.args
-    .flatMap((a) => (typeof a === "string" ? [a] : a.args))
-    .flatMap((a) => slotOf(a)?.[1] ?? []);
-  if (Object.keys(request.args).some((name) => !slots.includes(name)))
-    throw refused("invalid_request");
-  const fill = (arg) => {
-    const slot = slotOf(arg);
-    return slot ? slotValue(slot[2], request.args[slot[1]]) : arg;
-  };
-  const argv = [executable.names[0]];
-  for (const arg of command.args) {
-    if (typeof arg === "string") argv.push(fill(arg));
-    else if (has(arg.if)) argv.push(...arg.args.map(fill));
-    else if (arg.args.some((a) => has(slotOf(a)?.[1] ?? "")))
-      throw refused("invalid_request");
-  }
-  if (request.stdin !== undefined && command.stdin !== "text")
-    throw refused("invalid_request");
-  return argv;
-}
-
-const flush = async () => {
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-};
 const late = /T3 Code took too long; refreshing again later/;
-
-/** Makes the fake broker refuse the command, as Ajour does. */
-const refuse = (code) => () => {
-  throw refused(code);
-};
-
-const ok = (stdout) => ({ exitCode: 0, stdout, stderr: "" });
-const fail = (stderr) => ({ exitCode: 1, stdout: "", stderr });
-const out = (value) => ok(`${JSON.stringify(value)}\n`);
 
 /** Installs a fake t3. `answer` gets argv and returns a capture result. */
 function fakeT3(answer) {
   const calls = [];
-  globalThis.ajour = createFakeAjour({
-    manifest,
-    processRun: async (request) => {
-      const argv = argvOf(request);
-      if (argv[2] === "show")
-        assert.deepEqual(argv.slice(-3), ["--json", "--messages", "0"]);
-      calls.push({ argv, stdin: request.stdin });
-      return answer(argv);
-    },
+  fakeBroker((argv, call) => {
+    // Detection asks every tool; these tests have no claude.
+    if (argv[0] === "claude") throw refused("executable_missing");
+    if (argv[2] === "show")
+      assert.deepEqual(argv.slice(-3), ["--json", "--messages", "0"]);
+    calls.push({ argv, stdin: call.stdin });
+    return answer(argv);
   });
   return calls;
 }
@@ -147,10 +77,11 @@ test("detection returns the recorded version when T3 Code runs", async () => {
       ? ok(version)
       : fail(`Thread ${argv[3]} is no longer available.\n`),
   );
-  assert.deepEqual(await detectTools(), {
-    tools: [
-      { id: "t3", available: true, version: "0.1.10-nightly.20261116.4761" },
-    ],
+  const { tools } = await detectTools();
+  assert.deepEqual(tools[0], {
+    id: "t3",
+    available: true,
+    version: "0.1.10-nightly.20261116.4761",
   });
   assert.deepEqual(
     calls.map((c) => c.argv),

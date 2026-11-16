@@ -1,0 +1,5 @@
+backgrounded · e2cf2a01 · Ajour probe bg
+  claude agents             list sessions
+  claude attach e2cf2a01    open in this terminal
+  claude logs e2cf2a01      show recent output
+  claude stop e2cf2a01      stop this session

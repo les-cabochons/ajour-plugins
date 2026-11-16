@@ -1,9 +1,9 @@
 {
   "id": "agent-handoff",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
-  "description": "Hand off backlog items to T3 Code and follow their threads.",
+  "description": "Hand off backlog items to T3 Code or Claude Code and follow their work.",
   "entrypoint": "src/plugin.ts",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
   "capabilities": {
@@ -43,6 +43,37 @@
               "helpText": "A model slug, which can contain slashes. Leave empty for the project's default model."
             }
           ]
+        },
+        {
+          "id": "claude",
+          "label": "Claude Code",
+          "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M4 17l6-5-6-5M12 19h8\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+          "settings": [
+            {
+              "id": "startMode",
+              "label": "Start",
+              "type": "select",
+              "defaultValue": "background",
+              "options": [
+                {
+                  "value": "background",
+                  "label": "In the background"
+                },
+                {
+                  "value": "terminal",
+                  "label": "In the background, and open it in a terminal"
+                }
+              ],
+              "helpText": "Claude Code always gets the prompt as a background session. Open shows it in your terminal later, or right away with the second choice."
+            },
+            {
+              "id": "model",
+              "label": "Model",
+              "type": "text",
+              "placeholder": "opus",
+              "helpText": "A model alias such as opus or sonnet, or a full model name. Leave empty for your Claude Code default."
+            }
+          ]
         }
       ]
     }
@@ -51,6 +82,9 @@
     "executables": {
       "t3": {
         "names": ["t3"]
+      },
+      "claude": {
+        "names": ["claude"]
       }
     },
     "commands": [
@@ -69,8 +103,14 @@
             "if": "branch",
             "args": ["--worktree", "{base:ref}", "--branch", "{branch:ref}"]
           },
-          { "if": "provider", "args": ["--provider", "{provider:text}"] },
-          { "if": "model", "args": ["--model", "{model:text}"] }
+          {
+            "if": "provider",
+            "args": ["--provider", "{provider:text}"]
+          },
+          {
+            "if": "model",
+            "args": ["--model", "{model:text}"]
+          }
         ],
         "stdin": "text",
         "mode": "capture",
@@ -93,6 +133,44 @@
       {
         "id": "version",
         "executable": "t3",
+        "args": ["--version"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "claude-start",
+        "executable": "claude",
+        "args": [
+          "--bg",
+          "--name",
+          "{title:text}",
+          {
+            "if": "model",
+            "args": ["--model", "{model:text}"]
+          },
+          "--add-dir",
+          "{folder:folder}"
+        ],
+        "stdin": "text",
+        "mode": "capture",
+        "timeoutSeconds": 20
+      },
+      {
+        "id": "claude-agents",
+        "executable": "claude",
+        "args": ["agents", "--json", "--all"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "claude-attach",
+        "executable": "claude",
+        "args": ["attach", "{job:id}", "{folder:folder}"],
+        "mode": "terminal"
+      },
+      {
+        "id": "claude-version",
+        "executable": "claude",
         "args": ["--version"],
         "mode": "capture",
         "timeoutSeconds": 10

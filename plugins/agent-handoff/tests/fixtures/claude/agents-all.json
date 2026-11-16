@@ -1,0 +1,74 @@
+[
+  {
+    "pid": 52796,
+    "id": "e2cf2a01",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849292384,
+    "sessionId": "e2cf2a01-1318-457a-91f3-0371a1d14aae",
+    "name": "Ajour probe bg",
+    "status": "idle",
+    "state": "done"
+  },
+  {
+    "pid": 46976,
+    "id": "8d4c8d5f",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849307873,
+    "sessionId": "8d4c8d5f-47d5-4765-a888-28c339b24b70",
+    "name": "Ajour probe blocked",
+    "status": "idle",
+    "state": "done"
+  },
+  {
+    "pid": 42596,
+    "id": "59a96ec8",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849406569,
+    "sessionId": "59a96ec8-68d5-40b9-bb2b-a792375d2540",
+    "name": "Ajour probe blocked",
+    "status": "idle",
+    "state": "done"
+  },
+  {
+    "id": "b0d639ed",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849513374,
+    "sessionId": "b0d639ed-eab3-49b7-bb75-ec6e814196d7",
+    "name": "Ajour probe question",
+    "state": "stopped"
+  },
+  {
+    "pid": 66256,
+    "id": "de94c642",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849516330,
+    "sessionId": "de94c642-fd33-46b6-ae73-85bc2a42b6a9",
+    "name": "Ajour probe permission",
+    "status": "waiting",
+    "waitingFor": "permission prompt",
+    "state": "blocked"
+  },
+  {
+    "pid": 52060,
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "interactive",
+    "startedAt": 1794849666614,
+    "sessionId": "4f6c2d0e-8a1b-4c3d-9e2f-0a1b2c3d4e60",
+    "name": "Ajour probe terminal",
+    "status": "idle"
+  },
+  {
+    "pid": 58224,
+    "cwd": "C:\\Users\\me\\repos\\other",
+    "kind": "interactive",
+    "startedAt": 1794848784942,
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "name": "Another session",
+    "status": "idle"
+  }
+]

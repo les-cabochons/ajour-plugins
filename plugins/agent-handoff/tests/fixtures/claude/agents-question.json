@@ -1,0 +1,14 @@
+[
+  {
+    "pid": 43648,
+    "id": "b0d639ed",
+    "cwd": "C:\\Users\\me\\repos\\probe",
+    "kind": "background",
+    "startedAt": 1794849514879,
+    "sessionId": "b0d639ed-eab3-49b7-bb75-ec6e814196d7",
+    "name": "Ajour probe question",
+    "status": "waiting",
+    "waitingFor": "input needed",
+    "state": "blocked"
+  }
+]

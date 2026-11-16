@@ -466,6 +466,9 @@ export async function startCodex(
     label: LABELS.working,
     open,
     session: rpc.session,
+    // When the turn started: until Codex records it, it reads the thread
+    // as idle.
+    started: String(Date.now()),
   };
   if (turn) native.turn = turn;
   return {
@@ -487,6 +490,7 @@ const KEPT = [
   "session",
   "status",
   "turnStatus",
+  "started",
 ] as const;
 
 /** The handoff's native state without the reason, flags or a closed session. */
@@ -641,6 +645,8 @@ function updateOf(
     text(handoff.native.turn, 100) ??
     (reading.live ? text(reading.last?.id, 100) : undefined);
   if (turn) native.turn = turn;
+  const started = text(handoff.native.started, 20);
+  if (started) native.started = started;
   if (session) native.session = session;
   const type = text(reading.status.type, 64);
   if (type) native.status = type;
@@ -750,7 +756,8 @@ async function readLive(
       thread.status = { ...status, activeFlags: [heard.asked] };
   }
   const update = answeredUpdate(handoff, read, turns, session);
-  if (!rpc.exited && holds(update, read, turns, active)) return { update, rpc };
+  if (!rpc.exited && holds(handoff, update, read, turns, active))
+    return { update, rpc };
   // The turn ended, waits for the user, or can't be followed here: let go of
   // the thread, so the Codex app can open it, and free the session. A
   // session kept for a turn that ended would never idle out, since each
@@ -760,8 +767,25 @@ async function readLive(
   return { update };
 }
 
+/**
+ * How long after its start a turn the plugin started counts as running
+ * though Codex still reads its thread as idle: it records the turn a moment
+ * after turn/start answers.
+ */
+const START_GRACE_MS = 30_000;
+
+/** True while the plugin's own turn started a moment ago. */
+function justStarted(handoff: Handoff): boolean {
+  if (!text(handoff.native.turn, 100)) return false;
+  const started = Number(text(handoff.native.started, 20));
+  if (!Number.isFinite(started)) return false;
+  const age = Date.now() - started;
+  return age >= 0 && age < START_GRACE_MS;
+}
+
 /** True while the session may still run the thread's turn. */
 function holds(
+  handoff: Handoff,
   update: Update,
   read: Answer,
   turns: Answer,
@@ -773,7 +797,8 @@ function holds(
   // Another read failure says nothing about the thread.
   if (errorOf(read)) return true;
   // Without the turns, the thread's status alone says whether it runs.
-  if (errorOf(turns)) return active && update.state === "working";
+  if (errorOf(turns))
+    return (active || justStarted(handoff)) && update.state === "working";
   return update.state === "working";
 }
 

@@ -228,8 +228,11 @@ test("a start runs the app-server in the folder and sends the title and prompt a
       open: "app",
       session: session.id,
       turn: ok1.turn,
+      started: result.native.started,
     },
   });
+  // When the turn started, which a refresh's grace is measured from.
+  assert.match(result.native.started, /^\d+$/);
 });
 
 test("a multi-line prompt stays one JSON line, never an argument", async () => {
@@ -483,6 +486,7 @@ test("a refresh reads the live session: working, then completed, which ends the 
       label: "Completed",
       open: "app",
       turn: ok1.turn,
+      started: result.native.started,
       status: "idle",
       turnStatus: "completed",
     },
@@ -939,6 +943,38 @@ test("a live thread that isn't active closes its session even when its turns can
     assert.equal(update.native.session, undefined, status.type);
     assert.equal(sessionsOf()[0].state, "closed", status.type);
   }
+});
+
+test("a fresh turn's session stays open while Codex still reads its thread as idle and its turns can't be read", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread({ type: "idle" })
+        : { error: { code: -32603, message: "turns unavailable" } },
+    ),
+  ]);
+  const { update, session } = await readLiveOne({
+    started: String(Date.now()),
+  });
+  assert.equal(update.state, "working");
+  assert.equal(update.native.session, session);
+  assert.equal(update.native.started !== undefined, true);
+  assert.equal(sessionsOf()[0].state, "open");
+});
+
+test("past its grace, an idle thread whose turns can't be read closes its session", async () => {
+  fakeCodex([
+    answering((m) =>
+      m.method === "thread/read"
+        ? idleThread({ type: "idle" })
+        : { error: { code: -32603, message: "turns unavailable" } },
+    ),
+  ]);
+  const { update } = await readLiveOne({
+    started: String(Date.now() - 60_000),
+  });
+  assert.equal(update.native.session, undefined);
+  assert.equal(sessionsOf()[0].state, "closed");
 });
 
 test("an active live thread whose turns can't be read keeps its session", async () => {

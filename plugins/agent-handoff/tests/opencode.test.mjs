@@ -45,6 +45,8 @@ const SERVER_DOWN =
 const NEEDS_CONNECTION =
   "OpenCode needs a connection to its server. Add one on this plugin's page, and pick it in OpenCode's settings.";
 const late = /OpenCode took too long; refreshing again later/;
+// `time.updated` in the recorded session.json.
+const UPDATED = 1794856926529;
 
 afterEach(() => {
   delete globalThis.ajour;
@@ -405,6 +407,19 @@ test("a prompt OpenCode refuses removes the empty session", async () => {
   assert.deepEqual(requests().slice(-1), [`DELETE /session/${SESSION}`]);
 });
 
+test("a 404 on the session's prompt route is OpenCode's answer, not a missing API", async () => {
+  fakeOpenCode({
+    [`POST /session/${SESSION}/prompt_async`]: answer(
+      { name: "NotFoundError", data: { message: "Session not found" } },
+      404,
+    ),
+  });
+  await assert.rejects(startHandoff(connection, startRequest()), {
+    message:
+      "OpenCode didn't take the prompt. OpenCode's server answered HTTP 404: Session not found",
+  });
+});
+
 test("a prompt that times out may have been taken, so the session stays", async () => {
   fakeOpenCode({
     [`POST /session/${SESSION}/prompt_async`]: () => {
@@ -466,6 +481,7 @@ test("a session that stopped after answering is ready for review", async () => {
     state: "ready",
     label: "Ready for review",
     status: "absent",
+    updated: UPDATED,
   });
   assert.deepEqual(requests().slice(3), [
     `GET /session/${SESSION}`,
@@ -474,16 +490,72 @@ test("a session that stopped after answering is ready for review", async () => {
   assert.deepEqual(globalThis.ajour.requests.at(-1).query, { limit: 1 });
 });
 
-test("a session read as stopped before is only checked to still exist", async () => {
+test("a session read as stopped before, and unchanged since, is only checked to still exist", async () => {
   fakeOpenCode();
   const [update] = await read(
-    handoff("h1", { state: "ready", label: "Stopped", status: "idle" }),
+    handoff("h1", {
+      state: "ready",
+      label: "Stopped",
+      status: "idle",
+      updated: UPDATED,
+    }),
   );
   assert.deepEqual(
     [update.state, update.native],
-    ["ready", { state: "ready", label: "Stopped", status: "absent" }],
+    [
+      "ready",
+      { state: "ready", label: "Stopped", status: "absent", updated: UPDATED },
+    ],
   );
   assert.deepEqual(requests().slice(3), [`GET /session/${SESSION}`]);
+});
+
+test("a failed handoff whose session answered a later turn becomes ready", async () => {
+  fakeOpenCode();
+  const [update] = await read(
+    handoff("h1", {
+      state: "failed",
+      label: "Failed",
+      status: "idle",
+      error: "APIError",
+      reason: "APIError: Your credit balance is too low.",
+      updated: UPDATED - 60_000,
+    }),
+  );
+  assert.deepEqual(
+    [update.state, update.native],
+    [
+      "ready",
+      {
+        state: "ready",
+        label: "Ready for review",
+        status: "absent",
+        updated: UPDATED,
+      },
+    ],
+  );
+  assert.deepEqual(requests().slice(3), [
+    `GET /session/${SESSION}`,
+    `GET /session/${SESSION}/message`,
+  ]);
+});
+
+test("a ready handoff whose session failed a later turn becomes failed", async () => {
+  fakeOpenCode({
+    [`GET /session/${SESSION}/message`]: answer(
+      recorded("schema/messages-error.json"),
+    ),
+  });
+  // A handoff saved before the plugin kept time.updated reads its messages too.
+  for (const native of [
+    { state: "ready", label: "Stopped", updated: UPDATED - 1 },
+    { state: "ready", label: "Ready for review" },
+  ]) {
+    const [update] = await read(handoff("h1", native));
+    assert.equal(update.state, "failed");
+    assert.equal(update.native.error, "APIError");
+    assert.equal(update.native.updated, UPDATED);
+  }
 });
 
 test("a retrying session is working, with OpenCode's reason", async () => {
@@ -573,13 +645,15 @@ test("a session that stopped without answering failed, once the start has had ti
         status: "absent",
         reason:
           "OpenCode stopped without answering. Open the session to see why, such as a model it can't reach.",
+        updated: UPDATED,
       },
     ],
   );
 });
 
 test("a prompt just sent is starting, before OpenCode marks the session busy", async () => {
-  // Recorded: right after prompt_async, /session/status is still {}.
+  // Recorded: right after prompt_async, /session/status was still {}, so for
+  // a moment OpenCode hasn't marked the session busy yet.
   fakeOpenCode({
     [`GET /session/${UNANSWERED}`]: answer(recorded("session.json")),
     [`GET /session/${UNANSWERED}/message`]: unanswered(1000),
@@ -607,12 +681,18 @@ test("a session that stopped on an error failed with OpenCode's reason, and one 
         error: "APIError",
         reason:
           "APIError: Your credit balance is too low to access the Anthropic API.",
+        updated: UPDATED,
       },
     ],
   );
-  // A failed session keeps its reason while it stays stopped.
+  // A failed session keeps its reason while it stays stopped and unchanged.
   const [kept] = await read(handoff("h1", failed.native));
   assert.deepEqual([kept.state, kept.native], [failed.state, failed.native]);
+  assert.equal(
+    requests().filter((r) => r.endsWith("/message")).length,
+    1,
+    "the unchanged session's messages aren't read again",
+  );
 
   fakeOpenCode({
     [`GET /session/${SESSION}/message`]: answer(
@@ -624,7 +704,7 @@ test("a session that stopped on an error failed with OpenCode's reason, and one 
   assert.equal(stopped.native.label, "Stopped");
 });
 
-test("only OpenCode answering 404 for the session makes it gone", async () => {
+test("only OpenCode answering 404 for the session makes it gone from this server", async () => {
   fakeOpenCode({
     [`GET /session/${SESSION}`]: answer(
       recorded("session-not-found.json"),
@@ -634,7 +714,10 @@ test("only OpenCode answering 404 for the session makes it gone", async () => {
   const [update] = await read(handoff("h1", { state: "ready" }));
   assert.deepEqual(
     [update.state, update.native],
-    ["gone", { state: "gone", label: "Deleted in OpenCode", status: "absent" }],
+    [
+      "gone",
+      { state: "gone", label: "Not on this OpenCode server", status: "absent" },
+    ],
   );
 });
 
@@ -728,4 +811,54 @@ test("a broker timeout keeps every state, as the refresh deadline does", async (
   const [update] = await read(handoff("h1", { state: "working" }));
   assert.equal(update.state, "working");
   assert.match(update.native.reason, late);
+});
+
+test("a broker limit keeps every state, as the refresh deadline does", async () => {
+  fakeOpenCode({
+    "GET /session/status": () => {
+      throw requestError("limit");
+    },
+  });
+  const [update] = await read(
+    handoff("h1", { state: "ready", label: "Stopped", status: "idle" }),
+  );
+  assert.deepEqual(
+    [update.state, update.native],
+    [
+      "ready",
+      {
+        state: "ready",
+        status: "idle",
+        reason:
+          "Ajour is limiting this plugin's requests to OpenCode. Try again in a minute.",
+      },
+    ],
+  );
+
+  // The same when the limit comes on one session's read.
+  fakeOpenCode({
+    [`GET /session/${SESSION}`]: () => {
+      throw requestError("limit");
+    },
+  });
+  const [read2] = await read(handoff("h1", { state: "failed" }));
+  assert.equal(read2.state, "failed");
+  assert.match(read2.native.reason, /limiting this plugin's requests/);
+});
+
+test("a handoff whose session id isn't OpenCode's is unknown, and never goes in a path", async () => {
+  fakeOpenCode();
+  const [update] = await read(
+    handoff("h1", { state: "ready" }, "../global/health"),
+  );
+  assert.equal(update.state, "unknown");
+  assert.equal(
+    update.native.reason,
+    "This handoff's OpenCode session id isn't one Ajour can read.",
+  );
+  assert.deepEqual(requests(), [
+    "GET /session/status",
+    "GET /permission",
+    "GET /question",
+  ]);
 });

@@ -4,7 +4,8 @@
 // (`ajour.http`): the plugin names a path, never a URL. A start creates a
 // session with a title and sends the prompt in the request body; a refresh
 // reads the server's status map and its pending permission and question
-// lists, once each, and asks about a stopped session only. Open runs
+// lists, once each, and asks about a stopped session only, reading its last
+// message again only when the session changed. Open runs
 // `opencode attach <address> -s <session>` in a terminal, where Ajour fills
 // the address from the connection.
 import type {
@@ -60,7 +61,7 @@ const LABELS: Record<State, string> = {
   ready: "Ready for review",
   done: "Done",
   failed: "Failed",
-  gone: "Deleted in OpenCode",
+  gone: "Not on this OpenCode server",
   unknown: "Unknown",
 };
 
@@ -73,6 +74,8 @@ export const NOT_OPENCODE =
 export const NO_V1_API = `This OpenCode server doesn't have the API Ajour uses. Ajour hands off to OpenCode ${MIN_TEXT} or a later 1.x version.`;
 export const PASSWORD =
   "OpenCode's server asks for a password. Ajour reaches a server without one: start opencode serve on 127.0.0.1 without OPENCODE_SERVER_PASSWORD.";
+export const BAD_SESSION_ID =
+  "This handoff's OpenCode session id isn't one Ajour can read.";
 export const NO_ANSWER =
   "OpenCode stopped without answering. Open the session to see why, such as a model it can't reach.";
 
@@ -369,7 +372,8 @@ export async function startOpenCode(
         },
       }),
     );
-    if (!response.ok) await failed(response, true);
+    // A 404 here is about the session, not a missing route.
+    if (!response.ok) await failed(response, false);
   } catch (error) {
     if (isLate(error))
       throw new ToolError(
@@ -394,6 +398,13 @@ export async function startOpenCode(
   };
 }
 
+/** A session's `time.updated`, or undefined when it isn't a time. */
+function updatedOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
 /** What the plugin keeps between refreshes, without messages or paths. */
 function nativeOf(previous: Json, state: State): Native {
   const kept: Native = { state };
@@ -401,6 +412,8 @@ function nativeOf(previous: Json, state: State): Native {
     const value = text(previous[key], 100);
     if (value) kept[key] = value;
   }
+  const updated = updatedOf(previous.updated);
+  if (updated) kept.updated = updated;
   return kept;
 }
 
@@ -423,10 +436,20 @@ function update(handoff: Handoff, state: State, native: Native): Update {
   };
 }
 
-function lateUpdate(handoff: Handoff): Update {
-  return keptUpdate(handoff, previousState(handoff.native), {
-    reason: opencode.late,
-  });
+function lateUpdate(handoff: Handoff, reason = opencode.late): Update {
+  return keptUpdate(handoff, previousState(handoff.native), { reason });
+}
+
+/**
+ * A request that didn't finish says nothing about the session: past the
+ * deadline, cut short, or held back by Ajour's limit, it keeps its last
+ * state. Any other failure makes it unknown, never gone.
+ */
+function failedUpdate(handoff: Handoff, error: unknown): Update {
+  if (isLate(error)) return lateUpdate(handoff);
+  if (error instanceof ToolError && error.code === "limit")
+    return lateUpdate(handoff, error.message);
+  return unknownUpdate(handoff, reasonOf(opencode, error));
 }
 
 function unknownUpdate(handoff: Handoff, reason: string): Update {
@@ -493,8 +516,8 @@ async function rootsOf(
 }
 
 /**
- * Reads a session that isn't busy: OpenCode deleted it (404), it stopped on
- * an error or without answering, or it is ready for review.
+ * Reads a session that isn't busy: the server doesn't have it (404), it
+ * stopped on an error or without answering, or it is ready for review.
  */
 async function readStopped(
   server: PluginConnection,
@@ -509,9 +532,17 @@ async function readStopped(
   // Only OpenCode saying the session doesn't exist makes it gone.
   if (response.status === 404) return update(handoff, "gone", { status });
   if (!response.ok) await failed(response, false);
+  const updated = updatedOf(
+    record(record(await json(response))?.time)?.updated,
+  );
   const previous = previousState(handoff.native);
-  // A session read as stopped before keeps what it was.
-  if (previous === "ready" || previous === "failed") {
+  // A session read as stopped before, and unchanged since, keeps what it
+  // was. A later turn changes `time.updated`, and its last message is read.
+  if (
+    (previous === "ready" || previous === "failed") &&
+    updated !== undefined &&
+    updated === updatedOf(handoff.native.updated)
+  ) {
     const kept = nativeOf(handoff.native, previous);
     const reason = text(handoff.native.reason, 500);
     return {
@@ -526,7 +557,10 @@ async function readStopped(
       ),
     };
   }
-  // It just stopped, or never started: its last message tells how.
+  const stopped: Native = { status };
+  if (updated !== undefined) stopped.updated = updated;
+  // It just stopped, took another turn, or never started: its last message
+  // tells how.
   const messages = await before(opencode, deadline, async () => {
     const answer = await send(server, {
       method: "GET",
@@ -541,7 +575,7 @@ async function readStopped(
     : undefined;
   if (!last) {
     // OpenCode has the session but not the prompt yet.
-    return update(handoff, "working", { status, label: "Starting" });
+    return update(handoff, "working", { ...stopped, label: "Starting" });
   }
   if (last.role === "user") {
     const created = record(last.time)?.created;
@@ -549,17 +583,17 @@ async function readStopped(
       typeof created === "number" ? Date.now() - created : Number.MAX_VALUE;
     // The server runs on this computer, so its clock is ours.
     if (age < STARTING_MS)
-      return update(handoff, "working", { status, label: "Starting" });
-    return update(handoff, "failed", { status, reason: NO_ANSWER });
+      return update(handoff, "working", { ...stopped, label: "Starting" });
+    return update(handoff, "failed", { ...stopped, reason: NO_ANSWER });
   }
   const error = record(last.error);
   const name = text(error?.name, 100);
-  if (!name) return update(handoff, "ready", { status });
+  if (!name) return update(handoff, "ready", stopped);
   if (name === "MessageAbortedError")
-    return update(handoff, "ready", { status, label: "Stopped" });
+    return update(handoff, "ready", { ...stopped, label: "Stopped" });
   const message = firstLine(text(record(error?.data)?.message, 2000));
   return update(handoff, "failed", {
-    status,
+    ...stopped,
     error: name,
     reason: message ? `${name}: ${message}`.slice(0, 500) : name,
   });
@@ -615,15 +649,16 @@ export async function readOpenCode(
     }
   } catch (error) {
     // An unreachable server says nothing about the sessions. Never gone.
-    return request.handoffs.map((handoff) =>
-      isLate(error)
-        ? lateUpdate(handoff)
-        : unknownUpdate(handoff, reasonOf(opencode, error)),
-    );
+    return request.handoffs.map((handoff) => failedUpdate(handoff, error));
   }
   const updates = new Map<string, Update>();
   const stopped: [Handoff, string][] = [];
   for (const handoff of request.handoffs) {
+    // The id goes in a request path, so only an OpenCode session id does.
+    if (!SESSION_ID.test(handoff.threadId)) {
+      updates.set(handoff.id, unknownUpdate(handoff, BAD_SESSION_ID));
+      continue;
+    }
     const status = record(statuses[handoff.threadId]);
     const type = text(status?.type, 20) ?? "absent";
     const asks = pending.get(handoff.threadId);
@@ -671,12 +706,7 @@ export async function readOpenCode(
         await readStopped(server, handoff, status, deadline),
       );
     } catch (error) {
-      updates.set(
-        handoff.id,
-        isLate(error)
-          ? lateUpdate(handoff)
-          : unknownUpdate(handoff, reasonOf(opencode, error)),
-      );
+      updates.set(handoff.id, failedUpdate(handoff, error));
     }
   });
   return request.handoffs.map((handoff) => updates.get(handoff.id) as Update);

@@ -148,23 +148,23 @@ The plugin talks to OpenCode's v1 API, tested on OpenCode 1.19.5. It refuses an 
 
 ### Requests it sends
 
-| Request                               | What for                                                                                                                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /global/health`                  | Detects OpenCode and its version, checks a connection before Ajour saves it, and comes first in a start.                                                                                                |
-| `POST /session` with the title        | Creates the session, titled on one line.                                                                                                                                                                |
-| `POST /session/<id>/prompt_async`     | Sends the prompt, whole, in the body: `parts: [{ type: "text", text }]`, with the Model and Agent settings when set. OpenCode answers 204 once it has taken the prompt, not once the work is done.      |
-| `DELETE /session/<id>`                | Removes a session the plugin just created when OpenCode refused its prompt, so no empty session stays. A prompt that times out may have been taken, so its session stays.                               |
-| `GET /session/status`                 | Once per refresh: the status of every busy session. Idle sessions aren't in it.                                                                                                                         |
-| `GET /permission` and `GET /question` | Once per refresh each: the pending permissions and questions of every session.                                                                                                                          |
-| `GET /session/<id>`                   | For each idle session without a pending request, whether it still exists. Also for a pending request's session that isn't a handoff's, to find the handoff a subagent works for, up to three levels up. |
-| `GET /session/<id>/message?limit=1`   | For a session that just stopped, its last message, to tell an answer from an error. The plugin keeps only the error's name and message, never the conversation.                                         |
+| Request                               | What for                                                                                                                                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /global/health`                  | Detects OpenCode and its version, checks a connection before Ajour saves it, and comes first in a start.                                                                                                                                          |
+| `POST /session` with the title        | Creates the session, titled on one line.                                                                                                                                                                                                          |
+| `POST /session/<id>/prompt_async`     | Sends the prompt, whole, in the body: `parts: [{ type: "text", text }]`, with the Model and Agent settings when set. OpenCode answers 204 once it has taken the prompt, not once the work is done.                                                |
+| `DELETE /session/<id>`                | Removes a session the plugin just created when OpenCode refused its prompt, so no empty session stays. A prompt that times out may have been taken, so its session stays.                                                                         |
+| `GET /session/status`                 | Once per refresh: the status of every busy session. Idle sessions aren't in it.                                                                                                                                                                   |
+| `GET /permission` and `GET /question` | Once per refresh each: the pending permissions and questions of every session.                                                                                                                                                                    |
+| `GET /session/<id>`                   | For each idle session without a pending request, whether it still exists and when it last changed (`time.updated`). Also for a pending request's session that isn't a handoff's, to find the handoff a subagent works for, up to three levels up. |
+| `GET /session/<id>/message?limit=1`   | For a session that just stopped, or that changed since the plugin last read it, its last message, to tell an answer from an error. The plugin keeps only the error's name and message, never the conversation.                                    |
 
 ### Commands it runs
 
-| Command                                                               | What for                                                                                                                                                             |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `opencode attach <address> -s <session> --dir <folder>` in a terminal | Opens the session on the same server: Open on the handoff. Ajour fills `<address>` from the handoff's connection; the plugin passes only the session and the folder. |
-| `opencode --version`                                                  | Detects the `opencode` command, which Open needs. Times out after 10 seconds.                                                                                        |
+| Command                                                               | What for                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opencode attach <address> -s <session> --dir <folder>` in a terminal | Opens the session on the same server: Open on the handoff. Ajour fills `<address>` from the handoff's connection; the plugin passes only the session and the folder. Needs an Ajour build that includes les-cabochons/ajour#741, which passes the handoff's connection to Open. |
+| `opencode --version`                                                  | Detects the `opencode` command, which Open needs. Times out after 10 seconds.                                                                                                                                                                                                   |
 
 Detection reports OpenCode available when the server answers with a version the plugin supports and `opencode` is on PATH, and gives the server's version.
 
@@ -181,16 +181,17 @@ One status, one permission and one question read per refresh, for every handoff 
 | The same, and the last answer was stopped (`MessageAbortedError`)                                                     | Ready, labeled Stopped                                                        |
 | The same, and the last answer has an error, such as `APIError`                                                        | Failed, with the error's name and message                                     |
 | The same, and the last message is still the prompt a minute after it was sent, such as for a model OpenCode can't use | Failed: "OpenCode stopped without answering."                                 |
-| The same, within a minute of the prompt: OpenCode hasn't marked it busy yet                                           | Working, labeled Starting                                                     |
-| Read as ready or failed before, and still stopped                                                                     | Keeps that state, label and reason                                            |
-| `GET /session/<id>` answers 404                                                                                       | Gone, labeled Deleted in OpenCode                                             |
+| The same, and the prompt is less than a minute old: OpenCode hasn't marked the session busy yet                       | Working, labeled Starting                                                     |
+| Read as ready or failed before, still stopped, and its `time.updated` unchanged                                       | Keeps that state, label and reason, without reading its messages              |
+| `GET /session/<id>` answers 404                                                                                       | Gone, labeled Not on this OpenCode server                                     |
 | The server doesn't answer, refuses, or isn't OpenCode                                                                 | Unknown, with the reason. Never gone.                                         |
-| No answer before the refresh deadline, or Ajour's request timed out                                                   | Keeps its last state, with the reason                                         |
+| A handoff whose session id isn't an OpenCode one (`ses_…`)                                                            | Unknown, and no request goes out with it                                      |
+| No answer before the refresh deadline, Ajour's request timed out, or Ajour is limiting the plugin's requests          | Keeps its last state, with the reason                                         |
 | No connection                                                                                                         | Unknown, with "OpenCode needs a connection to its server."                    |
 
-OpenCode has no settled state, and a stopped session can take another turn when you open it, so the plugin reports it as ready for review, never done. A session the server no longer has, such as one deleted or on a server restarted in another folder, is gone.
+OpenCode has no settled state, and a stopped session can take another turn when you open it, so the plugin reports it as ready for review, never done. A session the server answers 404 for, such as one deleted in OpenCode, is gone. A later turn, such as one you take after Open, changes the session's `time.updated`, so the plugin reads its last message again and the state follows it.
 
-The native state keeps the last state, the label, OpenCode's status, the counts of pending permissions and questions, the retry attempt and the error's name. Messages, paths and the server's address are never stored, and a handoff has no web link.
+The native state keeps the last state, the label, OpenCode's status, the session's `time.updated`, the counts of pending permissions and questions, the retry attempt and the error's name. Messages, paths and the server's address are never stored, and a handoff has no web link.
 
 ### Settings
 

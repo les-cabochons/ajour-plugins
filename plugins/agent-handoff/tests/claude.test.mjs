@@ -448,6 +448,24 @@ test("a session listed twice reads the live entry", async () => {
   });
   assert.equal(update.state, "working");
   assert.equal(update.native.kind, "interactive");
+  // The job id comes from the job's own entry, so Open still attaches.
+  assert.equal(update.native.job, stopped.id);
+});
+
+test("a session listed twice takes the job id from either entry, whichever comes first", async () => {
+  const resumed = {
+    ...interactive,
+    sessionId: stopped.sessionId,
+    status: "busy",
+  };
+  fakeClaude(() => out([resumed, stopped]));
+  const [update] = await readHandoffStates({
+    tool: "claude",
+    handoffs: [handoff("h1", stopped.sessionId)],
+  });
+  assert.equal(update.state, "working");
+  assert.equal(update.native.kind, "interactive");
+  assert.equal(update.native.job, stopped.id);
 });
 
 test("a list claude can't give makes every session unknown, never gone", async () => {
@@ -596,8 +614,18 @@ test("a listing runs claude agents for the folder and answers its sessions newes
     status: "idle",
     job: done.id,
   });
-  assert.equal(threads[0].resume, undefined);
+  // A job resumed in a terminal reads its live entry, and still attaches to
+  // the job; an interactive session alone has no job, and is open already.
+  assert.deepEqual(threads[0].resume, {
+    command: "claude-attach",
+    args: { job: folderSessions[3].id, folder: FOLDER },
+  });
   assert.equal(threads[0].native.kind, "interactive");
+  assert.equal(threads[0].native.job, folderSessions[3].id);
+  assert.equal(
+    threads.find((t) => t.threadId === interactive.sessionId).resume,
+    undefined,
+  );
   for (const thread of threads) {
     assert.equal(thread.link, undefined);
     // Claude Code doesn't say when a session last changed.

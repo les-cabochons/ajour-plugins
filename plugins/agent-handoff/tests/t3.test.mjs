@@ -13,6 +13,7 @@ import {
 } from "../src/plugin.ts";
 import {
   argvOf,
+  commandOf,
   fail,
   fakeBroker,
   flush,
@@ -36,6 +37,8 @@ const completed = json("completed").thread;
 const link = listed.link;
 const FOLDER = "folder-1";
 const late = /T3 Code took too long; refreshing again later/;
+const ROOT_REFUSED =
+  "T3 Code refused to run at the system root, where Ajour starts t3 thread show, so Ajour can't tell whether this thread waits for you. Check it in T3 Code.";
 
 /** Installs a fake t3. `answer` gets argv and returns a capture result. */
 function fakeT3(answer) {
@@ -45,7 +48,7 @@ function fakeT3(answer) {
     if (argv[0] !== "t3") throw refused("executable_missing");
     if (argv[2] === "show")
       assert.deepEqual(argv.slice(-3), ["--json", "--messages", "0"]);
-    calls.push({ argv, stdin: call.stdin });
+    calls.push({ argv, stdin: call.stdin, cwd: call.cwd });
     return answer(argv);
   });
   return calls;
@@ -77,11 +80,12 @@ const handoff = (id, native = { state: "working" }, folderId = FOLDER) => ({
   native,
 });
 
-test("detection returns the recorded version when T3 Code runs", async () => {
+test("detection runs only t3 --version, which answers at the system root", async () => {
+  // Ajour starts a command without a folder at the root, where every t3
+  // command that reaches the server fails (fixtures/root-refused.txt). So
+  // detection doesn't ask whether a server runs; a refresh or start says so.
   const calls = fakeT3((argv) =>
-    argv[1] === "--version"
-      ? ok(version)
-      : fail(`Thread ${argv[3]} is no longer available.\n`),
+    argv[1] === "--version" ? ok(version) : fail(read("root-refused.txt")),
   );
   const { tools } = await detectTools();
   assert.deepEqual(tools[0], {
@@ -90,22 +94,45 @@ test("detection returns the recorded version when T3 Code runs", async () => {
     version: "0.1.10-nightly.20261116.4761",
   });
   assert.deepEqual(
-    calls.map((c) => c.argv),
-    [
-      ["t3", "--version"],
-      ["t3", "thread", "show", "ajour-detect", "--json", "--messages", "0"],
-    ],
+    calls.map((c) => [c.argv, c.cwd]),
+    [[["t3", "--version"], "C:\\"]],
   );
 });
 
-test("detection says T3 Code isn't running when no server answers", async () => {
-  fakeT3((argv) =>
-    argv[1] === "--version" ? ok(version) : fail(read("no-server.txt")),
+test("every T3 command but --version and thread show runs in the repository folder", () => {
+  const inFolder = {
+    "thread-start": { folder: FOLDER, title: "AJ-38" },
+    "thread-list": { folder: FOLDER },
+  };
+  for (const [command, args] of Object.entries(inFolder))
+    assert.equal(commandOf({ command, args }).cwd, FOLDER, command);
+  assert.equal(commandOf({ command: "version", args: {} }).cwd, "C:\\");
+  // `t3 thread show` takes no folder argument, so Ajour still starts it at
+  // the root (#53). These are all of the plugin's t3 commands.
+  assert.equal(
+    commandOf({ command: "thread-show", args: { thread: threadId } }).cwd,
+    "C:\\",
   );
-  const [tool] = (await detectTools()).tools;
-  assert.equal(tool.available, false);
-  assert.equal(tool.version, "0.1.10-nightly.20261116.4761");
-  assert.match(tool.reason, /isn't running/);
+  assert.deepEqual(
+    manifest.processes.commands
+      .filter((c) => c.executable === "t3")
+      .map((c) => c.id)
+      .sort(),
+    ["thread-list", "thread-show", "thread-start", "version"],
+  );
+});
+
+test("a thread show T3 refuses at the system root keeps the list's state and says why", async () => {
+  const running = { ...listed, status: "running" };
+  fakeT3((argv) =>
+    argv[2] === "list" ? out([running]) : fail(read("root-refused.txt")),
+  );
+  const [update] = await readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1")],
+  });
+  assert.equal(update.state, "working");
+  assert.equal(update.native.reason, ROOT_REFUSED);
 });
 
 test("detection says T3 Code isn't installed when t3 is missing", async () => {
@@ -146,6 +173,7 @@ test("a start runs thread start in a worktree with the prompt on stdin", async (
       "aj-38-hand-off",
     ],
     stdin: request.prompt,
+    cwd: FOLDER,
   });
   assert.deepEqual(calls[1].argv, [
     "t3",
@@ -263,6 +291,40 @@ test("a start keeps the thread when reading its link fails", async () => {
   assert.equal(result.link, undefined);
   assert.equal(result.native.projectId, started.projectId);
   assert.match(result.native.reason, /isn't running/);
+});
+
+test("a start whose thread show T3 refuses at the system root takes the link from thread list", async () => {
+  const calls = fakeT3((argv) => {
+    if (argv[2] === "start") return out(started);
+    if (argv[2] === "list") return out([{ ...listed, threadId }]);
+    return fail(read("root-refused.txt"));
+  });
+  const result = await startHandoff(startRequest());
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.link, link);
+  assert.equal(result.native.state, "working");
+  assert.equal(result.native.reason, undefined);
+  // The list runs in the handoff's folder, where T3 starts.
+  assert.deepEqual(
+    calls.map((c) => [c.argv[2], c.cwd]),
+    [
+      ["start", FOLDER],
+      ["show", "C:\\"],
+      ["list", FOLDER],
+    ],
+  );
+});
+
+test("a start whose new thread neither thread show nor thread list finds keeps it without a link", async () => {
+  fakeT3((argv) => {
+    if (argv[2] === "start") return out(started);
+    if (argv[2] === "list") return out([]);
+    return fail(read("root-refused.txt"));
+  });
+  const result = await startHandoff(startRequest());
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.link, undefined);
+  assert.equal(result.native.reason, ROOT_REFUSED);
 });
 
 test("a start Ajour ends before t3 answers says the thread may exist", async () => {
@@ -699,14 +761,13 @@ for (const code of ["timeout", "capture_incomplete"]) {
 
 test("T3's not-running and not-found messages count on any stderr line", async () => {
   const warning = "(node:1) Warning: something deprecated\n";
-  fakeT3((argv) =>
-    argv[1] === "--version"
-      ? ok(version)
-      : fail(`${warning}${read("no-server.txt")}`),
-  );
-  const [tool] = (await detectTools()).tools;
-  assert.equal(tool.available, false);
-  assert.match(tool.reason, /isn't running/);
+  fakeT3(() => fail(`${warning}${read("no-server.txt")}`));
+  const [unknown] = await readHandoffStates({
+    tool: "t3",
+    handoffs: [handoff("h1", { state: "ready" })],
+  });
+  assert.equal(unknown.state, "unknown");
+  assert.match(unknown.native.reason, /isn't running/);
 
   fakeT3((argv) =>
     argv[2] === "list"
@@ -871,6 +932,15 @@ test("a listing skips a thread without an id or a title, and cuts a long title",
     [long.threadId],
   );
   assert.equal(threads[0].title.length, 500);
+});
+
+test("a long title is cut at 500 characters without splitting an emoji", async () => {
+  // The 500th code unit is the first half of 🚀, so the cut drops it whole.
+  const title = `${"x".repeat(499)}🚀 and more`;
+  fakeT3(() => out([{ ...folderThreads[0], title }]));
+  const { threads } = await listThreads(listRequest());
+  assert.equal(threads[0].title, "x".repeat(499));
+  assert.ok(threads[0].title.isWellFormed());
 });
 
 test("a listed thread refreshes through readHandoffStates and opens from its link", async () => {

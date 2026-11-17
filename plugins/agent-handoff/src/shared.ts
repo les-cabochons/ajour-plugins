@@ -301,8 +301,10 @@ export function oneLineTitle(title: string): string {
  */
 export function listTitle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const title = value.trim().slice(0, 500).trim();
-  return title || undefined;
+  let title = value.trim().slice(0, 500);
+  // Never keep half of a character such as an emoji, cut at its middle.
+  if (/[\uD800-\uDBFF]$/.test(title)) title = title.slice(0, -1);
+  return title.trim() || undefined;
 }
 
 /** A time in milliseconds, from a number of `unit` milliseconds or an ISO date. */

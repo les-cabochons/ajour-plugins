@@ -1279,6 +1279,24 @@ test("a listing keeps only the folder's own top-level threads, each once", async
   );
 });
 
+for (const root of ["C:\\", "C:/", "C:", "/", "\\"])
+  test(`a Codex that reports the root ${JSON.stringify(root)} as its folder lists nothing and throws`, async () => {
+    const sent = [];
+    const server = answering((message) => {
+      sent.push(message.method);
+      if (message.method === "initialize") return { result: {} };
+      if (message.method === "hooks/list")
+        return { data: [{ cwd: root, hooks: [], warnings: [], errors: [] }] };
+      if (message.method === "thread/list")
+        return { data: listedThreads, nextCursor: null, readStates: {} };
+      return undefined;
+    });
+    fakeCodex([server]);
+    await assert.rejects(listThreads(listRequest()), /can't list its threads/);
+    assert.deepEqual(sent, ["initialize", "hooks/list"]);
+    assert.equal(sessionsOf()[0].state, "closed");
+  });
+
 test("a listing passes limit to Codex and keeps the threads changed after since", async () => {
   const server = program("list");
   fakeCodex([server]);

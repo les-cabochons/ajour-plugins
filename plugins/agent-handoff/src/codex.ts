@@ -120,6 +120,8 @@ const NO_LIST =
 // The threads a person started, in the CLI, an app or another app-server
 // client. A subagent's thread works for its parent.
 const LISTED_SOURCES = ["cli", "vscode", "exec", "appServer"];
+// A filesystem root, such as C:\ or /: never a repository folder.
+const ROOT = /^(?:[A-Za-z]:)?[\\/]*$/;
 const NOT_IN_TIME = "Codex didn't start the thread in time. Try again.";
 const MAYBE_STARTED =
   "Codex may have started the thread. Check Codex before handing off again.";
@@ -539,11 +541,14 @@ export async function listCodex(
       deadline,
     );
     if (missingMethod(hooks as Answer)) throw new ToolError(NO_LIST);
+    // `hooks/list` reports the folder the broker started the process in, the
+    // repository folder, since the app-server ignores `-C`. A filesystem root
+    // means it started elsewhere, and the root's threads aren't the folder's.
     const entries = resultOf(hooks as Answer).data;
     const reported = Array.isArray(entries)
       ? text(record(entries[0])?.cwd, 4096)
       : undefined;
-    if (!reported) throw new ToolError(NO_LIST);
+    if (!reported || ROOT.test(reported)) throw new ToolError(NO_LIST);
     cwd = reported;
     const [list] = await rpc.answered(
       [

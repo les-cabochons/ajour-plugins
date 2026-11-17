@@ -140,9 +140,16 @@ function live(session: Json): boolean {
   return typeof session.status === "string";
 }
 
+/** A background job's short id, which `claude attach` takes. */
+function jobOf(session: Json): string | undefined {
+  const job = text(session.id, 64);
+  return job && JOB_ID.test(job) ? job : undefined;
+}
+
 /**
  * The sessions by session id. A session can be listed twice, such as a
- * stopped background job the user resumed in a terminal; the live one wins.
+ * stopped background job the user resumed in a terminal; the live one wins,
+ * with the job's id from whichever entry has it, so Open still attaches.
  */
 function bySessionId(sessions: Json[]): Map<string, Json> {
   const result = new Map<string, Json>();
@@ -150,7 +157,14 @@ function bySessionId(sessions: Json[]): Map<string, Json> {
     const id = text(session.sessionId);
     if (!id) continue;
     const known = result.get(id);
-    if (!known || (!live(known) && live(session))) result.set(id, session);
+    if (!known) {
+      result.set(id, session);
+      continue;
+    }
+    const [winner, other] =
+      !live(known) && live(session) ? [session, known] : [known, session];
+    const job = jobOf(winner) ?? jobOf(other);
+    result.set(id, job ? { ...winner, id: job } : winner);
   }
   return result;
 }
@@ -347,11 +361,11 @@ export async function listClaude(
     const threadId = text(session.sessionId);
     const title = listTitle(session.name);
     if (!threadId || !SESSION_ID.test(threadId) || !title) continue;
-    const job = text(session.id, 64);
+    const job = jobOf(session);
     threads.push({
       threadId,
       title,
-      ...(job && JOB_ID.test(job)
+      ...(job
         ? { resume: attach(job, request.folder.id) }
         : {}),
       native: nativeOf(session, stateOf(session)),

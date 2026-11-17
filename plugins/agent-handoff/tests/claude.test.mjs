@@ -262,14 +262,15 @@ test("a start with a hook passes Claude Code settings whose HTTP hooks post to i
   assert.equal(start.argv[at + 1], template.replaceAll("{url}", HOOK_URL));
   const settings = JSON.parse(start.argv[at + 1]);
   assert.deepEqual(Object.keys(settings), ["hooks"]);
-  // Stop, Notification and SessionEnd take http hooks; SessionStart doesn't.
-  assert.deepEqual(Object.keys(settings.hooks), [
-    "Stop",
-    "Notification",
-    "SessionEnd",
-  ]);
-  for (const matchers of Object.values(settings.hooks))
-    assert.deepEqual(matchers, [{ hooks: [{ type: "http", url: HOOK_URL }] }]);
+  // Only events whose reply can't steer the session: a Stop reply could keep
+  // Claude working with its own instruction (ajour#765). Notification gives up
+  // after 5 seconds rather than http's default 600, so a listener that never
+  // answers can't stall Claude Code; SessionEnd hooks already share a
+  // 1.5-second budget, which a longer timeout would raise.
+  assert.deepEqual(settings.hooks, {
+    Notification: [{ hooks: [{ type: "http", url: HOOK_URL, timeout: 5 }] }],
+    SessionEnd: [{ hooks: [{ type: "http", url: HOOK_URL }] }],
+  });
   // No hook runs a command, and the URL appears nowhere else.
   assert.equal(start.argv[at + 1].includes('"command"'), false);
   assert.equal(

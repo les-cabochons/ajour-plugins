@@ -9,14 +9,15 @@ const manifest = JSON.parse(
   await readFile(new URL("../plugin.json", import.meta.url), "utf8"),
 );
 const { executables, commands } = manifest.processes;
-// Claude Code's per-start settings: an http hook for each event that takes
-// one. SessionStart takes only command hooks, so it is left out.
-const httpHook = { hooks: [{ type: "http", url: "{url}" }] };
+// Claude Code's per-start settings: an http hook for each event whose reply
+// can't steer the session. Stop is left out, since its reply can keep Claude
+// working (ajour#765), and SessionStart takes only command hooks. Notification
+// gives up after 5 seconds instead of http's default 600; SessionEnd hooks share
+// a 1.5-second budget, which a longer timeout would raise.
 const HOOK_TEMPLATE = JSON.stringify({
   hooks: {
-    Stop: [httpHook],
-    Notification: [httpHook],
-    SessionEnd: [httpHook],
+    Notification: [{ hooks: [{ type: "http", url: "{url}", timeout: 5 }] }],
+    SessionEnd: [{ hooks: [{ type: "http", url: "{url}" }] }],
   },
 });
 const copilotStart = (extra) => [

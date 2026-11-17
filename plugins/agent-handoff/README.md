@@ -93,13 +93,14 @@ Claude Code starts a background session only in a folder the user trusted. The p
 
 ### Hooks
 
-A start tells Ajour when to read the session again, so the item says Waiting for you or Ready within seconds of the session stopping, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
+A start tells Ajour when to read the session again, so the item says Waiting for you within seconds of the session asking for you, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ready still arrives at the next refresh: see the limits below for why `Stop` isn't sent. Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
 
 ```json
 {
   "hooks": {
-    "Stop": [{ "hooks": [{ "type": "http", "url": "{url}" }] }],
-    "Notification": [{ "hooks": [{ "type": "http", "url": "{url}" }] }],
+    "Notification": [
+      { "hooks": [{ "type": "http", "url": "{url}", "timeout": 5 }] }
+    ],
     "SessionEnd": [{ "hooks": [{ "type": "http", "url": "{url}" }] }]
   }
 }
@@ -107,15 +108,19 @@ A start tells Ajour when to read the session again, so the item says Waiting for
 
 The manifest declares it as a `hook-url` argument with this `template`, on one line. Ajour fills it, only during a start; the plugin never passes the URL, and never passes settings through a `text` argument, since Claude Code settings can declare `command` hooks that run anything. `SessionStart` takes no `http` hook, so it is left out. A post only makes Ajour read the session from `claude agents` again; Ajour never reads its body, and `claude agents` stays the source of the state. A hook that can't reach Ajour, such as while Ajour is closed, loses nothing: refreshes still run on their schedule.
 
-`--settings` is a per-start flag, so your Claude Code settings files are never edited, and its hooks add to yours rather than replace them. Checked on Claude Code 2.1.325 on Windows with its own `CLAUDE_CONFIG_DIR`, signed out so no model turn ran: with a `SessionEnd` command hook in that folder's `settings.json`, `claude -p` with these settings ran both that hook and the HTTP hook, and `claude --bg` with them carried the settings into the background session, which posted `SessionEnd` with the user's hook when `claude stop` ended it. A signed-in `claude -p` posted `Stop` and `SessionEnd` about 4.6 seconds after it started (les-cabochons/ajour-plugins#51).
+An `http` hook waits 600 seconds for an answer by default, so `Notification` gives up after 5. `SessionEnd` hooks already share a 1.5-second budget, which a longer `timeout` would raise: checked on Claude Code 2.1.326, a signed-out `claude -p` whose `SessionEnd` hook posted to a listener that never answered took about 1.5 seconds longer to exit, and about 5 seconds longer with `"timeout": 5`.
+
+`--settings` is a per-start flag, so your Claude Code settings files are never edited, and its hooks add to yours rather than replace them. Checked on Claude Code 2.1.325 on Windows with its own `CLAUDE_CONFIG_DIR`, signed out so no model turn ran: with a `SessionEnd` command hook in that folder's `settings.json`, `claude -p` with these settings ran both that hook and the HTTP hook, and `claude --bg` with them carried the settings into the background session, which posted `SessionEnd` with the user's hook when `claude stop` ended it. A signed-in `claude -p` posted `SessionEnd` about 4.6 seconds after it started (les-cabochons/ajour-plugins#51).
 
 Limits:
 
+- **A hook's reply can steer the session, so `Stop` isn't sent.** Claude Code reads a 2xx reply with a JSON body as a hook's output. For `Stop`, `{"decision":"block","reason":"…"}` keeps Claude working, with `reason` as its next instruction. Ajour never answers that way, but while Ajour is closed any program can listen on its port and answer for it, and so give the session instructions. `Notification` and `SessionEnd` have no decision control: their reply can't block, add context for Claude or change permissions, and Claude Code discards their `continue` and `systemMessage` (Claude Code's hooks reference, read for 2.1.326). A `Notification` reply can still return `terminalSequence`, which Claude Code writes to the session's terminal. `Stop` can come back once its hook can't be answered, such as a relay that posts to Ajour and ignores the reply (les-cabochons/ajour#765).
 - **Only a start gets hooks.** Open gives the session no hook URL, since Ajour keeps only the token's hash, and neither does a thread you started yourself and linked. Those follow refreshes. Whether `claude attach` keeps the start's settings when it wakes a stopped job isn't checked.
 - **Both start modes carry them.** The terminal start mode still starts the session with `claude --bg`, a capture command, and the terminal only attaches to it. A terminal command couldn't carry the settings on Windows: Windows Terminal's argument check refuses their braces and quotes.
 - **Without a hook, a start runs `claude-start`** and the handoff follows refreshes, as before.
+- **Hooks fail without blocking once Ajour stops answering.** Once the handoff has been done or gone for 24 hours, its token is revoked, and while Ajour is closed nothing answers. Either way the post fails without blocking the session, and Claude Code may show "hook error" lines.
 - **The settings are part of the command you approve.** Access review shows them with `<hook-url>` in place of the URL, so 0.7.0 needs your approval again. It also needs an Ajour that includes les-cabochons/ajour#758, which adds the `hook-url` argument; an older Ajour refuses this manifest.
-- **The token is on the command line** while the session runs, where other programs running as you can read it. With it, they can only make Ajour refresh that handoff early, within limits. ADR 0020 has the details, including a program that takes Ajour's port while Ajour is closed and so receives what the hook posts.
+- **The token is on the command line and on disk.** While the session runs, it is in the command line of Claude Code's background processes, where other programs running as you can read it. Claude Code also saves the start's flags in its config folder, `CLAUDE_CONFIG_DIR` or `~/.claude`: in `daemon/roster.json` while the session runs, and in `jobs/<job>/state.json` (`respawnFlags`) until `claude rm` removes the job, even after `claude stop`. Checked on Claude Code 2.1.326 on Windows with its own `CLAUDE_CONFIG_DIR`, signed out. With the token, a program can only make Ajour refresh that handoff early, within limits, until the token is revoked. ADR 0020 has the details, including a program that takes Ajour's port while Ajour is closed and so receives what the hook posts.
 
 ### States
 

@@ -9,14 +9,15 @@ upstream version is still 0.1.0, so the filename stays the same and the lockfile
 integrity changes.
 
 `ajour-plugin-sdk-0.2.0.tgz` is `@ajour/plugin-sdk` 0.2.0, packed at commit
-`b620a3b1` (origin/main on 2026-11-17, after #757): `tsc -p
+`089cbbe3` (origin/main on 2026-11-17, after #758): `tsc -p
 tsconfig.build.json` in `packages/plugin-sdk`, then `npm pack
 --ignore-scripts`. It contains #750's commit `0988ec75` and #747. It adds the
 `processes` block, `ajour.process.run`, `ajour.open`, the handoff capability,
 handoff tools that use a connection (`connection`, the `connection-url` slot,
 `HandoffArguments` and the fake's `connectionUrl`), process sessions
 (`mode: "session"`, `ajour.process.session` and the fake's `processSession`),
-and thread listing (`listsThreads` and `listThreads`, from #757).
+thread listing (`listsThreads` and `listThreads`, from #757), and a start's
+hook (the `hook-url` argument and the fake's `hookUrl`, from #758).
 The SDK's version is still 0.2.0, so the filename stays the same and the
 lockfile integrity changes. Only `agent-handoff` uses it so far.
 

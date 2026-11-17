@@ -10,6 +10,8 @@
 import type {
   DetectToolsResult,
   HandoffArguments,
+  ListThreadsRequest,
+  ListThreadsResult,
   PluginConnection,
   PluginModule,
   ReadHandoffStatesRequest,
@@ -21,10 +23,17 @@ import type {
 import {
   CLAUDE_TOOL,
   detectClaude,
+  listClaude,
   readClaude,
   startClaude,
 } from "./claude.ts";
-import { CODEX_TOOL, detectCodex, readCodex, startCodex } from "./codex.ts";
+import {
+  CODEX_TOOL,
+  detectCodex,
+  listCodex,
+  readCodex,
+  startCodex,
+} from "./codex.ts";
 import {
   COPILOT_TOOL,
   detectCopilot,
@@ -34,11 +43,12 @@ import {
 import {
   OPENCODE_TOOL,
   detectOpenCode,
+  listOpenCode,
   readOpenCode,
   startOpenCode,
   validateOpenCode,
 } from "./opencode.ts";
-import { T3_TOOL, detectT3, readT3, startT3 } from "./t3.ts";
+import { T3_TOOL, detectT3, listT3, readT3, startT3 } from "./t3.ts";
 
 function unknownTool(id: string): never {
   throw new Error(`This plugin has no handoff tool "${id}".`);
@@ -102,10 +112,31 @@ export async function readHandoffStates(
   return unknownTool(request.tool);
 }
 
+/**
+ * A tool's recent threads in one folder, for Ajour to offer the ones whose
+ * title names an item's key. Ajour asks only the tools plugin.json marks
+ * `listsThreads`.
+ */
+export async function listThreads(
+  ...args: HandoffArguments<ListThreadsRequest>
+): Promise<ListThreadsResult> {
+  const [connection, request] = split(args);
+  if (request.tool === OPENCODE_TOOL) return listOpenCode(connection, request);
+  if (request.tool === T3_TOOL) return listT3(request);
+  if (request.tool === CLAUDE_TOOL) return listClaude(request);
+  if (request.tool === CODEX_TOOL) return listCodex(request);
+  if (request.tool === COPILOT_TOOL)
+    throw new Error(
+      "Copilot CLI lists its sessions only in its interactive picker, so Ajour can't list them.",
+    );
+  return unknownTool(request.tool);
+}
+
 // Keep the exported operations checked against the host's contract.
 const _module = {
   detectTools,
   validateConnection,
   startHandoff,
   readHandoffStates,
+  listThreads,
 } satisfies PluginModule;

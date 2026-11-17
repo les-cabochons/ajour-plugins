@@ -2,6 +2,8 @@
 // process broker, reading its refusals, the operation deadlines, and building
 // the bounded native state the host stores.
 import type {
+  ListThreadsRequest,
+  ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
 } from "@ajour/plugin-sdk";
@@ -12,6 +14,7 @@ export type State = Update["state"];
 export type Json = Record<string, unknown>;
 export type Native = Record<string, string | number | boolean | null>;
 export type Handoff = ReadHandoffStatesRequest["handoffs"][number];
+export type Listed = ListThreadsResult["threads"][number];
 
 export const STATES: readonly State[] = [
   "working",
@@ -290,6 +293,53 @@ export function oneLineTitle(title: string): string {
       .trim()
       .replace(/^[\s-]+/, "") || "Ajour handoff"
   );
+}
+
+/**
+ * A tool's thread title for a listing: trimmed, at most the 500 characters
+ * Ajour keeps, or undefined when there is none.
+ */
+export function listTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const title = value.trim().slice(0, 500).trim();
+  return title || undefined;
+}
+
+/** A time in milliseconds, from a number of `unit` milliseconds or an ISO date. */
+export function timeOf(value: unknown, unit = 1): number | undefined {
+  const time =
+    typeof value === "number"
+      ? value * unit
+      : typeof value === "string"
+        ? Date.parse(value)
+        : NaN;
+  return Number.isSafeInteger(time) && time > 0 ? time : undefined;
+}
+
+/**
+ * A listing's answer from threads in the tool's newest-first order: each
+ * thread once, without the dated ones not changed after `since`, at most
+ * `limit`.
+ */
+export function listed(
+  threads: readonly Listed[],
+  request: Pick<ListThreadsRequest, "since" | "limit">,
+): ListThreadsResult {
+  const seen = new Set<string>();
+  const result: Listed[] = [];
+  for (const thread of threads) {
+    if (seen.has(thread.threadId)) continue;
+    seen.add(thread.threadId);
+    if (
+      request.since !== undefined &&
+      thread.updatedAt !== undefined &&
+      thread.updatedAt <= request.since
+    )
+      continue;
+    result.push(thread);
+    if (result.length >= request.limit) break;
+  }
+  return { threads: result };
 }
 
 export function settingText(value: unknown): string | undefined {

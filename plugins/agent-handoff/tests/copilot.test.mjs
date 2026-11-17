@@ -8,7 +8,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
-import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
+import {
+  detectTools,
+  listThreads,
+  readHandoffStates,
+  startHandoff,
+} from "../src/plugin.ts";
 import {
   fakeBroker,
   folders,
@@ -375,5 +380,23 @@ test("another tool id is still refused", async () => {
   await assert.rejects(
     readHandoffStates({ tool: "aider", handoffs: [] }),
     /This plugin has no handoff tool "aider"/,
+  );
+});
+
+test("Copilot CLI doesn't list its sessions, so a listing runs nothing", async () => {
+  // Copilot CLI 1.0.112 lists sessions only in its interactive picker
+  // (`copilot --resume`); `copilot sessions` only imports. plugin.json
+  // leaves listsThreads off, so Ajour never asks.
+  const calls = fakeBroker(() => {
+    throw new Error("no command should run");
+  });
+  await assert.rejects(
+    listThreads({ tool: "copilot", folder: { id: "folder-1" }, limit: 50 }),
+    /interactive picker/,
+  );
+  assert.deepEqual(calls, []);
+  await assert.rejects(
+    listThreads({ tool: "aider", folder: { id: "folder-1" }, limit: 50 }),
+    /no handoff tool/,
   );
 });

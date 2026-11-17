@@ -6,7 +6,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
-import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
+import {
+  detectTools,
+  listThreads,
+  readHandoffStates,
+  startHandoff,
+} from "../src/plugin.ts";
 import { validateConnection } from "../src/plugin.ts";
 import { STARTING_MS, versionProblem } from "../src/opencode.ts";
 import {
@@ -951,4 +956,135 @@ test("a handoff whose session id isn't OpenCode's is unknown, and never goes in 
     "GET /permission",
     "GET /question",
   ]);
+});
+
+// Listing threads
+
+// GET /path and GET /session from a throwaway `opencode serve` (README):
+// sessions titled with one key, two keys and none in the server's folder, one
+// in a subfolder, and a subagent's.
+const sessions = recorded("sessions.json");
+const listRequest = (extra = {}) => ({
+  tool: "opencode",
+  folder: { id: FOLDER },
+  limit: 50,
+  ...extra,
+});
+const listing = (overrides = {}) =>
+  fakeOpenCode({
+    "GET /path": answer(recorded("path.json")),
+    "GET /session": answer(sessions),
+    ...overrides,
+  });
+
+test("a listing asks the server which folder it runs in, and lists that folder's top-level sessions newest first", async () => {
+  const calls = listing();
+  const { threads } = await listThreads(connection, listRequest());
+  assert.deepEqual(requests(), ["GET /path", "GET /session"]);
+  assert.deepEqual(globalThis.ajour.requests.at(-1).query, {
+    roots: true,
+    directory: PATH,
+    limit: 50,
+  });
+  assert.deepEqual(
+    threads.map((t) => [t.threadId, t.title, t.updatedAt]),
+    sessions.map((s) => [s.id, s.title, s.time.updated]),
+  );
+  assert.ok(
+    threads.some(
+      (t) => t.title === "[PAY-12] [PAY-13] Share the session cookie",
+    ),
+  );
+  // What a start answers: Open attaches to the same server.
+  const [first] = threads;
+  assert.deepEqual(first.resume, {
+    command: "opencode-attach",
+    args: { session: first.threadId, folder: FOLDER },
+  });
+  assert.equal(first.link, undefined);
+  assert.deepEqual(first.native, { state: "unknown", label: "Unknown" });
+  await globalThis.ajour.process.run(first.resume);
+  assert.deepEqual(calls.at(-1).argv, [
+    "opencode",
+    "attach",
+    ADDRESS,
+    "-s",
+    first.threadId,
+    "--dir",
+    PATH,
+  ]);
+});
+
+test("a listing asks OpenCode for the sessions changed after since, at most limit", async () => {
+  const since = sessions[1].time.updated;
+  listing({ "GET /session": answer(recorded("sessions-since.json")) });
+  const { threads } = await listThreads(
+    connection,
+    listRequest({ since, limit: 3 }),
+  );
+  // OpenCode's `start` keeps the sessions updated at or after it.
+  assert.deepEqual(globalThis.ajour.requests.at(-1).query, {
+    roots: true,
+    directory: PATH,
+    limit: 3,
+    start: since + 1,
+  });
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    [sessions[0].id],
+  );
+});
+
+test("a listing keeps only the server folder's own top-level sessions, each once", async () => {
+  // As if OpenCode ignored the folder: its whole project, with a subfolder's
+  // session, a subagent's and one listed twice.
+  const project = recorded("sessions-project.json");
+  const child = {
+    ...sessions[2],
+    id: "ses_e18b1cdd9ffeBFbvjPOV7I7ZX0",
+    parentID: sessions[2].id,
+  };
+  listing({
+    "GET /session": answer([
+      ...project,
+      child,
+      sessions[0],
+      { ...sessions[0], id: "bad id" },
+    ]),
+  });
+  const { threads } = await listThreads(connection, listRequest());
+  assert.deepEqual(
+    threads.map((t) => t.title),
+    sessions.map((s) => s.title),
+  );
+});
+
+test("listed sessions refresh through readHandoffStates", async () => {
+  const [first] = sessions;
+  listing({
+    [`GET /session/${first.id}`]: answer({
+      ...recorded("session.json"),
+      id: first.id,
+    }),
+    [`GET /session/${first.id}/message`]: answer(
+      recorded("messages-answered.json"),
+    ),
+  });
+  const { threads } = await listThreads(connection, listRequest({ limit: 1 }));
+  const [update] = await read(
+    handoff("h1", threads[0].native, threads[0].threadId),
+  );
+  assert.equal(update.state, "ready");
+  assert.equal(update.native.label, "Ready for review");
+});
+
+test("a listing without a connection or a server throws what to do", async () => {
+  listing();
+  await assert.rejects(listThreads(listRequest()), {
+    message: NEEDS_CONNECTION,
+  });
+  listing({ "GET /path": () => Promise.reject(requestError("network")) });
+  await assert.rejects(listThreads(connection, listRequest()), {
+    message: SERVER_DOWN,
+  });
 });

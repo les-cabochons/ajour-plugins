@@ -5,8 +5,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import { createFakeAjour } from "@ajour/plugin-sdk/testing";
-import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
 import {
+  detectTools,
+  listThreads,
+  readHandoffStates,
+  startHandoff,
+} from "../src/plugin.ts";
+import {
+  argvOf,
   fail,
   fakeBroker,
   flush,
@@ -752,4 +758,157 @@ test("another tool id is refused", async () => {
     readHandoffStates({ tool: "aider", handoffs: [] }),
     /no handoff tool/,
   );
+});
+
+// Listing threads
+
+// `t3 thread list --project <folder> --json`, recorded and renamed: titles
+// with one and two keys, settled and running threads, and a subagent's.
+const folderThreads = json("list-threads");
+const otherThreads = json("list-threads-other");
+const listRequest = (extra = {}) => ({
+  tool: "t3",
+  folder: { id: FOLDER },
+  limit: 50,
+  ...extra,
+});
+
+/** Answers thread list with each folder's own recorded threads. */
+const listedT3 = (argv) =>
+  argv[2] === "list"
+    ? out(argv[4] === "folder-2" ? otherThreads : folderThreads)
+    : undefined;
+
+test("a listing runs thread list for the folder and answers its threads newest first, as a start would", async () => {
+  const calls = fakeT3(listedT3);
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(
+    calls.map((c) => c.argv),
+    [["t3", "thread", "list", "--project", FOLDER, "--json"]],
+  );
+  // A subagent's thread works for its parent, so only top-level threads.
+  const top = folderThreads.slice(0, 4);
+  assert.deepEqual(
+    threads.map((t) => [t.threadId, t.title, t.link, t.updatedAt]),
+    top.map((t) => [t.threadId, t.title, t.link, Date.parse(t.updatedAt)]),
+  );
+  // A title with several keys stays whole; Ajour reads its keys.
+  assert.equal(threads[0].title, "[PAY-12] [PAY-13] Share the session cookie");
+  assert.deepEqual(
+    threads.map((t) => [t.native.state, t.native.label]),
+    [
+      ["working", "Working"],
+      ["done", "Settled"],
+      ["done", "Settled"],
+      ["ready", "Ready for review"],
+    ],
+  );
+  assert.deepEqual(threads[0].native, {
+    state: "working",
+    label: "Working",
+    status: "running",
+    projectId: top[0].projectId,
+    settled: false,
+    snoozed: false,
+    snoozedUntil: null,
+  });
+  for (const thread of threads) {
+    assert.equal(thread.resume, undefined);
+    assertNativeFits(thread.native);
+  }
+});
+
+test("a listing answers only the folder's threads, and another folder's from its own list", async () => {
+  const calls = fakeT3(listedT3);
+  const first = await listThreads(listRequest());
+  const second = await listThreads(listRequest({ folder: { id: "folder-2" } }));
+  assert.deepEqual(
+    calls.map((c) => c.argv[4]),
+    [FOLDER, "folder-2"],
+  );
+  assert.ok(
+    !first.threads.some((t) => t.threadId === otherThreads[0].threadId),
+  );
+  assert.deepEqual(
+    second.threads.map((t) => [t.threadId, t.title]),
+    [[otherThreads[0].threadId, "[PAY-12] The same key in another repository"]],
+  );
+});
+
+test("a listing keeps threads changed after since, each once, at most limit", async () => {
+  fakeT3((argv) => out([...folderThreads, folderThreads[1]]));
+  const since = Date.parse(folderThreads[2].updatedAt);
+  const { threads } = await listThreads(listRequest({ since }));
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    folderThreads.slice(0, 2).map((t) => t.threadId),
+  );
+  const limited = await listThreads(listRequest({ limit: 1 }));
+  assert.deepEqual(
+    limited.threads.map((t) => t.threadId),
+    [folderThreads[0].threadId],
+  );
+  const once = await listThreads(listRequest());
+  assert.equal(
+    new Set(once.threads.map((t) => t.threadId)).size,
+    once.threads.length,
+  );
+});
+
+test("a listing skips a thread without an id or a title, and cuts a long title", async () => {
+  const long = { ...folderThreads[3], title: `[PAY-12] ${"x".repeat(600)}` };
+  fakeT3(() =>
+    out([
+      { ...folderThreads[0], threadId: "" },
+      { ...folderThreads[1], title: "   " },
+      long,
+      "not a thread",
+    ]),
+  );
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    [long.threadId],
+  );
+  assert.equal(threads[0].title.length, 500);
+});
+
+test("a listed thread refreshes through readHandoffStates and opens from its link", async () => {
+  fakeT3(listedT3);
+  const { threads } = await listThreads(listRequest());
+  const ready = threads[3];
+  const settled = threads[1];
+  const updates = await readHandoffStates({
+    tool: "t3",
+    handoffs: [ready, settled].map((thread, i) => ({
+      id: `h${i}`,
+      threadId: thread.threadId,
+      folderId: FOLDER,
+      native: thread.native,
+    })),
+  });
+  assert.deepEqual(
+    updates.map((u) => [u.id, u.state, u.title]),
+    [
+      ["h0", "ready", ready.title],
+      ["h1", "done", settled.title],
+    ],
+  );
+  // Open goes to T3's https link, as for a started thread.
+  assert.match(ready.link, /^https:\/\/app\.t3\.codes\/threads\//);
+  // T3 shows a listed thread by the id it listed it under.
+  assert.deepEqual(
+    argvOf({
+      command: "thread-show",
+      args: { thread: threads[0].threadId },
+    }).slice(0, 3),
+    ["t3", "thread", "show"],
+  );
+});
+
+test("a listing T3 can't answer throws what to do", async () => {
+  fakeT3(() => fail(read("no-server.txt")));
+  await assert.rejects(listThreads(listRequest()), /T3 Code isn't running/);
+  fakeT3(() => ok("not json"));
+  await assert.rejects(listThreads(listRequest()), /can't read/);
 });

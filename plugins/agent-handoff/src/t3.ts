@@ -2,6 +2,8 @@
 // state of each thread.
 import type {
   DetectToolsResult,
+  ListThreadsRequest,
+  ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
   StartHandoffRequest,
@@ -19,6 +21,8 @@ import {
   https,
   isLate,
   isUncertainStart,
+  listTitle,
+  listed,
   oneLineTitle,
   previousState,
   reasonOf,
@@ -26,9 +30,11 @@ import {
   refusalsFor,
   settingText,
   text,
+  timeOf,
   withNotes,
   type Handoff,
   type Json,
+  type Listed,
   type Native,
   type State,
   type Tool,
@@ -295,6 +301,57 @@ export async function startT3(
   };
 }
 
+/** A folder's threads, newest first, as T3 lists them. */
+async function folderThreads(folder: string, deadline: number) {
+  const list = await before(t3, deadline, () =>
+    captureJson(t3, "thread-list", { folder }),
+  );
+  if (!Array.isArray(list))
+    throw new ToolError("T3 Code returned a thread list Ajour can't read.");
+  return list.flatMap((value) => {
+    const thread = record(value);
+    return thread ? [thread] : [];
+  });
+}
+
+/**
+ * The folder's threads, as a start would have answered for each: its id,
+ * link and native state, with T3's title and last change. A subagent's
+ * thread works for its parent, so only top-level threads are listed.
+ */
+export async function listT3(
+  request: ListThreadsRequest,
+): Promise<ListThreadsResult> {
+  let threads: Json[];
+  try {
+    threads = await folderThreads(
+      request.folder.id,
+      Date.now() + READ_DEADLINE_MS,
+    );
+  } catch (error) {
+    throw new ToolError(
+      reasonOf(t3, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  }
+  const result: Listed[] = [];
+  for (const thread of threads) {
+    const threadId = text(thread.threadId);
+    const title = listTitle(thread.title);
+    if (!threadId || !title || thread.parentThreadId) continue;
+    const link = https(thread.link);
+    const updatedAt = timeOf(thread.updatedAt);
+    result.push({
+      threadId,
+      title,
+      ...(link ? { link } : {}),
+      native: nativeOf(thread, stateOf(thread)),
+      ...(updatedAt === undefined ? {} : { updatedAt }),
+    });
+  }
+  return listed(result, request);
+}
+
 /** The last state read, kept because T3 didn't answer in time. */
 function lateUpdate(handoff: Handoff): Update {
   return keptUpdate(handoff.id, handoff.native, previousState(handoff.native), {
@@ -358,16 +415,10 @@ export async function readT3(
   for (const [folder, handoffs] of folders) {
     let threads: Map<string, Json>;
     try {
-      const list = await before(t3, deadline, () =>
-        captureJson(t3, "thread-list", { folder }),
-      );
-      if (!Array.isArray(list))
-        throw new ToolError("T3 Code returned a thread list Ajour can't read.");
       threads = new Map(
-        list.flatMap((value) => {
-          const thread = record(value);
-          const id = text(thread?.threadId);
-          return thread && id ? [[id, thread] as const] : [];
+        (await folderThreads(folder, deadline)).flatMap((thread) => {
+          const id = text(thread.threadId);
+          return id ? [[id, thread] as const] : [];
         }),
       );
     } catch (error) {

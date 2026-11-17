@@ -103,6 +103,9 @@ test("OpenCode's connection is its loopback server, reached on-premises through 
     baseAddress: { field: "serverUrl", allowOnPremises: true },
     endpoints: [
       { method: "GET", path: "/global/health" },
+      // A listing asks the server its folder, then lists its sessions.
+      { method: "GET", path: "/path" },
+      { method: "GET", path: "/session" },
       { method: "POST", path: "/session" },
       { method: "GET", path: "/session/status" },
       { method: "GET", path: "/session/*" },
@@ -117,7 +120,24 @@ test("OpenCode's connection is its loopback server, reached on-premises through 
   assert.equal(manifest.connectionAccess, undefined);
 });
 
-test("the declared commands are four t3, four claude, four copilot, two opencode and three codex commands", () => {
+test("the tools that can list their threads per folder say so; Copilot CLI can't", () => {
+  // Copilot CLI 1.0.112 lists sessions only in its interactive picker.
+  assert.deepEqual(
+    manifest.capabilities.handoff.tools.map((tool) => [
+      tool.id,
+      tool.listsThreads,
+    ]),
+    [
+      ["t3", true],
+      ["claude", true],
+      ["copilot", undefined],
+      ["opencode", true],
+      ["codex", true],
+    ],
+  );
+});
+
+test("the declared commands are four t3, five claude, four copilot, two opencode and three codex commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -189,6 +209,14 @@ test("the declared commands are four t3, four claude, four copilot, two opencode
     "claude-agents": {
       executable: "claude",
       args: ["agents", "--json", "--all"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    // A listing asks for the sessions started under one folder; Ajour gives
+    // claude the folder's path, never the plugin.
+    "claude-agents-folder": {
+      executable: "claude",
+      args: ["agents", "--json", "--all", "--cwd", "{folder:folder}"],
       mode: "capture",
       timeoutSeconds: 10,
     },

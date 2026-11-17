@@ -36,8 +36,8 @@ import {
 } from "./codex.ts";
 import {
   COPILOT_TOOL,
+  NO_STATE,
   detectCopilot,
-  readCopilot,
   startCopilot,
 } from "./copilot.ts";
 import {
@@ -100,6 +100,10 @@ export async function startHandoff(
   return unknownTool(request.tool);
 }
 
+/**
+ * The state of the tools that follow it. Ajour asks only the tools
+ * plugin.json doesn't mark `followsState: false`, so never Copilot CLI.
+ */
 export async function readHandoffStates(
   ...args: HandoffArguments<ReadHandoffStatesRequest>
 ): Promise<ReadHandoffStatesResult> {
@@ -107,8 +111,9 @@ export async function readHandoffStates(
   if (request.tool === OPENCODE_TOOL) return readOpenCode(connection, request);
   if (request.tool === T3_TOOL) return readT3(request);
   if (request.tool === CLAUDE_TOOL) return readClaude(request);
-  if (request.tool === COPILOT_TOOL) return readCopilot(request);
   if (request.tool === CODEX_TOOL) return readCodex(request);
+  if (request.tool === COPILOT_TOOL)
+    throw new Error(`${NO_STATE} Open the session to follow it.`);
   return unknownTool(request.tool);
 }
 

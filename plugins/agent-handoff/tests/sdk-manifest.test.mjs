@@ -58,3 +58,11 @@ test("the check refuses a bad field type, a bad mode, a misspelt key and another
   const apiThree = { ...JSON.parse(manifestText), apiVersion: 3 };
   assert.notDeepEqual(await manifestErrors(apiThree, "bad-api"), []);
 });
+
+test("the SDK knows each tool's features, and refuses one that isn't a boolean", async () => {
+  for (const key of ["followsState", "listsThreads", "hooks"]) {
+    const manifest = JSON.parse(manifestText);
+    manifest.capabilities.handoff.tools[0][key] = "yes";
+    assert.notDeepEqual(await manifestErrors(manifest, `bad-${key}`), [], key);
+  }
+});

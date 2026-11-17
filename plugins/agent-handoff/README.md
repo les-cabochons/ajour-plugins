@@ -6,6 +6,22 @@ The plugin runs only the commands it declares, through Ajour's process broker, a
 
 Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a tool after 20. The handoffs it hasn't read by then, or whose command Ajour timed out or cut short, keep their last state, with the reason "T3 Code took too long; refreshing again later." (or Claude Code, OpenCode or Codex). A start stops waiting for what it started 27 seconds in. When Ajour stops a start command before its output is whole, the plugin says the tool may have started the work, so the user checks before handing off again. When Ajour refuses a command, the plugin says what to do, such as allowing the plugin in its Access section in Settings › Plugins.
 
+## What each tool supports
+
+Each tool declares its features in `plugin.json`, and Ajour uses only those (les-cabochons/ajour#759). The plugin's page in Settings › Plugins lists them for each tool.
+
+| Tool        | Starts threads | Follows state (`followsState`) | Finds threads (`listsThreads`) | Updates within seconds (`hooks`) |
+| ----------- | -------------- | ------------------------------ | ------------------------------ | -------------------------------- |
+| T3 Code     | Yes            | Yes                            | Yes                            | No                               |
+| Claude Code | Yes            | Yes                            | Yes                            | Yes, see [Hooks](#hooks)         |
+| Copilot CLI | Yes            | No, see [States](#states-2)    | No                             | No                               |
+| OpenCode    | Yes            | Yes                            | Yes                            | No                               |
+| Codex       | Yes            | Yes                            | Yes                            | No                               |
+
+Every tool sets all three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's commands takes one.
+
+0.9.0 needs an Ajour that includes les-cabochons/ajour#764, which adds `followsState` and `hooks`. An older Ajour refuses this manifest.
+
 ## Threads you started
 
 Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it.
@@ -93,7 +109,7 @@ Claude Code starts a background session only in a folder the user trusted. The p
 
 ### Hooks
 
-A start tells Ajour when to read the session again, so the item says Waiting for you within seconds of the session asking for you, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ready still arrives at the next refresh: see the limits below for why `Stop` isn't sent. Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
+A start tells Ajour when to read the session again, so the item says Waiting for you within seconds of the session asking for you, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ready still arrives at the next refresh: see the limits below for why `Stop` isn't sent. Claude Code is the only tool that declares `hooks: true`. Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
 
 ```json
 {
@@ -174,9 +190,11 @@ Without a terminal, Copilot can't ask before it edits a file or runs a command. 
 
 ### States
 
-Copilot CLI has no command that reports a session's state. It keeps each session's events in `session-state/<uuid>/events.jsonl` under `COPILOT_HOME`, but no declared command can read them, and an event log alone can't tell a finished task from one that waits for you or failed. So every refresh reports Unknown with "Copilot CLI doesn't report a session's state.", runs no command, keeps the last state read in the native state, and never says gone.
+Copilot CLI has no command that reports a session's state, so the tool sets `followsState: false`. Ajour shows each Copilot CLI handoff as Started: it never calls `readHandoffStates` for it, never polls it, gives its start no hook, and offers no Refresh. Open still resumes the session. The plugin answers a `readHandoffStates` for Copilot CLI with an error and runs no command; Ajour never sends one.
 
-The native state keeps the last state, the label and the Tools setting. Nothing else about the session is read, so a handoff has no web link.
+Checked on `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`: `copilot sessions` has only `import`, and `copilot help sessions` names `/session info` as the way to see a session's details, which works only inside an interactive session. `copilot --acp` reports a session's activity only to the editor that runs that session. Copilot CLI keeps each session's events in `session-state/<uuid>/events.jsonl` and its metadata in `workspace.yaml` under `COPILOT_HOME`, but no declared command can read them, and an event log alone can't tell a finished task from one that waits for you or failed.
+
+The native state keeps the label, Started, and the Tools setting. Nothing else about the session is read, so a handoff has no web link.
 
 The VS Code link `vscode://agents/agent-host-session/copilotcli/<uuid>` has the format VS Code builds, but nobody has seen VS Code adopt a session the standalone CLI started. Until that is tested, the plugin declares no `vscode` scheme and Open uses the terminal.
 

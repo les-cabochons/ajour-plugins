@@ -131,20 +131,53 @@ test("OpenCode's connection is its loopback server, reached on-premises through 
   assert.equal(manifest.connectionAccess, undefined);
 });
 
-test("the tools that can list their threads per folder say so; Copilot CLI can't", () => {
-  // Copilot CLI 1.0.112 lists sessions only in its interactive picker.
+test("every tool declares the features it supports, explicitly", () => {
+  // Ajour #759 and #764: `followsState` (true when absent), `listsThreads` and
+  // `hooks` (false when absent). Copilot CLI 1.0.112 has no command that
+  // reports a session's state and lists sessions only in its interactive
+  // picker, so it only starts sessions. Only Claude Code's start posts hooks.
+  const tools = manifest.capabilities.handoff.tools;
   assert.deepEqual(
-    manifest.capabilities.handoff.tools.map((tool) => [
+    tools.map((tool) => [
       tool.id,
+      tool.followsState,
       tool.listsThreads,
+      tool.hooks,
     ]),
     [
-      ["t3", true],
-      ["claude", true],
-      ["copilot", undefined],
-      ["opencode", true],
-      ["codex", true],
+      ["t3", true, true, false],
+      ["claude", true, true, true],
+      ["copilot", false, false, false],
+      ["opencode", true, true, false],
+      ["codex", true, true, false],
     ],
+  );
+  for (const tool of tools)
+    for (const key of ["followsState", "listsThreads", "hooks"])
+      assert.equal(typeof tool[key], "boolean", `${tool.id}: ${key}`);
+});
+
+test("a tool posts hooks only with a hook-url command and while it follows state", () => {
+  // Ajour refuses the manifest otherwise (plugin-api-4.ts, #764).
+  const usesHook = (command) =>
+    command.args
+      .flatMap((arg) =>
+        typeof arg !== "string" && arg.args ? arg.args : [arg],
+      )
+      .some((arg) => arg.kind === "hook-url");
+  assert.ok(commands.some(usesHook));
+  for (const tool of manifest.capabilities.handoff.tools.filter((t) => t.hooks))
+    assert.notEqual(tool.followsState, false, `${tool.id}: follows state`);
+  // A tool that doesn't follow state gets no hook, so none of its commands
+  // can take one: the broker would refuse the start with hook_refused.
+  for (const tool of manifest.capabilities.handoff.tools.filter(
+    (t) => t.followsState === false,
+  ))
+    for (const command of commands.filter((c) => c.executable === tool.id))
+      assert.ok(!usesHook(command), `${command.id}: no hook-url argument`);
+  assert.deepEqual(
+    commands.filter(usesHook).map((c) => c.id),
+    ["claude-start-hook"],
   );
 });
 

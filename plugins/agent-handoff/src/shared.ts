@@ -54,7 +54,10 @@ export interface Tool {
 export function refusalsFor(
   name: string,
   exe: string,
-  own: { invalid_request: string; output_limit: string },
+  own: { invalid_request: string; output_limit: string } & Record<
+    string,
+    string
+  >,
 ): Record<string, string> {
   return {
     executable_missing: `${name} isn't installed, or its ${exe} command isn't on PATH.`,
@@ -94,7 +97,7 @@ export class ToolError extends Error {
 }
 
 /** The operation's deadline passed before the tool answered. */
-class LateError extends ToolError {
+export class LateError extends ToolError {
   constructor(message: string) {
     super(message, "late");
   }
@@ -104,7 +107,8 @@ export function firstLine(value: string | undefined): string {
   return (value ?? "").trim().split(/\r?\n/, 1)[0]?.slice(0, 500) ?? "";
 }
 
-function refusal(tool: Tool, error: unknown): ToolError {
+/** A refusal from Ajour's process broker, worded for the user. */
+export function refusal(tool: Tool, error: unknown): ToolError {
   const code =
     error && typeof error === "object" && "code" in error
       ? String(error.code)

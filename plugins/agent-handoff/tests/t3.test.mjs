@@ -749,7 +749,7 @@ test("each broker refusal reads as what to do next", async () => {
 test("another tool id is refused", async () => {
   fakeT3(() => ok(""));
   await assert.rejects(
-    readHandoffStates({ tool: "codex", handoffs: [] }),
+    readHandoffStates({ tool: "aider", handoffs: [] }),
     /no handoff tool/,
   );
 });

@@ -90,7 +90,9 @@ export function commandOf(request) {
     throw refused("invalid_request");
   if (request.stdin !== undefined && command.stdin !== "text")
     throw refused("invalid_request");
-  if (command.mode !== "capture" && !cwd) throw refused("folder_refused");
+  // A session starts at the root without a folder; launch modes refuse.
+  if (command.mode !== "capture" && command.mode !== "session" && !cwd)
+    throw refused("folder_refused");
   if (command.mode === "terminal") {
     // Windows Terminal takes only these characters in cwd and arguments.
     const safe = (value) =>
@@ -109,14 +111,27 @@ export const argvOf = (request) => commandOf(request).argv;
  * result; a launch mode command starts without one. `routes` answer
  * `ajour.http` (the SDK fake refuses a path or header the manifest doesn't
  * declare), and `connectionUrl` is the operation's connection address,
- * which fills a `connection-url` slot.
+ * which fills a `connection-url` slot. `session`, when given, gets each
+ * session the plugin opens, with its command, and returns the program's
+ * handler, as the SDK fake's `processSession` does. `ajour.sessions` then
+ * records what the plugin sent each one.
  */
-export function fakeBroker(answer, { routes, connectionUrl } = {}) {
+export function fakeBroker(answer, { routes, connectionUrl, session } = {}) {
   const calls = [];
   globalThis.ajour = createFakeAjour({
     manifest,
     ...(routes ? { routes } : {}),
     ...(connectionUrl === undefined ? {} : { connectionUrl }),
+    ...(session
+      ? {
+          processSession: async (request, program) => {
+            const command = commandOf(request);
+            const call = { ...command, session: true };
+            calls.push(call);
+            return session(command.argv, program, call);
+          },
+        }
+      : {}),
     processRun: async (request) => {
       const command = commandOf(request);
       const call = { ...command, stdin: request.stdin };

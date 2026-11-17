@@ -6,7 +6,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
   "ajour": {
-    "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI or OpenCode and follow their work.",
+    "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
     "features": [
       "agent-handoff"
     ],
@@ -15,7 +15,8 @@
       "t3",
       "claude-code",
       "copilot",
-      "opencode"
+      "opencode",
+      "codex"
     ],
     "author": {
       "name": "Alex Trépanier",

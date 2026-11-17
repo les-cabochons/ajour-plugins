@@ -126,7 +126,7 @@ packages:
     version: 0.1.0
 
   '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.2.0.tgz':
-    resolution: {integrity: sha512-fLLUoBu4Hwjj0ZCFxZQVWfUOpvRBtQg8Eet3raCLuEJn7ft2un671QXHSf/A28VWypadxLxK1g9k65S6WMGN1Q==, tarball: file:vendor/ajour-plugin-sdk-0.2.0.tgz}
+    resolution: {integrity: sha512-wm6D6Ir/i3DisExsD1UzFWTEDveg5Mxc2Pepc8MqXh9O93lWxr1a30WFIbI/kYUBQ5UAhiRzbjXsGXQlPUM7JA==, tarball: file:vendor/ajour-plugin-sdk-0.2.0.tgz}
     version: 0.2.0
 
   '@jridgewell/sourcemap-codec@1.6.0':

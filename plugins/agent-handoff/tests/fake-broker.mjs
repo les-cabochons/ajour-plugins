@@ -86,9 +86,16 @@ export function commandOf(request) {
     else if (arg.args.some((a) => has(slotOf(a)?.[1] ?? "")))
       throw refused("invalid_request");
   }
-  if (command.mode !== "capture" && request.stdin !== undefined)
+  // Capture and detached commands take stdin when they declare it; a
+  // terminal runs in another app, and a session takes lines through send.
+  if (
+    (command.mode === "terminal" || command.mode === "session") &&
+    request.stdin !== undefined
+  )
     throw refused("invalid_request");
   if (request.stdin !== undefined && command.stdin !== "text")
+    throw refused("invalid_request");
+  if (typeof request.stdin === "string" && request.stdin.length > 1024 * 1024)
     throw refused("invalid_request");
   // A session starts at the root without a folder; launch modes refuse.
   if (command.mode !== "capture" && command.mode !== "session" && !cwd)

@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
@@ -8,6 +8,7 @@
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
   "capabilities": {
     "handoff": {
+      "promptTemplate": "[{{item.key}}] {{item.title}}\n\nWork on this {{item.type}} in the {{repo.name}} repository, from the folder you start in. Work on the branch you are on, and open a pull request when you are done.\n\nLink: {{item.url}}\nParent, if any: {{item.parent.key}} {{item.parent.title}}\n\n{{item.description}}",
       "tools": [
         {
           "id": "t3",
@@ -325,10 +326,9 @@
           {
             "if": "model",
             "args": ["--model", "{model:text}"]
-          },
-          "-p",
-          "{prompt:text}"
+          }
         ],
+        "stdin": "text",
         "mode": "detached"
       },
       {
@@ -345,10 +345,9 @@
             "if": "model",
             "args": ["--model", "{model:text}"]
           },
-          "--allow-all-tools",
-          "-p",
-          "{prompt:text}"
+          "--allow-all-tools"
         ],
+        "stdin": "text",
         "mode": "detached"
       },
       {

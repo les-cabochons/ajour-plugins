@@ -2,7 +2,9 @@
 // (1.0.112 on Windows, see fixtures/copilot/version.txt) with an isolated
 // COPILOT_HOME, signed out, in a throwaway repository. A fake copilot answers
 // each declared command, after the fake broker expands it to argv from
-// plugin.json the way Ajour does.
+// plugin.json the way Ajour does. The stdin fixtures come from the same
+// copilot with its own COPILOT_HOME, against a local model through its BYOK
+// variables, so without signing in.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
@@ -97,7 +99,7 @@ test("detection keeps an unexpected version line as it is", async () => {
   assert.equal(tools[2].version, "1.1.0");
 });
 
-test("a start chooses the session id and runs copilot -p detached in the folder", async () => {
+test("a start chooses the session id and runs copilot detached in the folder, the prompt on stdin", async () => {
   folders[FOLDER] = "C:\\Users\\me\\probe";
   const calls = fakeCopilot();
   const result = await startHandoff(startRequest());
@@ -113,12 +115,10 @@ test("a start chooses the session id and runs copilot -p detached in the folder"
       result.threadId,
       "-n",
       "AJ-42 Hand off to Copilot CLI",
-      "-p",
-      "Work on AJ-42: hand off to Copilot CLI https://example.com/AJ-42 - Start it. - Reopen it.",
     ],
     mode: "detached",
     cwd: "C:\\Users\\me\\probe",
-    stdin: undefined,
+    stdin: startRequest().prompt,
   });
   assert.deepEqual(result, {
     threadId: result.threadId,
@@ -128,6 +128,21 @@ test("a start chooses the session id and runs copilot -p detached in the folder"
     },
     native: { state: "working", label: "Started", tools: "ask" },
   });
+});
+
+test("the prompt never reaches the command line, and keeps its line breaks", async () => {
+  const calls = fakeCopilot();
+  const prompt =
+    "[AJ-42] Hand off\n\n  - Start it.\r\n- Reopen it.\n\n" +
+    "line\n".repeat(5000);
+  await startHandoff(startRequest({ tools: "allow" }, { prompt }));
+  const [call] = calls;
+  assert.equal(call.stdin, prompt);
+  assert.ok(!call.argv.includes("-p"));
+  assert.ok(
+    call.argv.every((value) => !/Start it|Reopen it|\n/.test(value)),
+    call.argv.join(" "),
+  );
 });
 
 test("each start gets its own session id", async () => {
@@ -156,7 +171,7 @@ test("a start passes the model, the title on one line, and allows all tools when
     "--model",
     "gpt-5.6-sol",
   ]);
-  assert.deepEqual(calls[0].argv.slice(9, 11), ["--allow-all-tools", "-p"]);
+  assert.deepEqual(calls[0].argv.slice(9), ["--allow-all-tools"]);
   assert.equal(result.native.tools, "allow");
 });
 
@@ -167,23 +182,23 @@ test("another tools value never allows all tools", async () => {
   assert.equal(result.native.tools, "ask");
 });
 
-test("a prompt that starts with a dash loses the dash, not the text", async () => {
+test("a prompt that starts with a dash goes to stdin as it is", async () => {
   const calls = fakeCopilot();
   await startHandoff(startRequest({}, { prompt: "-- Fix it\n\n- now" }));
-  assert.equal(calls[0].argv.at(-1), "Fix it - now");
+  assert.equal(calls[0].stdin, "-- Fix it\n\n- now");
 });
 
-test("a prompt longer than the command line takes is refused before copilot runs", async () => {
+test("a prompt over Ajour's 1 MB of stdin is refused before copilot runs", async () => {
   const calls = fakeCopilot();
   await assert.rejects(
-    startHandoff(startRequest({}, { prompt: "x".repeat(12_001) })),
+    startHandoff(startRequest({}, { prompt: "x".repeat(1_048_577) })),
     {
       message:
-        "The prompt has 12,001 characters, and Copilot CLI takes at most 12,000 on its command line. Shorten the handoff template, such as by leaving out the item's description.",
+        "The prompt has 1,048,577 characters, and Ajour gives Copilot CLI at most 1,048,576. Shorten the prompt.",
     },
   );
   assert.equal(calls.length, 0);
-  await startHandoff(startRequest({}, { prompt: "x".repeat(12_000) }));
+  await startHandoff(startRequest({}, { prompt: "x".repeat(1_048_576) }));
   assert.equal(calls.length, 1);
 });
 
@@ -209,6 +224,11 @@ test("a start Ajour refuses says what to do", async () => {
       "Ajour couldn't start copilot safely (an unusual launcher, an argument it can't pass, or a command line that's too long). Check the Copilot CLI install and this handoff's title.",
     ],
     ["folder_refused", /couldn't use this project's repository folder/],
+    [
+      "stdin_failed",
+      "Copilot CLI didn't read the prompt: it stopped first, for example because it isn't signed in, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts and is signed in, then hand off again.",
+    ],
+    ["operation_ended", "Ajour stopped waiting for Copilot CLI. Try again."],
   ];
   for (const [code, message] of cases) {
     fakeCopilot(refuse(code));
@@ -288,12 +308,13 @@ test("a refresh with no handoffs returns none", async () => {
 
 test("the recorded copilot has every flag the commands use", () => {
   // From `copilot --help`: -C changes folder first, --session-id sets a new
-  // session's UUID, -n names a new session, -p runs a prompt and exits.
+  // session's UUID, -n names a new session. Without -p, copilot reads the
+  // prompt from piped stdin, runs it and exits.
+  assert.match(help, /combine with -i, -p, or piped stdin/);
   for (const flag of [
     "-C <directory>",
     "--session-id <id>",
     "-n, --name <name>",
-    "-p, --prompt <text>",
     "--model <model>",
     "--allow-all-tools",
     "-r, --resume [<value>]",
@@ -310,9 +331,24 @@ test("the recorded copilot has every flag the commands use", () => {
     assert.match(help, new RegExp(`(?:^|[ ,])${flag}\\b`, "m"), flag);
 });
 
+test("copilot takes the whole prompt from stdin, with its line breaks, and names the session", () => {
+  // Recorded with the start's flags and a bracketed title, with
+  // startRequest()'s prompt written to stdin the way Ajour writes a detached
+  // command's: copilot read all of it within about a second, ran it without
+  // a terminal and exited 0.
+  const event = JSON.parse(read("stdin-user-message.json"));
+  assert.equal(event.type, "user.message");
+  assert.equal(event.data.content, startRequest().prompt);
+  const workspace = read("stdin-workspace.yaml");
+  assert.match(workspace, /^id: b94f4e9c-6fc2-41b3-9ee5-c17bd43903e0$/m);
+  assert.match(workspace, /^name: '\[AJ-42\] Hand off to Copilot CLI'$/m);
+  assert.match(workspace, /^cwd: C:\\Users\\me\\probe$/m);
+});
+
 test("a session started signed out keeps its id and name, and resumes", () => {
-  // What a detached start leaves when copilot can't sign in: it exits after
-  // writing the session, which Open can still resume.
+  // Recorded with the earlier argument start: copilot wrote the session
+  // before it found it wasn't signed in. Whether it reads stdin before that
+  // check isn't recorded; if it doesn't, the start fails with stdin_failed.
   const workspace = read("workspace.yaml");
   assert.match(workspace, /^id: 8e1f1abb-41cf-4a1a-9a38-e39ff17cf360$/m);
   assert.match(workspace, /^name: Ajour probe detached$/m);

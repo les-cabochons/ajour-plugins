@@ -1279,7 +1279,16 @@ test("a listing keeps only the folder's own top-level threads, each once", async
   );
 });
 
-for (const root of ["C:\\", "C:/", "C:", "/", "\\"])
+for (const root of [
+  "C:\\",
+  "C:/",
+  "C:",
+  "/",
+  "\\",
+  "\\\\server\\share\\",
+  "\\\\server\\share",
+  "//server/share/",
+])
   test(`a Codex that reports the root ${JSON.stringify(root)} as its folder lists nothing and throws`, async () => {
     const sent = [];
     const server = answering((message) => {

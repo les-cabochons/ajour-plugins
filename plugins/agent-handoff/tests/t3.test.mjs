@@ -135,6 +135,27 @@ test("a thread show T3 refuses at the system root keeps the list's state and say
   assert.equal(update.native.reason, ROOT_REFUSED);
 });
 
+test("a refusal at a network share's root counts as the root; one inside a folder doesn't", async () => {
+  const running = { ...listed, status: "running" };
+  for (const [where, atRoot] of [
+    ["\\\\server\\share\\", true],
+    ["//server/share/", true],
+    ["\\\\server\\share\\repo", false],
+    ["C:\\work\\repo", false],
+  ]) {
+    fakeT3((argv) =>
+      argv[2] === "list"
+        ? out([running])
+        : fail(read("root-refused.txt").replace("(C:\\)", `(${where})`)),
+    );
+    const [update] = await readHandoffStates({
+      tool: "t3",
+      handoffs: [handoff("h1")],
+    });
+    assert.equal(update.native.reason === ROOT_REFUSED, atRoot, where);
+  }
+});
+
 test("detection says T3 Code isn't installed when t3 is missing", async () => {
   globalThis.ajour = createFakeAjour({
     manifest,

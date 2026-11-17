@@ -67,10 +67,11 @@ const LABELS: Record<State, string> = {
 const NOT_RUNNING = /No running T3 Code server\b/i;
 const NOT_FOUND =
   /Thread \S+ (?:is no longer available|was not found|does not exist)/i;
-// T3 creates the folder it starts in, which fails at a root such as C:\.
-// `thread show` takes no folder argument, so Ajour starts it there (#53).
+// T3 creates the folder it starts in, which fails at a root such as C:\ or
+// a network share's \\server\share\. `thread show` takes no folder argument,
+// so Ajour starts it there (#53).
 const ROOT_REFUSED =
-  /PermissionDenied: FileSystem\.makeDirectory \((?:[A-Za-z]:)?[\\/]*\)/;
+  /PermissionDenied: FileSystem\.makeDirectory \((?:[A-Za-z]:|[\\/]{2}[^\\/()]+[\\/]+[^\\/()]+)?[\\/]*\)/;
 const SHOW_CONCURRENCY = 3;
 const MAYBE_STARTED =
   "T3 Code may have started the thread. Check T3 Code before handing off again.";

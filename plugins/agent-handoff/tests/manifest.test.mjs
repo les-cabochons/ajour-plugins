@@ -187,10 +187,13 @@ test("the declared commands are four t3, six claude, four copilot, two opencode 
       mode: "capture",
       timeoutSeconds: 10,
     },
-    // --messages 0 keeps conversation text out of the plugin.
+    // --messages 0 keeps conversation text out of the plugin. t3 thread show
+    // takes no folder, but T3 creates the folder it starts in and fails at
+    // the system root (#53), so it runs in the repository folder (Ajour #761).
     "thread-show": {
       executable: "t3",
       args: ["thread", "show", "{thread:id}", "--json", "--messages", "0"],
+      cwd: "{folder:folder}",
       mode: "capture",
       timeoutSeconds: 10,
     },
@@ -415,6 +418,24 @@ test("each command passes the broker's declaration rules", () => {
       names.length,
       `${command.id}: unique slots`,
     );
+    // A working folder is a whole folder slot that no other kind and no
+    // conditional group uses: the command always needs it (Ajour #761).
+    if (command.cwd !== undefined) {
+      const match = /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):folder\}$/.exec(
+        command.cwd,
+      );
+      assert.ok(match, `${command.id}: cwd is a whole folder slot`);
+      for (const arg of command.args) {
+        const grouped = typeof arg !== "string" && arg.args;
+        for (const a of grouped ? arg.args : [arg]) {
+          if (typeof a !== "string" || slot.exec(a)?.[1] !== match[1]) continue;
+          assert.ok(!grouped, `${command.id}: cwd's slot isn't in a group`);
+          assert.equal(a, command.cwd, `${command.id}: cwd's slot is a folder`);
+        }
+        if (grouped)
+          assert.notEqual(arg.if, match[1], `${command.id}: cwd isn't a test`);
+      }
+    }
     assert.ok(
       new TextEncoder().encode(JSON.stringify(command)).length <= 12 * 1024,
     );

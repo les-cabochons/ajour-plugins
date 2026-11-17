@@ -71,6 +71,11 @@ export function commandOf(request) {
     .flatMap((a) =>
       typeof a === "string" ? (slotOf(a)?.[1] ?? []) : (a.name ?? []),
     );
+  // A command-level working folder (Ajour #761) is a whole folder slot.
+  const working = command.cwd === undefined ? null : slotOf(command.cwd);
+  if (command.cwd !== undefined && working?.[2] !== "folder")
+    throw new Error(`${command.id}: cwd must be a whole folder slot.`);
+  if (working) slots.push(working[1]);
   if (Object.keys(request.args).some((name) => !slots.includes(name)))
     throw refused("invalid_request");
   let cwd;
@@ -100,6 +105,9 @@ export function commandOf(request) {
     else if (arg.args.some((a) => has(slotOf(a)?.[1] ?? "")))
       throw refused("invalid_request");
   }
+  // A declared working folder resolves like a folder argument, never joins
+  // argv, and wins over the first folder argument.
+  if (working) cwd = slotValue("folder", request.args[working[1]]);
   // Capture and detached commands take stdin when they declare it; a
   // terminal runs in another app, and a session takes lines through send.
   if (

@@ -2,6 +2,8 @@
 // --bg`), and reads their state back from `claude agents --json --all`.
 import type {
   DetectToolsResult,
+  ListThreadsRequest,
+  ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
   StartHandoffRequest,
@@ -18,6 +20,8 @@ import {
   isLate,
   isUncertainStart,
   launch,
+  listTitle,
+  listed,
   oneLineTitle,
   pause,
   previousState,
@@ -29,6 +33,7 @@ import {
   withNotes,
   type Handoff,
   type Json,
+  type Listed,
   type Native,
   type State,
   type Tool,
@@ -50,6 +55,8 @@ const UNTRUSTED = /Workspace not trusted\b/i;
 const UNTRUSTED_ROOT = /Run `?claude`? in (?:[A-Za-z]:\\?|\/) once\b/i;
 // A session id the plugin keeps as the thread id: a bounded, flag-free token.
 const SESSION_ID = /^[A-Za-z0-9._:][A-Za-z0-9:._-]{0,199}$/;
+// A background job's short id, which `claude attach` takes.
+const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAYBE_STARTED =
   "Claude Code may have started the session. Check claude agents before handing off again.";
 // Open attaches to a listed job. Once `claude rm` removes the job, only its
@@ -110,9 +117,14 @@ export async function detectClaude(): Promise<
   }
 }
 
-/** Every session `claude agents --json --all` lists. */
-async function listSessions(): Promise<Json[]> {
-  const list = await captureJson(claude, "claude-agents", {});
+/**
+ * Every session `claude agents --json --all` lists, or only those started
+ * under a folder, with `--cwd`.
+ */
+async function listSessions(folder?: string): Promise<Json[]> {
+  const list = await (folder
+    ? captureJson(claude, "claude-agents-folder", { folder })
+    : captureJson(claude, "claude-agents", {}));
   if (!Array.isArray(list))
     throw new ToolError(
       "Claude Code returned a session list Ajour can't read.",
@@ -128,9 +140,16 @@ function live(session: Json): boolean {
   return typeof session.status === "string";
 }
 
+/** A background job's short id, which `claude attach` takes. */
+function jobOf(session: Json): string | undefined {
+  const job = text(session.id, 64);
+  return job && JOB_ID.test(job) ? job : undefined;
+}
+
 /**
  * The sessions by session id. A session can be listed twice, such as a
- * stopped background job the user resumed in a terminal; the live one wins.
+ * stopped background job the user resumed in a terminal; the live one wins,
+ * with the job's id from whichever entry has it, so Open still attaches.
  */
 function bySessionId(sessions: Json[]): Map<string, Json> {
   const result = new Map<string, Json>();
@@ -138,7 +157,14 @@ function bySessionId(sessions: Json[]): Map<string, Json> {
     const id = text(session.sessionId);
     if (!id) continue;
     const known = result.get(id);
-    if (!known || (!live(known) && live(session))) result.set(id, session);
+    if (!known) {
+      result.set(id, session);
+      continue;
+    }
+    const [winner, other] =
+      !live(known) && live(session) ? [session, known] : [known, session];
+    const job = jobOf(winner) ?? jobOf(other);
+    result.set(id, job ? { ...winner, id: job } : winner);
   }
   return result;
 }
@@ -217,6 +243,16 @@ function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
   return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
+/**
+ * Open attaches a terminal to the job, which also wakes a stopped one.
+ * `claude --resume` can't open a job that is still running once it is given
+ * a folder, and a terminal needs one: Ajour opens it in its first folder
+ * argument. `claude attach` ignores that extra argument, with a warning.
+ */
+function attach(job: string, folder: string) {
+  return { command: "claude-attach", args: { job, folder } };
+}
+
 export async function startClaude(
   request: StartHandoffRequest,
 ): Promise<StartHandoffResult> {
@@ -256,7 +292,7 @@ export async function startClaude(
   for (let attempt = 0; attempt < 3 && !session; attempt++) {
     if (attempt > 0) await pause(1000, deadline);
     try {
-      const sessions = await before(claude, deadline, listSessions);
+      const sessions = await before(claude, deadline, () => listSessions());
       session = sessions.find((candidate) => candidate.id === job);
       failure = undefined;
     } catch (error) {
@@ -271,14 +307,7 @@ export async function startClaude(
         failure ? ` (${reasonOf(claude, failure)})` : ""
       }. Open it with claude attach ${job} instead of handing off again.`,
     );
-  // Open attaches a terminal to the job, which also wakes a stopped one.
-  // `claude --resume` can't open a job that is still running once it is given
-  // a folder, and a terminal needs one: Ajour opens it in its first folder
-  // argument. `claude attach` ignores that extra argument, with a warning.
-  const resume = {
-    command: "claude-attach",
-    args: { job, folder: request.folder.id },
-  };
+  const resume = attach(job, request.folder.id);
   let notes: Native = {};
   if (request.settings.startMode === "terminal") {
     // The prompt can't go through a terminal, so the session starts in the
@@ -300,6 +329,51 @@ export async function startClaude(
   };
 }
 
+/**
+ * The sessions Claude Code lists as started under the folder, newest first,
+ * as a start would have answered for each. A background job opens by
+ * attaching to it; an interactive session has no job, and is open in its
+ * terminal already. Claude Code doesn't say when a session last changed, so
+ * `since` lists them all.
+ */
+export async function listClaude(
+  request: ListThreadsRequest,
+): Promise<ListThreadsResult> {
+  let sessions: Json[];
+  try {
+    sessions = [
+      ...bySessionId(
+        await before(claude, Date.now() + READ_DEADLINE_MS, () =>
+          listSessions(request.folder.id),
+        ),
+      ).values(),
+    ];
+  } catch (error) {
+    throw new ToolError(
+      reasonOf(claude, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  }
+  const started = (session: Json) =>
+    typeof session.startedAt === "number" ? session.startedAt : 0;
+  const threads: Listed[] = [];
+  for (const session of sessions.sort((a, b) => started(b) - started(a))) {
+    const threadId = text(session.sessionId);
+    const title = listTitle(session.name);
+    if (!threadId || !SESSION_ID.test(threadId) || !title) continue;
+    const job = jobOf(session);
+    threads.push({
+      threadId,
+      title,
+      ...(job
+        ? { resume: attach(job, request.folder.id) }
+        : {}),
+      native: nativeOf(session, stateOf(session)),
+    });
+  }
+  return listed(threads, { limit: request.limit });
+}
+
 export async function readClaude(
   request: ReadHandoffStatesRequest,
 ): Promise<ReadHandoffStatesResult> {
@@ -308,7 +382,7 @@ export async function readClaude(
   let sessions: Map<string, Json>;
   try {
     sessions = bySessionId(
-      await before(claude, Date.now() + READ_DEADLINE_MS, listSessions),
+      await before(claude, Date.now() + READ_DEADLINE_MS, () => listSessions()),
     );
   } catch (error) {
     if (isLate(error))

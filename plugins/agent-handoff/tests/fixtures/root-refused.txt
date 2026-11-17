@@ -1,0 +1,10 @@
+[21:54:52.567] ERROR (#2): PlatformError: PermissionDenied: FileSystem.makeDirectory (C:\)
+    at systemError (file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/ManagedEndpointRuntime-C1S-dY-c.mjs:5516:34)
+    at file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/ManagedEndpointRuntime-C1S-dY-c.mjs:126300:9
+    at file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/Schema-C7XXQ-oz.mjs:24890:58
+    at config.resolveServerConfig (file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/binCli-Bgpg3A1Q.mjs:7635:19)
+    at config.resolveServerConfig (definition) (file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/binCli-Bgpg3A1Q.mjs:7485:29)
+    at cli.thread.withThreadTools (file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/binCli-Bgpg3A1Q.mjs:10550:9)
+    at cli.thread.withThreadTools (definition) (file:///C:/Users/user/AppData/Local/Programs/t3-code-desktop/resources/server.asar/apps/server/dist/binCli-Bgpg3A1Q.mjs:10104:25) {
+  [cause]: Error: EPERM: operation not permitted, mkdir 'C:\'
+}

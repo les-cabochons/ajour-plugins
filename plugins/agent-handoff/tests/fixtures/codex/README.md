@@ -23,6 +23,14 @@ afterwards.
 | `read-gone-archived.jsonl` | One reader batch: a thread `thread/delete` removed (`thread not loaded`), an archived one, and one cut short.                               |
 | `read-unrecorded.jsonl`    | A probe client reading a thread whose session ended before Codex recorded its turn: no turns.                                               |
 
+`list.jsonl` is one listing, recorded on 2026-11-17 from the user's own
+Codex with read-only requests (`hooks/list`, then `thread/list` for the folder
+it reported), in a folder with ten threads. It keeps the first four; their
+names, prompts (`preview`), folder, rollout paths and git branch and origin
+are replaced, since the real ones are private. Ids, times, statuses and
+sources are as recorded. Two of the four are untitled, as most threads Codex
+lists are.
+
 `start-*` and `read-*` were recorded by running the plugin's own code against
 the real app-server, through a stand-in for Ajour's process sessions.
 `approval` and `read-unrecorded` come from a probe client with numeric ids.

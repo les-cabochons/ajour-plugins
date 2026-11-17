@@ -5,8 +5,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
-import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
 import {
+  detectTools,
+  listThreads,
+  readHandoffStates,
+  startHandoff,
+} from "../src/plugin.ts";
+import {
+  argvOf,
   fail,
   fakeBroker,
   flush,
@@ -442,6 +448,24 @@ test("a session listed twice reads the live entry", async () => {
   });
   assert.equal(update.state, "working");
   assert.equal(update.native.kind, "interactive");
+  // The job id comes from the job's own entry, so Open still attaches.
+  assert.equal(update.native.job, stopped.id);
+});
+
+test("a session listed twice takes the job id from either entry, whichever comes first", async () => {
+  const resumed = {
+    ...interactive,
+    sessionId: stopped.sessionId,
+    status: "busy",
+  };
+  fakeClaude(() => out([resumed, stopped]));
+  const [update] = await readHandoffStates({
+    tool: "claude",
+    handoffs: [handoff("h1", stopped.sessionId)],
+  });
+  assert.equal(update.state, "working");
+  assert.equal(update.native.kind, "interactive");
+  assert.equal(update.native.job, stopped.id);
 });
 
 test("a list claude can't give makes every session unknown, never gone", async () => {
@@ -524,4 +548,149 @@ test("each broker refusal names Claude Code and says what to do next", async () 
     const { tools } = await detectTools();
     assert.equal(tools[1].reason, expected, code);
   }
+});
+
+// Listing threads
+
+// `claude agents --json --all --cwd <folder>`: the probe folder's sessions,
+// renamed, with the stopped job also listed live after a terminal resumed it,
+// and the sessions of another folder.
+const PROBE = "C:\\Users\\me\\repos\\probe";
+const OTHER = "C:\\Users\\me\\repos\\other";
+const folderSessions = json("agents-folder");
+const otherSessions = json("agents-folder-other");
+const listRequest = (extra = {}) => ({
+  tool: "claude",
+  folder: { id: FOLDER },
+  limit: 50,
+  ...extra,
+});
+
+/** Answers like claude: --cwd keeps the sessions started under that folder. */
+function listedClaude() {
+  folders[FOLDER] = PROBE;
+  folders["folder-2"] = OTHER;
+  return fakeClaude((argv) => {
+    if (argv[1] !== "agents") return undefined;
+    const cwd = argv.indexOf("--cwd");
+    if (cwd < 0) return out([...folderSessions, ...otherSessions]);
+    return out(argv[cwd + 1] === OTHER ? otherSessions : folderSessions);
+  });
+}
+
+test("a listing runs claude agents for the folder and answers its sessions newest first, as a start would", async () => {
+  const calls = listedClaude();
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(
+    calls.map((c) => [c.argv, c.cwd]),
+    [[["claude", "agents", "--json", "--all", "--cwd", PROBE], PROBE]],
+  );
+  const live = folderSessions.at(-1);
+  // Newest first by start; the session listed twice reads its live entry.
+  assert.deepEqual(
+    threads.map((t) => [t.threadId, t.title, t.native.state]),
+    [
+      [live.sessionId, "[PAY-12] [PAY-13] Share the session cookie", "working"],
+      [interactive.sessionId, "Look at the flaky sync test", "ready"],
+      [permission.sessionId, "Bump the date library", "needs-you"],
+      [folderSessions[2].sessionId, "[OPS-7] Rotate the signing keys", "ready"],
+      [folderSessions[1].sessionId, "[OPS-7] Rotate the signing keys", "ready"],
+      [done.sessionId, "[PAY-12] Fix login redirect", "ready"],
+    ],
+  );
+  // A background job opens by attaching to it, as a started one does; an
+  // interactive session has no job to attach to and is open already.
+  const job = threads.find((t) => t.threadId === done.sessionId);
+  assert.deepEqual(job.resume, {
+    command: "claude-attach",
+    args: { job: done.id, folder: FOLDER },
+  });
+  assert.deepEqual(argvOf(job.resume), ["claude", "attach", done.id, PROBE]);
+  assert.deepEqual(job.native, {
+    state: "ready",
+    label: "Done",
+    kind: "background",
+    claudeState: "done",
+    status: "idle",
+    job: done.id,
+  });
+  // A job resumed in a terminal reads its live entry, and still attaches to
+  // the job; an interactive session alone has no job, and is open already.
+  assert.deepEqual(threads[0].resume, {
+    command: "claude-attach",
+    args: { job: folderSessions[3].id, folder: FOLDER },
+  });
+  assert.equal(threads[0].native.kind, "interactive");
+  assert.equal(threads[0].native.job, folderSessions[3].id);
+  assert.equal(
+    threads.find((t) => t.threadId === interactive.sessionId).resume,
+    undefined,
+  );
+  for (const thread of threads) {
+    assert.equal(thread.link, undefined);
+    // Claude Code doesn't say when a session last changed.
+    assert.equal(thread.updatedAt, undefined);
+    assertPrivate(thread);
+  }
+});
+
+test("a listing answers only the folder's sessions, and another folder's from its own list", async () => {
+  listedClaude();
+  const first = await listThreads(listRequest());
+  const second = await listThreads(listRequest({ folder: { id: "folder-2" } }));
+  const others = otherSessions.map((s) => s.sessionId);
+  assert.ok(!first.threads.some((t) => others.includes(t.threadId)));
+  assert.deepEqual(
+    second.threads.map((t) => [t.threadId, t.title]),
+    otherSessions.map((s) => [s.sessionId, s.name]),
+  );
+});
+
+test("a listing honors limit, and lists every session whatever since says", async () => {
+  listedClaude();
+  const limited = await listThreads(listRequest({ limit: 2 }));
+  assert.equal(limited.threads.length, 2);
+  const all = await listThreads(listRequest());
+  const since = await listThreads(listRequest({ since: Date.now() }));
+  assert.deepEqual(since, all);
+});
+
+test("a listing skips a session without a title or a session id Ajour can use", async () => {
+  fakeClaude(() =>
+    out([
+      { ...done, name: "" },
+      { ...permission, sessionId: "-flag" },
+      { ...interactive, name: "  [PAY-12]  Spaced  " },
+    ]),
+  );
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(
+    threads.map((t) => [t.threadId, t.title]),
+    [[interactive.sessionId, "[PAY-12]  Spaced"]],
+  );
+});
+
+test("listed sessions refresh through readHandoffStates", async () => {
+  listedClaude();
+  const { threads } = await listThreads(listRequest());
+  const updates = await readHandoffStates({
+    tool: "claude",
+    handoffs: threads.map((thread, i) => ({
+      id: `h${i}`,
+      threadId: thread.threadId,
+      folderId: FOLDER,
+      native: thread.native,
+    })),
+  });
+  assert.deepEqual(
+    updates.map((u) => [u.state, u.title, u.native]),
+    threads.map((t) => [t.native.state, t.title, t.native]),
+  );
+});
+
+test("a listing claude can't answer throws what to do", async () => {
+  fakeClaude(refuse("executable_missing"));
+  await assert.rejects(listThreads(listRequest()), /isn't installed/);
+  fakeClaude(() => ok("not json"));
+  await assert.rejects(listThreads(listRequest()), /can't read/);
 });

@@ -9,6 +9,8 @@
 // keeps, through another app-server.
 import type {
   DetectToolsResult,
+  ListThreadsRequest,
+  ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
   StartHandoffRequest,
@@ -23,6 +25,8 @@ import {
   each,
   firstLine,
   isLate,
+  listTitle,
+  listed,
   oneLineTitle,
   pause,
   previousState,
@@ -32,9 +36,11 @@ import {
   refusalsFor,
   settingText,
   text,
+  timeOf,
   withNotes,
   type Handoff,
   type Json,
+  type Listed,
   type Native,
   type State,
   type Tool,
@@ -46,7 +52,7 @@ const SERVER = "codex-app-server";
 const RESUME = "codex-resume";
 // Codex refuses initialize without a client version, and Ajour gives a plugin
 // no way to read its own manifest: a test keeps this equal to plugin.json's.
-const CLIENT = { name: "ajour", title: "Ajour", version: "0.5.0" };
+const CLIENT = { name: "ajour", title: "Ajour", version: "0.6.0" };
 // Ajour sends a session one line of at most 1 MB, in UTF-8.
 export const LINE_LIMIT = 1024 * 1024;
 // One read takes at most 1000 lines, and waits at most 30 seconds.
@@ -105,8 +111,18 @@ export const BUSY_STARTING =
   "Ajour runs at most two Codex handoffs at once, and two are running. Hand off again when one finishes or waits for you.";
 export const BUSY_READING =
   "Both of Ajour's Codex sessions are running handoffs; refreshing again once one is free.";
+export const BUSY_LISTING =
+  "Both of Ajour's Codex sessions are running handoffs, so Ajour can't list Codex's threads until one is free.";
 const NO_READS =
   "This Codex version doesn't answer the reads Ajour follows a handoff with. Check for an update of this plugin.";
+const NO_LIST =
+  "This Codex version can't list its threads the way Ajour asks. Check for an update of this plugin.";
+// The threads a person started, in the CLI, an app or another app-server
+// client. A subagent's thread works for its parent.
+const LISTED_SOURCES = ["cli", "vscode", "exec", "appServer"];
+// A filesystem root, such as C:\, / or a network share's \\server\share\:
+// never a repository folder.
+const ROOT = /^(?:[A-Za-z]:|[\\/]{2}[^\\/]+[\\/]+[^\\/]+)?[\\/]*$/;
 const NOT_IN_TIME = "Codex didn't start the thread in time. Try again.";
 const MAYBE_STARTED =
   "Codex may have started the thread. Check Codex before handing off again.";
@@ -474,13 +490,118 @@ export async function startCodex(
   return {
     threadId: threadId as string,
     // The Codex app opens the thread from its link; the terminal resumes it.
-    ...(open === "app" ? { link: `codex://threads/${threadId}` } : {}),
-    resume: {
-      command: RESUME,
-      args: { thread: threadId as string, folder: request.folder.id },
-    },
+    ...(open === "app" ? { link: linkOf(threadId as string) } : {}),
+    resume: resumeOf(threadId as string, request.folder.id),
     native: withNotes(native, notes),
   };
+}
+
+const linkOf = (threadId: string) => `codex://threads/${threadId}`;
+const resumeOf = (threadId: string, folder: string) => ({
+  command: RESUME,
+  args: { thread: threadId, folder },
+});
+
+/** A listed thread's title: its name, else its first prompt line, as Codex shows it. */
+function titleOf(thread: Json): string | undefined {
+  const name = listTitle(thread.name);
+  if (name) return name;
+  const preview = typeof thread.preview === "string" ? thread.preview : "";
+  return listTitle(preview.split(/\r?\n/).find((line) => line.trim()));
+}
+
+/**
+ * The folder's threads, newest first, as a start with the default Open
+ * would have answered for each. A listing has no settings, so each thread
+ * opens in the Codex app, as a start does by default.
+ *
+ * Codex filters threads by the exact folder a session started in, which
+ * Ajour never tells the plugin. So the listing opens an app-server in the
+ * folder, as a start does, asks it which folder it runs in (`hooks/list`
+ * reports it), lists that folder's threads, and closes the session.
+ */
+export async function listCodex(
+  request: ListThreadsRequest,
+): Promise<ListThreadsResult> {
+  const deadline = Date.now() + READ_DEADLINE_MS;
+  let rpc: Rpc;
+  try {
+    rpc = await connect(request.folder.id, deadline);
+  } catch (error) {
+    if (isBusy(error)) throw new ToolError(BUSY_LISTING, "session_limit");
+    throw new ToolError(
+      reasonOf(codex, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  }
+  let data: unknown[];
+  let cwd: string;
+  try {
+    const [hooks] = await rpc.answered(
+      [await rpc.request("hooks/list", { cwds: [] })],
+      deadline,
+    );
+    if (missingMethod(hooks as Answer)) throw new ToolError(NO_LIST);
+    // `hooks/list` reports the folder the broker started the process in, the
+    // repository folder, since the app-server ignores `-C`. A filesystem root
+    // means it started elsewhere, and the root's threads aren't the folder's.
+    const entries = resultOf(hooks as Answer).data;
+    const reported = Array.isArray(entries)
+      ? text(record(entries[0])?.cwd, 4096)
+      : undefined;
+    if (!reported || ROOT.test(reported)) throw new ToolError(NO_LIST);
+    cwd = reported;
+    const [list] = await rpc.answered(
+      [
+        await rpc.request("thread/list", {
+          cwd,
+          limit: request.limit,
+          sortKey: "updated_at",
+          sortDirection: "desc",
+          sourceKinds: LISTED_SOURCES,
+        }),
+      ],
+      deadline,
+    );
+    if (missingMethod(list as Answer)) throw new ToolError(NO_LIST);
+    const threads = resultOf(list as Answer).data;
+    if (!Array.isArray(threads))
+      throw new ToolError("Codex returned a thread list Ajour can't read.");
+    data = threads;
+  } catch (error) {
+    throw new ToolError(
+      reasonOf(codex, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  } finally {
+    await closeServer(rpc.session);
+  }
+  const threads: Listed[] = [];
+  for (const value of data) {
+    const thread = record(value);
+    const threadId = text(thread?.id, 100);
+    if (!thread || !threadId || !THREAD_ID.test(threadId)) continue;
+    // Codex filtered by folder already; a thread of another folder, a
+    // subagent's, or one Codex doesn't keep is left out all the same.
+    if (thread.cwd !== cwd || thread.parentThreadId || thread.ephemeral)
+      continue;
+    const title = titleOf(thread);
+    if (!title) continue;
+    const status = text(record(thread.status)?.type, 64);
+    const state: State = status === "active" ? "working" : "unknown";
+    const native: Native = { state, label: LABELS[state], open: "app" };
+    if (status) native.status = status;
+    const updatedAt = timeOf(thread.updatedAt, 1000);
+    threads.push({
+      threadId,
+      title,
+      link: linkOf(threadId),
+      resume: resumeOf(threadId, request.folder.id),
+      native,
+      ...(updatedAt === undefined ? {} : { updatedAt }),
+    });
+  }
+  return listed(threads, request);
 }
 
 const KEPT = [

@@ -75,8 +75,8 @@ export function commandOf(request) {
     const slot = slotOf(arg);
     if (!slot) return arg;
     const value = slotValue(slot[2], request.args[slot[1]]);
-    // Launch modes run in their first folder; capture runs at the root.
-    if (slot[2] === "folder" && command.mode !== "capture") cwd ??= value;
+    // Every mode runs in its first folder (capture since Ajour #746).
+    if (slot[2] === "folder") cwd ??= value;
     return value;
   };
   const argv = [executable.names[0]];
@@ -97,7 +97,8 @@ export function commandOf(request) {
     throw refused("invalid_request");
   if (typeof request.stdin === "string" && request.stdin.length > 1024 * 1024)
     throw refused("invalid_request");
-  // A session starts at the root without a folder; launch modes refuse.
+  // Capture and session start at the root without a folder; launch modes
+  // refuse.
   if (command.mode !== "capture" && command.mode !== "session" && !cwd)
     throw refused("folder_refused");
   if (command.mode === "terminal") {

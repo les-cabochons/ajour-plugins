@@ -9,8 +9,11 @@
 // `opencode attach <address> -s <session>` in a terminal, where Ajour fills
 // the address from the connection.
 import type {
+  AjourQueryValue,
   AjourResponse,
   DetectToolsResult,
+  ListThreadsRequest,
+  ListThreadsResult,
   PluginConnection,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
@@ -27,6 +30,8 @@ import {
   each,
   firstLine,
   isLate,
+  listTitle,
+  listed,
   oneLineTitle,
   previousState,
   reasonOf,
@@ -37,6 +42,7 @@ import {
   withNotes,
   type Handoff,
   type Json,
+  type Listed,
   type Native,
   type State,
   type Tool,
@@ -153,7 +159,7 @@ function requestRefusal(error: RequestError): ToolError {
 interface Call {
   method: "GET" | "POST" | "DELETE";
   path: string;
-  query?: Record<string, number>;
+  query?: Record<string, AjourQueryValue>;
   body?: unknown;
 }
 
@@ -403,13 +409,88 @@ export async function startOpenCode(
   }
   return {
     threadId: session,
-    // Open attaches a terminal to the same server, which Ajour fills in.
-    resume: {
-      command: "opencode-attach",
-      args: { session, folder: request.folder.id },
-    },
+    resume: attach(session, request.folder.id),
     native: { state: "working", label: "Started" },
   };
+}
+
+/** Open attaches a terminal to the same server, which Ajour fills in. */
+function attach(session: string, folder: string) {
+  return { command: "opencode-attach", args: { session, folder } };
+}
+
+/**
+ * The top-level sessions of the folder the connection's server runs in,
+ * newest first, as a start would have answered for each.
+ *
+ * OpenCode filters sessions by the exact folder they started in, which
+ * Ajour never tells the plugin; the server says its own. A start hands off
+ * to the connection's server whatever the folder, and so does a listing: it
+ * lists the server's folder for the folder Ajour asks about.
+ */
+export async function listOpenCode(
+  connection: PluginConnection | undefined,
+  request: ListThreadsRequest,
+): Promise<ListThreadsResult> {
+  const deadline = Date.now() + READ_DEADLINE_MS;
+  let directory: string;
+  let list: unknown;
+  try {
+    const server = requireConnection(connection);
+    const path = record(
+      await before(opencode, deadline, () => getJson(server, "/path")),
+    );
+    const own = text(path?.directory, 4096);
+    if (!own)
+      throw new ToolError(
+        "OpenCode didn't say which folder its server runs in.",
+      );
+    directory = own;
+    // `start` keeps the sessions updated at or after it.
+    const query: Record<string, AjourQueryValue> = {
+      roots: true,
+      directory,
+      limit: request.limit,
+    };
+    if (request.since !== undefined)
+      query.start = Math.floor(request.since) + 1;
+    list = await before(opencode, deadline, async () => {
+      const response = await send(server, {
+        method: "GET",
+        path: "/session",
+        query,
+      });
+      if (!response.ok) await failed(response, true);
+      return json(response);
+    });
+  } catch (error) {
+    throw new ToolError(
+      reasonOf(opencode, error),
+      error instanceof ToolError ? error.code : undefined,
+    );
+  }
+  if (!Array.isArray(list))
+    throw new ToolError("OpenCode returned a session list Ajour can't read.");
+  const threads: Listed[] = [];
+  for (const value of list) {
+    const session = record(value);
+    const threadId = text(session?.id);
+    if (!session || !threadId || !SESSION_ID.test(threadId)) continue;
+    // OpenCode filtered already; a subfolder's session or a subagent's is
+    // left out all the same.
+    if (session.directory !== directory || session.parentID) continue;
+    const title = listTitle(session.title);
+    if (!title) continue;
+    const updatedAt = updatedOf(record(session.time)?.updated);
+    threads.push({
+      threadId,
+      title,
+      resume: attach(threadId, request.folder.id),
+      native: { state: "unknown", label: LABELS.unknown },
+      ...(updatedAt === undefined ? {} : { updatedAt }),
+    });
+  }
+  return listed(threads, request);
 }
 
 /** A session's `time.updated`, or undefined when it isn't a time. */

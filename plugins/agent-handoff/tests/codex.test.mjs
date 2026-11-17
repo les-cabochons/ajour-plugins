@@ -5,8 +5,14 @@
 // plugin.json the way Ajour does.
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { detectTools, readHandoffStates, startHandoff } from "../src/plugin.ts";
 import {
+  detectTools,
+  listThreads,
+  readHandoffStates,
+  startHandoff,
+} from "../src/plugin.ts";
+import {
+  BUSY_LISTING,
   BUSY_READING,
   BUSY_STARTING,
   ELSEWHERE,
@@ -1147,4 +1153,232 @@ test("the recordings carry no home folder", () => {
     "read-unrecorded",
   ])
     assert.ok(!/alext|AppData/.test(JSON.stringify(recorded(name))), name);
+});
+
+// Listing threads
+
+// One recorded listing (fixtures/codex/list.jsonl): the app-server says the
+// folder it runs in, then lists that folder's threads, renamed: one titled
+// with two keys, two untitled ones whose first prompt line Codex shows, and
+// one titled without a key.
+const listedThreads = find("list", (m) => m.result?.readStates).result.data;
+const OTHER = PATH.replace("repo", "other");
+const listRequest = (extra = {}) => ({
+  tool: "codex",
+  folder: { id: FOLDER },
+  limit: 50,
+  ...extra,
+});
+
+/** A program answering a listing with `threads`, and reads with `read`. */
+const listingProgram = (threads, read = () => undefined) =>
+  answering((message) => {
+    if (message.method === "initialize") return { result: {} };
+    if (message.method === "hooks/list")
+      return { data: [{ cwd: PATH, hooks: [], warnings: [], errors: [] }] };
+    if (message.method === "thread/list")
+      return { data: threads, nextCursor: null, readStates: {} };
+    return read(message);
+  });
+
+test("a listing asks an app-server in the folder which folder it runs in, and lists that folder's threads newest first", async () => {
+  const server = program("list");
+  const { calls } = fakeCodex([server]);
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(calls, [
+    {
+      argv: ["codex", "-C", PATH, "app-server"],
+      mode: "session",
+      cwd: PATH,
+      session: true,
+    },
+  ]);
+  const sent = messages(server.log);
+  assert.deepEqual(
+    sent.map((m) => m.method),
+    ["initialize", "initialized", "hooks/list", "thread/list"],
+  );
+  // Codex filters by the exact folder it reported: the plugin never has it.
+  assert.deepEqual(sent[3].params, {
+    cwd: PATH,
+    limit: 50,
+    sortKey: "updated_at",
+    sortDirection: "desc",
+    sourceKinds: ["cli", "vscode", "exec", "appServer"],
+  });
+  assert.deepEqual(
+    threads.map((t) => [t.threadId, t.title, t.updatedAt]),
+    [
+      [
+        listedThreads[0].id,
+        "[PAY-12] [PAY-13] Share the session cookie",
+        listedThreads[0].updatedAt * 1000,
+      ],
+      // An untitled thread shows its first prompt line, as the Codex app does.
+      [
+        listedThreads[1].id,
+        "[PAY-12] Fix login redirect",
+        listedThreads[1].updatedAt * 1000,
+      ],
+      [
+        listedThreads[2].id,
+        "Look at the flaky sync test.",
+        listedThreads[2].updatedAt * 1000,
+      ],
+      [
+        listedThreads[3].id,
+        "Rename the settings page",
+        listedThreads[3].updatedAt * 1000,
+      ],
+    ],
+  );
+  // What a start with the default Open answers: the app's link, the
+  // terminal's resume, and the same native keys.
+  const [first] = threads;
+  assert.equal(first.link, `codex://threads/${first.threadId}`);
+  assert.deepEqual(first.resume, {
+    command: "codex-resume",
+    args: { thread: first.threadId, folder: FOLDER },
+  });
+  assert.deepEqual(first.native, {
+    state: "unknown",
+    label: "Unknown",
+    open: "app",
+    status: "notLoaded",
+  });
+  for (const thread of threads)
+    assert.ok(
+      new TextEncoder().encode(JSON.stringify(thread.native)).length <= 4096,
+    );
+  // The listing lets go of its session, which frees one of the two.
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("a listing keeps only the folder's own top-level threads, each once", async () => {
+  const [first, second, third, fourth] = listedThreads;
+  fakeCodex([
+    listingProgram([
+      first,
+      { ...second, cwd: OTHER },
+      { ...third, parentThreadId: first.id },
+      { ...fourth, ephemeral: true },
+      first,
+      { ...fourth, id: "not-a-uuid" },
+      {
+        ...fourth,
+        id: "01a1a9cc-0000-7000-8000-000000000001",
+        name: null,
+        preview: "  ",
+      },
+    ]),
+  ]);
+  const { threads } = await listThreads(listRequest());
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    [first.id],
+  );
+});
+
+for (const root of [
+  "C:\\",
+  "C:/",
+  "C:",
+  "/",
+  "\\",
+  "\\\\server\\share\\",
+  "\\\\server\\share",
+  "//server/share/",
+])
+  test(`a Codex that reports the root ${JSON.stringify(root)} as its folder lists nothing and throws`, async () => {
+    const sent = [];
+    const server = answering((message) => {
+      sent.push(message.method);
+      if (message.method === "initialize") return { result: {} };
+      if (message.method === "hooks/list")
+        return { data: [{ cwd: root, hooks: [], warnings: [], errors: [] }] };
+      if (message.method === "thread/list")
+        return { data: listedThreads, nextCursor: null, readStates: {} };
+      return undefined;
+    });
+    fakeCodex([server]);
+    await assert.rejects(listThreads(listRequest()), /can't list its threads/);
+    assert.deepEqual(sent, ["initialize", "hooks/list"]);
+    assert.equal(sessionsOf()[0].state, "closed");
+  });
+
+test("a listing passes limit to Codex and keeps the threads changed after since", async () => {
+  const server = program("list");
+  fakeCodex([server]);
+  const since = listedThreads[1].updatedAt * 1000;
+  const { threads } = await listThreads(listRequest({ since, limit: 3 }));
+  assert.equal(messages(server.log)[3].params.limit, 3);
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    [listedThreads[0].id],
+  );
+});
+
+test("listed threads refresh through readHandoffStates", async () => {
+  const server = program("list");
+  const reads = [];
+  fakeCodex([
+    server,
+    listingProgram([], (message) => {
+      reads.push(message.method);
+      if (message.method === "thread/read")
+        return {
+          thread: {
+            ...listedThreads.find((t) => t.id === message.params.threadId),
+            status: { type: "notLoaded" },
+          },
+        };
+      if (message.method === "thread/turns/list")
+        return {
+          data: [
+            { id: "turn-1", status: "completed", completedAt: 1793850689 },
+          ],
+        };
+      return undefined;
+    }),
+  ]);
+  const { threads } = await listThreads(listRequest());
+  const updates = await readHandoffStates({
+    tool: "codex",
+    handoffs: threads
+      .slice(0, 2)
+      .map((thread, i) => handoff(`h${i}`, thread.threadId, thread.native)),
+  });
+  assert.deepEqual(
+    updates.map((u) => [u.id, u.state, u.native.label, u.native.open]),
+    [
+      ["h0", "ready", "Completed", "app"],
+      ["h1", "ready", "Completed", "app"],
+    ],
+  );
+  assert.deepEqual(reads, [
+    "thread/read",
+    "thread/turns/list",
+    "thread/read",
+    "thread/turns/list",
+  ]);
+});
+
+test("a listing while two handoffs run says so", async () => {
+  fakeCodex([refuse("session_limit")]);
+  await assert.rejects(listThreads(listRequest()), (error) => {
+    assert.equal(error.message, BUSY_LISTING);
+    return true;
+  });
+});
+
+test("a Codex that can't say its folder or list threads throws why, and closes its session", async () => {
+  fakeCodex([
+    answering((message) =>
+      message.method === "initialize"
+        ? { result: {} }
+        : { error: { code: -32601, message: "Method not found" } },
+    ),
+  ]);
+  await assert.rejects(listThreads(listRequest()), /can't list its threads/);
+  assert.equal(sessionsOf()[0].state, "closed");
 });

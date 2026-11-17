@@ -1,11 +1,10 @@
 // Hands backlog items off to GitHub Copilot CLI as sessions with an id the
 // plugin chooses (`copilot --session-id <uuid>`, the prompt on stdin), started
 // detached in the repository folder. Copilot CLI has no command that reports
-// a session's state, so a refresh reports unknown.
+// a session's state, so plugin.json sets `followsState: false`: Ajour shows
+// its handoffs as Started and never asks the plugin for their state.
 import type {
   DetectToolsResult,
-  ReadHandoffStatesRequest,
-  ReadHandoffStatesResult,
   StartHandoffRequest,
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
@@ -17,21 +16,18 @@ import {
   firstLine,
   launch,
   oneLineTitle,
-  previousState,
   reasonOf,
   refusalsFor,
   settingText,
-  text,
-  withNotes,
-  type Handoff,
-  type Native,
   type Tool,
-  type Update,
 } from "./shared.ts";
 
 export const COPILOT_TOOL = "copilot";
 // The most stdin Ajour writes to a command, in characters.
 export const PROMPT_LIMIT = 1024 * 1024;
+// Copilot CLI 1.0.112 keeps a session's events under COPILOT_HOME, but no
+// command reports them (`copilot sessions` only imports one), and an event log
+// alone can't tell a finished task from one waiting for you.
 export const NO_STATE = "Copilot CLI doesn't report a session's state.";
 
 const copilot: Tool = {
@@ -118,28 +114,7 @@ export async function startCopilot(
       command: "copilot-resume",
       args: { session, folder: request.folder.id },
     },
-    native: { state: "working", label: "Started", tools },
+    // No state: Ajour keeps the handoff Started and never reads it again.
+    native: { label: "Started", tools },
   };
-}
-
-/** The last state kept, with the reason Copilot CLI can't say more. */
-function unknownUpdate(handoff: Handoff): Update {
-  const previous = handoff.native;
-  const kept: Native = { state: previousState(previous) };
-  const tools = text(previous.tools, 16);
-  if (tools) kept.tools = tools;
-  return {
-    id: handoff.id,
-    state: "unknown",
-    native: withNotes(kept, { label: "Unknown", reason: NO_STATE }),
-  };
-}
-
-export async function readCopilot(
-  request: ReadHandoffStatesRequest,
-): Promise<ReadHandoffStatesResult> {
-  // Copilot CLI keeps a session's events under COPILOT_HOME, but no command
-  // reports them, and an event log alone can't tell a finished turn from one
-  // waiting for you. So no refresh runs a command, and none says gone.
-  return request.handoffs.map(unknownUpdate);
 }

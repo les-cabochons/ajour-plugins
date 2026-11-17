@@ -131,7 +131,8 @@ test("a start chooses the session id and runs copilot detached in the folder, th
       command: "copilot-resume",
       args: { session: result.threadId, folder: FOLDER },
     },
-    native: { state: "working", label: "Started", tools: "ask" },
+    // No state: Ajour shows the handoff as Started and never reads it again.
+    native: { label: "Started", tools: "ask" },
   });
 });
 
@@ -268,47 +269,22 @@ test("Open resumes the session in a terminal in its folder", async () => {
   ]);
 });
 
-test("every refresh is unknown and keeps the last state, never gone", async () => {
+test("Copilot CLI doesn't follow state, so a refresh runs nothing and is refused", async () => {
+  // plugin.json sets followsState: false, so Ajour shows its handoffs as
+  // Started and never asks for their state (Ajour #759).
   const calls = fakeCopilot();
-  const updates = await readHandoffStates({
-    tool: "copilot",
-    handoffs: [
-      handoff("h1", { state: "working", label: "Started", tools: "allow" }),
-      handoff("h2", { state: "ready", reason: "old" }),
-      handoff("h3", {}),
-    ],
-  });
-  assert.equal(calls.length, 0);
-  assert.deepEqual(updates, [
-    {
-      id: "h1",
-      state: "unknown",
-      native: {
-        state: "working",
-        tools: "allow",
-        label: "Unknown",
-        reason: NO_STATE,
-      },
-    },
-    {
-      id: "h2",
-      state: "unknown",
-      native: { state: "ready", label: "Unknown", reason: NO_STATE },
-    },
-    {
-      id: "h3",
-      state: "unknown",
-      native: { state: "working", label: "Unknown", reason: NO_STATE },
-    },
-  ]);
-});
-
-test("a refresh with no handoffs returns none", async () => {
-  fakeCopilot();
-  assert.deepEqual(
-    await readHandoffStates({ tool: "copilot", handoffs: [] }),
-    [],
+  await assert.rejects(
+    readHandoffStates({
+      tool: "copilot",
+      handoffs: [handoff("h1", { label: "Started", tools: "allow" })],
+    }),
+    new RegExp(NO_STATE.replace(/[.']/g, "\\$&")),
   );
+  await assert.rejects(
+    readHandoffStates({ tool: "copilot", handoffs: [] }),
+    /doesn't report a session's state/,
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("the recorded copilot has every flag the commands use", () => {

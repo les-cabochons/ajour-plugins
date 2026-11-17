@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
@@ -291,6 +291,30 @@
           {
             "if": "model",
             "args": ["--model", "{model:text}"]
+          },
+          "--add-dir",
+          "{folder:folder}"
+        ],
+        "stdin": "text",
+        "mode": "capture",
+        "timeoutSeconds": 20
+      },
+      {
+        "id": "claude-start-hook",
+        "executable": "claude",
+        "args": [
+          "--bg",
+          "--name",
+          "{title:text}",
+          {
+            "if": "model",
+            "args": ["--model", "{model:text}"]
+          },
+          "--settings",
+          {
+            "kind": "hook-url",
+            "name": "hook",
+            "template": "{\"hooks\":{\"Notification\":[{\"hooks\":[{\"type\":\"http\",\"url\":\"{url}\",\"timeout\":5}]}],\"SessionEnd\":[{\"hooks\":[{\"type\":\"http\",\"url\":\"{url}\"}]}]}}"
           },
           "--add-dir",
           "{folder:folder}"

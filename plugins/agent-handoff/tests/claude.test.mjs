@@ -17,6 +17,7 @@ import {
   fakeBroker,
   flush,
   folders,
+  manifest,
   ok,
   out,
   refuse,
@@ -50,14 +51,24 @@ afterEach(() => {
   for (const id of Object.keys(folders)) delete folders[id];
 });
 
-/** Installs a fake claude. `answer` gets argv and returns a capture result. */
-function fakeClaude(answer) {
+/**
+ * Installs a fake claude. `answer` gets argv and returns a capture result;
+ * `options` go to the fake broker, such as a start's `hookUrl`.
+ */
+function fakeClaude(answer, options) {
   return fakeBroker((argv, call) => {
     // Detection asks every tool; these tests have only claude.
     if (argv[0] !== "claude") throw refused("executable_missing");
     return answer(argv, call);
-  });
+  }, options);
 }
+
+// The URL Ajour builds for a start's hooks (#726): loopback, its API port,
+// the handoff's id and a 43-character base64url token.
+const HOOK_URL =
+  "http://127.0.0.1:8787/hooks/handoff/h-1?token=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
+const hooked = (settings = {}, extra = {}) =>
+  startRequest(settings, { hook: { url: HOOK_URL }, ...extra });
 
 /** Answers like the recorded claude: --bg starts, agents lists `sessions`. */
 const recordedClaude =
@@ -221,6 +232,95 @@ test("a terminal Ajour can't open keeps the started session, with the reason", a
     result.native.reason,
     "The session runs in the background, but Ajour couldn't open a terminal: Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.",
   );
+});
+
+test("a start with a hook passes Claude Code settings whose HTTP hooks post to it", async () => {
+  const calls = fakeClaude(recordedClaude(), { hookUrl: HOOK_URL });
+  const request = hooked({ model: "opus" });
+  const result = await startHandoff(request);
+  const [start] = calls;
+  assert.equal(start.mode, "capture");
+  assert.equal(start.stdin, request.prompt);
+  const at = start.argv.indexOf("--settings");
+  assert.deepEqual(
+    [...start.argv.slice(0, at), ...start.argv.slice(at + 2)],
+    [
+      "claude",
+      "--bg",
+      "--name",
+      "AJ-39 Hand off to Claude Code",
+      "--model",
+      "opus",
+      "--add-dir",
+      FOLDER,
+    ],
+  );
+  // Exactly the manifest's template, filled with the start's URL alone.
+  const template = manifest.processes.commands
+    .find((command) => command.id === "claude-start-hook")
+    .args.find((arg) => arg.kind === "hook-url").template;
+  assert.equal(start.argv[at + 1], template.replaceAll("{url}", HOOK_URL));
+  const settings = JSON.parse(start.argv[at + 1]);
+  assert.deepEqual(Object.keys(settings), ["hooks"]);
+  // Only events whose reply can't steer the session: a Stop reply could keep
+  // Claude working with its own instruction (ajour#765). Notification gives up
+  // after 5 seconds rather than http's default 600, so a listener that never
+  // answers can't stall Claude Code; SessionEnd hooks already share a
+  // 1.5-second budget, which a longer timeout would raise.
+  assert.deepEqual(settings.hooks, {
+    Notification: [{ hooks: [{ type: "http", url: HOOK_URL, timeout: 5 }] }],
+    SessionEnd: [{ hooks: [{ type: "http", url: HOOK_URL }] }],
+  });
+  // No hook runs a command, and the URL appears nowhere else.
+  assert.equal(start.argv[at + 1].includes('"command"'), false);
+  assert.equal(
+    calls.filter((call) => call.argv.join(" ").includes(HOOK_URL)).length,
+    1,
+  );
+  assert.equal(result.threadId, sessionId);
+  // The token stays out of what Ajour stores.
+  assert.equal(JSON.stringify(result).includes("token"), false);
+});
+
+test("a terminal start carries the hook too: the terminal only attaches", async () => {
+  const calls = fakeClaude(recordedClaude(), { hookUrl: HOOK_URL });
+  await startHandoff(hooked({ startMode: "terminal" }));
+  assert.deepEqual(
+    calls.map((call) => [call.argv[1], call.mode]),
+    [
+      ["--bg", "capture"],
+      ["agents", "capture"],
+      ["attach", "terminal"],
+    ],
+  );
+  assert.ok(calls[0].argv.includes("--settings"));
+  assert.deepEqual(calls[2].argv, ["claude", "attach", "e2cf2a01", FOLDER]);
+});
+
+test("a start without a hook runs claude --bg without settings", async () => {
+  // The broker refuses a hook-url argument outside a start that has a hook,
+  // so a start without one never names that command.
+  const calls = fakeClaude(recordedClaude());
+  const result = await startHandoff(startRequest({ startMode: "terminal" }));
+  assert.deepEqual(calls[0].argv, [
+    "claude",
+    "--bg",
+    "--name",
+    "AJ-39 Hand off to Claude Code",
+    "--add-dir",
+    FOLDER,
+  ]);
+  assert.equal(result.threadId, sessionId);
+  assert.equal(result.native.reason, undefined);
+});
+
+test("a hook Ajour refuses is a start failure that names Claude Code", async () => {
+  // Ajour checks the URL's shape again and refuses one it didn't build.
+  fakeClaude(recordedClaude());
+  await assert.rejects(startHandoff(hooked()), {
+    message:
+      "Ajour refused this start's hook address, so it didn't start Claude Code. Hand off again, or update Ajour.",
+  });
 });
 
 test("an untrusted folder asks the user to trust it in Claude Code first", async () => {

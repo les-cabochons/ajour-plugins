@@ -1,5 +1,6 @@
 // Hands backlog items off to Claude Code as background sessions (`claude
-// --bg`), and reads their state back from `claude agents --json --all`.
+// --bg`), and reads their state back from `claude agents --json --all`. A
+// start's HTTP hooks tell Ajour when to read it again.
 import type {
   DetectToolsResult,
   ListThreadsRequest,
@@ -72,6 +73,8 @@ const claude: Tool = {
       "Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.",
     output_limit:
       "Claude Code listed more sessions than Ajour accepts. Remove old background sessions with claude rm, then try again.",
+    hook_refused:
+      "Ajour refused this start's hook address, so it didn't start Claude Code. Hand off again, or update Ajour.",
   }),
   late: "Claude Code took too long; refreshing again later.",
   failureLine(value) {
@@ -263,10 +266,15 @@ export async function startClaude(
   };
   const model = settingText(request.settings.model);
   if (model) args.model = model;
+  // With a hook, Ajour writes its URL into the manifest's `--settings`
+  // template, whose HTTP hooks post when the session stops, needs the user
+  // or ends; the plugin never passes the URL. Without one, such as a start
+  // Ajour gives no hook, the broker would refuse that command.
+  const command = request.hook ? "claude-start-hook" : "claude-start";
   let output: string;
   try {
     // The prompt goes on stdin, never on the command line.
-    output = await capture(claude, "claude-start", args, request.prompt);
+    output = await capture(claude, command, args, request.prompt);
   } catch (error) {
     // Ajour stopped claude or dropped its output, so the session may exist.
     if (isUncertainStart(error))
@@ -365,9 +373,7 @@ export async function listClaude(
     threads.push({
       threadId,
       title,
-      ...(job
-        ? { resume: attach(job, request.folder.id) }
-        : {}),
+      ...(job ? { resume: attach(job, request.folder.id) } : {}),
       native: nativeOf(session, stateOf(session)),
     });
   }

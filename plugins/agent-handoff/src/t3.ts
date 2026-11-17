@@ -67,11 +67,6 @@ const LABELS: Record<State, string> = {
 const NOT_RUNNING = /No running T3 Code server\b/i;
 const NOT_FOUND =
   /Thread \S+ (?:is no longer available|was not found|does not exist)/i;
-// T3 creates the folder it starts in, which fails at a root such as C:\ or
-// a network share's \\server\share\. `thread show` takes no folder argument,
-// so Ajour starts it there (#53).
-const ROOT_REFUSED =
-  /PermissionDenied: FileSystem\.makeDirectory \((?:[A-Za-z]:|[\\/]{2}[^\\/()]+[\\/]+[^\\/()]+)?[\\/]*\)/;
 const SHOW_CONCURRENCY = 3;
 const MAYBE_STARTED =
   "T3 Code may have started the thread. Check T3 Code before handing off again.";
@@ -92,18 +87,13 @@ const t3: Tool = {
       .map((line) => line.trim())
       .filter(Boolean);
     const known = lines.find(
-      (line) =>
-        NOT_RUNNING.test(line) ||
-        NOT_FOUND.test(line) ||
-        ROOT_REFUSED.test(line),
+      (line) => NOT_RUNNING.test(line) || NOT_FOUND.test(line),
     );
     return (known ?? lines[0] ?? "").slice(0, 500);
   },
   explain(message) {
     if (NOT_RUNNING.test(message))
       return "T3 Code isn't running. Start T3 Code, then refresh.";
-    if (ROOT_REFUSED.test(message))
-      return "T3 Code refused to run at the system root, where Ajour starts t3 thread show, so Ajour can't tell whether this thread waits for you. Check it in T3 Code.";
     return message;
   },
 };
@@ -112,13 +102,14 @@ function isNotFound(error: unknown): boolean {
   return error instanceof ToolError && NOT_FOUND.test(error.message);
 }
 
-function isRootRefused(error: unknown): boolean {
-  return error instanceof ToolError && ROOT_REFUSED.test(error.message);
-}
-
-async function showThread(threadId: string): Promise<Json> {
+/**
+ * Reads one thread. `t3 thread show` takes no folder, but T3 creates the
+ * folder it starts in and fails at the system root (#53), so the command
+ * declares the repository folder as its `cwd` and Ajour starts it there.
+ */
+async function showThread(threadId: string, folder: string): Promise<Json> {
   const shown = record(
-    await captureJson(t3, "thread-show", { thread: threadId }),
+    await captureJson(t3, "thread-show", { thread: threadId, folder }),
   )?.thread;
   const thread = record(shown);
   if (!thread || thread.threadId !== threadId)
@@ -285,32 +276,19 @@ export async function startT3(
       "T3 Code returned no thread ID. Check T3 Code before handing off again.",
     );
   // The thread exists now. Keep it even if reading its link fails.
+  // `thread show` reads the one new thread by id: unlike the folder's list,
+  // its output doesn't grow with the project's threads.
   let thread: Json = started;
   let notes: Native = {};
   try {
     thread = {
       ...started,
       ...(await before(t3, began + START_DEADLINE_MS, () =>
-        showThread(threadId),
+        showThread(threadId, request.folder.id),
       )),
     };
   } catch (error) {
     notes = { reason: reasonOf(t3, error) };
-    // T3 refused to show it at the root (#53); the folder's list, which runs
-    // in the folder, has the link too.
-    if (isRootRefused(error)) {
-      try {
-        const listedThread = (
-          await folderThreads(request.folder.id, began + START_DEADLINE_MS)
-        ).find((candidate) => candidate.threadId === threadId);
-        if (listedThread) {
-          thread = { ...started, ...listedThread };
-          notes = {};
-        }
-      } catch {
-        // Keep the reason thread show gave.
-      }
-    }
   }
   const link = https(thread.link);
   return {
@@ -390,7 +368,8 @@ async function readThread(
   listed: Json | undefined,
   deadline: number,
 ) {
-  const show = () => before(t3, deadline, () => showThread(handoff.threadId));
+  const show = () =>
+    before(t3, deadline, () => showThread(handoff.threadId, handoff.folderId));
   if (!listed) {
     // Archived threads leave the list, but `thread show` still finds them.
     // Only T3 saying the thread doesn't exist makes it gone.

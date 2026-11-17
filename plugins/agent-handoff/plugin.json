@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
@@ -271,6 +271,7 @@
         "id": "thread-show",
         "executable": "t3",
         "args": ["thread", "show", "{thread:id}", "--json", "--messages", "0"],
+        "cwd": "{folder:folder}",
         "mode": "capture",
         "timeoutSeconds": 10
       },

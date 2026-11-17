@@ -1,7 +1,7 @@
 // Hands backlog items off to GitHub Copilot CLI as sessions with an id the
-// plugin chooses (`copilot --session-id <uuid> -p <prompt>`), started detached
-// in the repository folder. Copilot CLI has no command that reports a
-// session's state, so a refresh reports unknown.
+// plugin chooses (`copilot --session-id <uuid>`, the prompt on stdin), started
+// detached in the repository folder. Copilot CLI has no command that reports
+// a session's state, so a refresh reports unknown.
 import type {
   DetectToolsResult,
   ReadHandoffStatesRequest,
@@ -30,10 +30,8 @@ import {
 } from "./shared.ts";
 
 export const COPILOT_TOOL = "copilot";
-// Ajour passes a detached command's arguments to Windows in one command line
-// of at most 32,767 characters, each counted twice for quoting. The prompt
-// leaves room for the executable, the folder, the title and the model.
-export const PROMPT_LIMIT = 12_000;
+// The most stdin Ajour writes to a command, in characters.
+export const PROMPT_LIMIT = 1024 * 1024;
 export const NO_STATE = "Copilot CLI doesn't report a session's state.";
 
 const copilot: Tool = {
@@ -43,6 +41,8 @@ const copilot: Tool = {
     invalid_request:
       "Ajour refused a value for copilot. Check the model; a terminal also needs a repository folder path without unusual characters.",
     output_limit: "Copilot CLI printed more than Ajour accepts.",
+    stdin_failed:
+      "Copilot CLI didn't read the prompt: it stopped first, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts, then hand off again.",
   }),
   late: "Copilot CLI took too long. Try again.",
   failureLine(value) {
@@ -73,28 +73,16 @@ export async function detectCopilot(): Promise<
   }
 }
 
-/**
- * The prompt as one command-line value. Ajour refuses line breaks in a value,
- * and one that starts with "-", which copilot would read as a flag.
- */
-export function onePrompt(prompt: string): string {
-  return prompt
-    .replace(/\0/g, "")
-    .replace(/[ \t]*(?:\r\n|\r|\n)+[ \t]*/g, " ")
-    .trim()
-    .replace(/^[\s-]+/, "");
-}
-
 export async function startCopilot(
   request: StartHandoffRequest,
 ): Promise<StartHandoffResult> {
   const deadline = Date.now() + START_DEADLINE_MS;
-  const prompt = onePrompt(request.prompt);
-  if (!prompt)
+  const { prompt } = request;
+  if (!prompt.trim())
     throw new ToolError("The prompt is empty. Check the handoff template.");
   if (prompt.length > PROMPT_LIMIT)
     throw new ToolError(
-      `The prompt has ${prompt.length.toLocaleString("en-US")} characters, and Copilot CLI takes at most ${PROMPT_LIMIT.toLocaleString("en-US")} on its command line. Shorten the handoff template, such as by leaving out the item's description.`,
+      `The prompt has ${prompt.length.toLocaleString("en-US")} characters, and Ajour gives Copilot CLI at most ${PROMPT_LIMIT.toLocaleString("en-US")}. Shorten the prompt.`,
     );
   // The plugin chooses the session id, so it never reads it back. Copilot
   // names a session only when it creates it.
@@ -103,17 +91,20 @@ export async function startCopilot(
     folder: request.folder.id,
     session,
     title: oneLineTitle(request.title),
-    prompt,
   };
   const model = settingText(request.settings.model);
   if (model) args.model = model;
   const tools = request.settings.tools === "allow" ? "allow" : "ask";
   const command = tools === "allow" ? "copilot-start-allow" : "copilot-start";
   try {
-    // `-p` runs the whole task and exits when it is done, so it starts
-    // detached. Only a capture command takes stdin, and Ajour stops a
-    // capture command, and the work with it, after its timeout.
-    await before(copilot, deadline, () => launch(copilot, command, args));
+    // Without a terminal, copilot reads the prompt from stdin, runs the whole
+    // task and exits when it is done, so it starts detached: Ajour stops a
+    // capture command, and the work with it, after its timeout. The start
+    // returns once copilot has read the prompt, which keeps its line breaks
+    // and stays off the command line.
+    await before(copilot, deadline, () =>
+      launch(copilot, command, args, prompt),
+    );
   } catch (error) {
     throw new ToolError(
       reasonOf(copilot, error),

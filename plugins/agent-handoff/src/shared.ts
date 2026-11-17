@@ -212,15 +212,24 @@ export async function captureJson(
   }
 }
 
-/** Starts a declared launch command, such as one that opens a terminal. */
+/**
+ * Starts a declared launch command, such as one that opens a terminal. A
+ * detached command that declares stdin gets `stdin`, and starts once it has
+ * read all of it.
+ */
 export async function launch(
   tool: Tool,
   command: string,
   args: Record<string, string>,
+  stdin?: string,
 ): Promise<void> {
   let result: Awaited<ReturnType<typeof ajour.process.run>>;
   try {
-    result = await ajour.process.run({ command, args });
+    result = await ajour.process.run({
+      command,
+      args,
+      ...(stdin === undefined ? {} : { stdin }),
+    });
   } catch (error) {
     throw refusal(tool, error);
   }

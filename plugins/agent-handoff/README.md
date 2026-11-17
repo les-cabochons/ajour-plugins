@@ -98,22 +98,24 @@ A terminal is Windows Terminal on Windows and Terminal on macOS, set in Settings
 
 ## Copilot CLI
 
-The plugin chooses each session's id, a new UUID, and starts `copilot -p` detached in the repository folder. `-p` works on the prompt and exits when the task is done, which takes longer than a plugin operation. Ajour stops a capture command, and the work with it, at its timeout, and only a capture command takes stdin. So the prompt is one command-line argument: line breaks become spaces, a leading `-` is dropped, and a prompt over 12,000 characters is refused before `copilot` runs, with "Shorten the handoff template, such as by leaving out the item's description." Ajour passes the argument straight to the executable, never through a shell.
+The plugin chooses each session's id, a new UUID, and starts `copilot` detached in the repository folder with the prompt on stdin. Without a terminal, `copilot` reads the prompt from piped stdin, works on it and exits when the task is done, which takes longer than a plugin operation. Ajour stops a capture command, and the work with it, at its timeout, so the start is a detached command that declares `stdin: "text"` (les-cabochons/ajour#748). The prompt reaches `copilot` whole: line breaks stay, it never shows in the process list, and the only limit is Ajour's 1,048,576 characters of stdin. A longer prompt is refused before `copilot` runs, with "Shorten the prompt."
+
+Ajour writes the prompt, closes stdin, and returns the start once `copilot` has read it all. `copilot` 1.0.112 reads it as it starts, about a second on Windows (5 seconds on the first launch after install). If it stops first, or hasn't read it within Ajour's 10 seconds, Ajour stops it and the start fails with "Copilot CLI didn't read the prompt: it stopped first, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts, then hand off again."
 
 ### Commands it runs
 
-| Command                                                          | What for                                                                                                                                                                                 |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `copilot -C <folder> --session-id <uuid> -n <title> -p <prompt>` | Starts the session, detached, in the folder. `-n` names it, which Copilot CLI allows only for a new session. With a model, adds `--model <model>` after the title. Returns once started. |
-| The same with `--allow-all-tools` before `-p`                    | The start when Tools is Allow all tools. It is a separate command, so Access shows it on its own.                                                                                        |
-| `copilot -C <folder> --resume <uuid>` in a terminal              | Opens the session: Open on the handoff. It shows the session's work, and takes another turn. Without a terminal, `copilot --resume` refuses: "No prompt provided."                       |
-| `copilot --version`                                              | Detects Copilot CLI. Times out after 10 seconds.                                                                                                                                         |
+| Command                                                                   | What for                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `copilot -C <folder> --session-id <uuid> -n <title>`, the prompt on stdin | Starts the session, detached, in the folder. `-n` names it, which Copilot CLI allows only for a new session. With a model, adds `--model <model>` after the title. Returns once `copilot` has read the prompt. |
+| The same with `--allow-all-tools` after the title or model                | The start when Tools is Allow all tools. It is a separate command, so Access shows it on its own.                                                                                                              |
+| `copilot -C <folder> --resume <uuid>` in a terminal                       | Opens the session: Open on the handoff. It shows the session's work, and takes another turn. Without a terminal, `copilot --resume` refuses: "No prompt provided."                                             |
+| `copilot --version`                                                       | Detects Copilot CLI. Times out after 10 seconds.                                                                                                                                                               |
 
-The UUID is the handoff's thread id. A detached command gives no output and no exit code, so a start that `copilot` fails, such as when it isn't signed in, still leaves the handoff: Copilot CLI writes the session with its id and name before it signs in, without the prompt, and Open resumes that empty session. Sign in with `copilot` and `/login` before handing off.
+The UUID is the handoff's thread id. A detached command gives no output and no exit code, so a start that `copilot` fails after it read the prompt, such as when it isn't signed in, still leaves the handoff: Copilot CLI writes the session with its id and name before it signs in, and Open resumes that session. Sign in with `copilot` and `/login` before handing off.
 
 ### Tools
 
-`-p` can't ask before Copilot edits a file or runs a command. It runs only what is already allowed: read-only commands, and what you allowed with "Yes, and don't ask again" in this repository. It skips the rest. Open the session to allow them and continue. Allow all tools adds `--allow-all-tools`, so the session edits files and runs commands without asking.
+Without a terminal, Copilot can't ask before it edits a file or runs a command. It runs only what is already allowed: read-only commands, and what you allowed with "Yes, and don't ask again" in this repository. It skips the rest. Open the session to allow them and continue. Allow all tools adds `--allow-all-tools`, so the session edits files and runs commands without asking.
 
 ### States
 
@@ -278,16 +280,20 @@ Open in a terminal while the handoff is Working runs `codex resume` beside Ajour
 
 ## Default prompt
 
-The manifest has no default prompt yet: `capabilities.handoff.promptTemplate` arrives with les-cabochons/ajour#739, which isn't on Ajour's main branch. Until then Ajour uses its own fallback. Once it lands, the manifest gets this template:
+The manifest declares the default prompt in `capabilities.handoff.promptTemplate` (les-cabochons/ajour#739). Ajour's template editor starts from it, and every tool gets the prompt it fills:
 
 ```text
-Work on {{item.key}}: {{item.title}}
-{{item.url}}
+[{{item.key}}] {{item.title}}
+
+Work on this {{item.type}} in the {{repo.name}} repository, from the folder you start in. Work on the branch you are on, and open a pull request when you are done.
+
+Link: {{item.url}}
+Parent, if any: {{item.parent.key}} {{item.parent.title}}
 
 {{item.description}}
-
-Work on the branch you are on, and open a pull request when you are done.
 ```
+
+It opens with the thread's name, `[KEY] title`, the same as Ajour's default title template. It uses only the slots Ajour fills for a handoff, and Ajour fills a missing parent or description with nothing. `tests/prompt-template.test.mjs` checks it with Ajour's template rules: known slots, the `slug` filter only, and at most 16 KB.
 
 ## Development
 
@@ -299,4 +305,4 @@ just test
 just typecheck
 ```
 
-The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot`, OpenCode 1.19.5's server on Windows, with its own XDG folders, in `tests/fixtures/opencode`, and JSON-RPC exchanges with `codex app-server` 0.169.0 on Windows in `tests/fixtures/codex` (see its README), each from a throwaway repository with home paths replaced. The OpenCode answers a live server gives only while a model works, such as a pending permission, are written from its `/doc` OpenAPI schema, in `tests/fixtures/opencode/schema`. `tests/codex-replay.mjs` replays a Codex exchange through the SDK fake's process sessions. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. The SDK's fake `ajour.http` answers OpenCode's requests and refuses one `plugin.json` doesn't declare. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.
+The tests run the plugin against outputs recorded from the real CLIs: `t3` in `tests/fixtures` (version in `version.txt`), `claude` 2.1.325 on Windows in `tests/fixtures/claude`, `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`, in `tests/fixtures/copilot` (the `stdin-` files from a start whose prompt was piped to a local model through Copilot CLI's BYOK variables), OpenCode 1.19.5's server on Windows, with its own XDG folders, in `tests/fixtures/opencode`, and JSON-RPC exchanges with `codex app-server` 0.169.0 on Windows in `tests/fixtures/codex` (see its README), each from a throwaway repository with home paths replaced. The OpenCode answers a live server gives only while a model works, such as a pending permission, are written from its `/doc` OpenAPI schema, in `tests/fixtures/opencode/schema`. `tests/codex-replay.mjs` replays a Codex exchange through the SDK fake's process sessions. `tests/fake-broker.mjs` expands each request into argv from `plugin.json` the way the broker does, with its refusals and the Windows Terminal character check. The SDK's fake `ajour.http` answers OpenCode's requests and refuses one `plugin.json` doesn't declare. `tests/sdk-manifest.test.mjs` checks `plugin.json` against the SDK's `PluginManifest` type.

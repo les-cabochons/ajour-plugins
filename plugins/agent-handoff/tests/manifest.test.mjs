@@ -18,8 +18,6 @@ const copilotStart = (extra) => [
   "{title:text}",
   { if: "model", args: ["--model", "{model:text}"] },
   ...extra,
-  "-p",
-  "{prompt:text}",
 ];
 
 test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, OpenCode and Codex tools", () => {
@@ -205,17 +203,20 @@ test("the declared commands are four t3, four claude, four copilot, two opencode
       mode: "capture",
       timeoutSeconds: 10,
     },
-    // -p runs the task and exits when done, so it starts detached, and a
-    // detached command takes no stdin: the prompt is one argument. -C runs
-    // copilot in the folder; the plugin chooses the session id.
+    // Without a terminal, copilot reads the prompt from stdin, runs the task
+    // and exits when done, so it starts detached with the prompt on stdin,
+    // never on the command line. -C runs copilot in the folder; the plugin
+    // chooses the session id.
     "copilot-start": {
       executable: "copilot",
       args: copilotStart([]),
+      stdin: "text",
       mode: "detached",
     },
     "copilot-start-allow": {
       executable: "copilot",
       args: copilotStart(["--allow-all-tools"]),
+      stdin: "text",
       mode: "detached",
     },
     "copilot-resume": {

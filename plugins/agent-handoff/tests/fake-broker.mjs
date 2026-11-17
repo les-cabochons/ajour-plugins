@@ -64,14 +64,28 @@ export function commandOf(request) {
   if (!command) throw refused("undeclared");
   const executable = manifest.processes.executables[command.executable];
   const has = (name) => Object.hasOwn(request.args, name);
-  const slotOf = (arg) => /^\{(\w+):([\w-]+)\}$/.exec(arg);
+  const slotOf = (arg) =>
+    typeof arg === "string" ? /^\{(\w+):([\w-]+)\}$/.exec(arg) : null;
   const slots = command.args
-    .flatMap((a) => (typeof a === "string" ? [a] : a.args))
-    .flatMap((a) => slotOf(a)?.[1] ?? []);
+    .flatMap((a) => (typeof a === "string" || !a.args ? [a] : a.args))
+    .flatMap((a) =>
+      typeof a === "string" ? (slotOf(a)?.[1] ?? []) : (a.name ?? []),
+    );
   if (Object.keys(request.args).some((name) => !slots.includes(name)))
     throw refused("invalid_request");
   let cwd;
   const fill = (arg) => {
+    if (typeof arg !== "string") {
+      if (arg.kind === "literal") return arg.value;
+      // The SDK fake fills a hook-url argument from its hookUrl option; the
+      // broker refuses it outside a start that has a hook.
+      if (arg.kind === "hook-url") {
+        const value = request.args[arg.name];
+        if (typeof value !== "string") throw refused("hook_refused");
+        return value;
+      }
+      throw refused("invalid_request");
+    }
     const slot = slotOf(arg);
     if (!slot) return arg;
     const value = slotValue(slot[2], request.args[slot[1]]);
@@ -81,7 +95,7 @@ export function commandOf(request) {
   };
   const argv = [executable.names[0]];
   for (const arg of command.args) {
-    if (typeof arg === "string") argv.push(fill(arg));
+    if (typeof arg === "string" || !arg.args) argv.push(fill(arg));
     else if (has(arg.if)) for (const a of arg.args) argv.push(fill(a));
     else if (arg.args.some((a) => has(slotOf(a)?.[1] ?? "")))
       throw refused("invalid_request");
@@ -118,18 +132,23 @@ export const argvOf = (request) => commandOf(request).argv;
  * Installs a fake broker. `answer` gets the command and returns a capture
  * result; a launch mode command starts without one. `routes` answer
  * `ajour.http` (the SDK fake refuses a path or header the manifest doesn't
- * declare), and `connectionUrl` is the operation's connection address,
- * which fills a `connection-url` slot. `session`, when given, gets each
+ * declare), `connectionUrl` is the operation's connection address, which
+ * fills a `connection-url` slot, and `hookUrl` is a start's hook URL, which
+ * the SDK fake writes into each `hook-url` argument. `session`, when given, gets each
  * session the plugin opens, with its command, and returns the program's
  * handler, as the SDK fake's `processSession` does. `ajour.sessions` then
  * records what the plugin sent each one.
  */
-export function fakeBroker(answer, { routes, connectionUrl, session } = {}) {
+export function fakeBroker(
+  answer,
+  { routes, connectionUrl, hookUrl, session } = {},
+) {
   const calls = [];
   globalThis.ajour = createFakeAjour({
     manifest,
     ...(routes ? { routes } : {}),
     ...(connectionUrl === undefined ? {} : { connectionUrl }),
+    ...(hookUrl === undefined ? {} : { hookUrl }),
     ...(session
       ? {
           processSession: async (request, program) => {

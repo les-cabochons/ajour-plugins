@@ -9,6 +9,16 @@ const manifest = JSON.parse(
   await readFile(new URL("../plugin.json", import.meta.url), "utf8"),
 );
 const { executables, commands } = manifest.processes;
+// Claude Code's per-start settings: an http hook for each event that takes
+// one. SessionStart takes only command hooks, so it is left out.
+const httpHook = { hooks: [{ type: "http", url: "{url}" }] };
+const HOOK_TEMPLATE = JSON.stringify({
+  hooks: {
+    Stop: [httpHook],
+    Notification: [httpHook],
+    SessionEnd: [httpHook],
+  },
+});
 const copilotStart = (extra) => [
   "-C",
   "{folder:folder}",
@@ -137,7 +147,7 @@ test("the tools that can list their threads per folder say so; Copilot CLI can't
   );
 });
 
-test("the declared commands are four t3, five claude, four copilot, two opencode and three codex commands", () => {
+test("the declared commands are four t3, six claude, four copilot, two opencode and three codex commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -199,6 +209,26 @@ test("the declared commands are four t3, five claude, four copilot, two opencode
         "--name",
         "{title:text}",
         { if: "model", args: ["--model", "{model:text}"] },
+        "--add-dir",
+        "{folder:folder}",
+      ],
+      stdin: "text",
+      mode: "capture",
+      timeoutSeconds: 20,
+    },
+    // A start Ajour gives a hook passes Claude Code per-start settings, which
+    // never touch the user's settings files: Ajour writes the start's hook
+    // URL at each {url} of this fixed template, whose HTTP hooks post when
+    // the session stops, needs the user or ends.
+    "claude-start-hook": {
+      executable: "claude",
+      args: [
+        "--bg",
+        "--name",
+        "{title:text}",
+        { if: "model", args: ["--model", "{model:text}"] },
+        "--settings",
+        { kind: "hook-url", name: "hook", template: HOOK_TEMPLATE },
         "--add-dir",
         "{folder:folder}",
       ],
@@ -334,14 +364,26 @@ test("each command passes the broker's declaration rules", () => {
     assert.ok(Object.hasOwn(executables, command.executable), command.id);
     const names = [];
     for (const arg of command.args) {
-      const group = typeof arg === "string" ? [arg] : arg.args;
+      const group = typeof arg === "string" || !arg.args ? [arg] : arg.args;
       const slots = group.flatMap((a) => {
+        if (typeof a !== "string") {
+          // The object form: a hook-url slot whose template is a literal
+          // under 1000 characters, holding {url}, without CR, LF or NUL.
+          assert.equal(a.kind, "hook-url", `${command.id}: object argument`);
+          assert.match(a.name, /^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/);
+          assert.ok(a.template.includes("{url}"), `${command.id}: {url}`);
+          assert.ok(a.template.length <= 1000, `${command.id}: template`);
+          assert.doesNotMatch(a.template, /[\0\r\n]/);
+          // Only a handoff plugin has a start to fill it in.
+          assert.ok(manifest.capabilities.handoff, `${command.id}: handoff`);
+          return [a.name];
+        }
         if (!/[{}]/.test(a)) return [];
         const match = slot.exec(a);
         assert.ok(match, `${command.id}: ${a} is a whole typed slot`);
         return [match[1]];
       });
-      if (typeof arg !== "string") {
+      if (typeof arg !== "string" && arg.args) {
         assert.ok(
           slots.includes(arg.if),
           `${command.id}: group tests its own slot`,
@@ -351,10 +393,17 @@ test("each command passes the broker's declaration rules", () => {
           !group.includes(`{${arg.if}:connection-url}`),
           `${command.id}: a group can't test a connection-url slot`,
         );
+        // Nor a hook-url slot, which Ajour fills too.
+        assert.ok(
+          !group.some(
+            (a) => a.kind === "hook-url" || a.endsWith?.(":hook-url}"),
+          ),
+          `${command.id}: a group can't hold a hook-url slot`,
+        );
       }
       // A connection-url slot is filled from the base address, only in an
       // operation of a tool that uses a connection.
-      if (group.some((a) => a.endsWith(":connection-url}"))) {
+      if (group.some((a) => a.endsWith?.(":connection-url}"))) {
         assert.ok(manifest.network?.baseAddress, `${command.id}: base address`);
         assert.ok(connected, `${command.id}: a tool that uses a connection`);
       }

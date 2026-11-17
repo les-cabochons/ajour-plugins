@@ -52,7 +52,7 @@ const SERVER = "codex-app-server";
 const RESUME = "codex-resume";
 // Codex refuses initialize without a client version, and Ajour gives a plugin
 // no way to read its own manifest: a test keeps this equal to plugin.json's.
-const CLIENT = { name: "ajour", title: "Ajour", version: "0.6.0" };
+const CLIENT = { name: "ajour", title: "Ajour", version: "0.7.0" };
 // Ajour sends a session one line of at most 1 MB, in UTF-8.
 export const LINE_LIMIT = 1024 * 1024;
 // One read takes at most 1000 lines, and waits at most 30 seconds.

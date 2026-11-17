@@ -226,7 +226,7 @@ test("a start Ajour refuses says what to do", async () => {
     ["folder_refused", /couldn't use this project's repository folder/],
     [
       "stdin_failed",
-      "Copilot CLI didn't read the prompt: it stopped first, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts, then hand off again.",
+      "Copilot CLI didn't read the prompt: it stopped first, for example because it isn't signed in, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts and is signed in, then hand off again.",
     ],
     ["operation_ended", "Ajour stopped waiting for Copilot CLI. Try again."],
   ];
@@ -332,9 +332,10 @@ test("the recorded copilot has every flag the commands use", () => {
 });
 
 test("copilot takes the whole prompt from stdin, with its line breaks, and names the session", () => {
-  // Recorded from the start's argv, with startRequest()'s prompt written to
-  // stdin the way Ajour writes a detached command's: copilot read all of it
-  // within about a second, ran it without a terminal and exited 0.
+  // Recorded with the start's flags and a bracketed title, with
+  // startRequest()'s prompt written to stdin the way Ajour writes a detached
+  // command's: copilot read all of it within about a second, ran it without
+  // a terminal and exited 0.
   const event = JSON.parse(read("stdin-user-message.json"));
   assert.equal(event.type, "user.message");
   assert.equal(event.data.content, startRequest().prompt);
@@ -345,8 +346,9 @@ test("copilot takes the whole prompt from stdin, with its line breaks, and names
 });
 
 test("a session started signed out keeps its id and name, and resumes", () => {
-  // What a detached start leaves when copilot can't sign in: it exits after
-  // writing the session, which Open can still resume.
+  // Recorded with the earlier argument start: copilot wrote the session
+  // before it found it wasn't signed in. Whether it reads stdin before that
+  // check isn't recorded; if it doesn't, the start fails with stdin_failed.
   const workspace = read("workspace.yaml");
   assert.match(workspace, /^id: 8e1f1abb-41cf-4a1a-9a38-e39ff17cf360$/m);
   assert.match(workspace, /^name: Ajour probe detached$/m);

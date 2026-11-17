@@ -111,7 +111,7 @@ Ajour writes the prompt, closes stdin, and returns the start once `copilot` has 
 | `copilot -C <folder> --resume <uuid>` in a terminal                       | Opens the session: Open on the handoff. It shows the session's work, and takes another turn. Without a terminal, `copilot --resume` refuses: "No prompt provided."                                             |
 | `copilot --version`                                                       | Detects Copilot CLI. Times out after 10 seconds.                                                                                                                                                               |
 
-The UUID is the handoff's thread id. A detached command gives no output and no exit code, so a start that `copilot` fails after it read the prompt, such as when it isn't signed in, still leaves the handoff: Copilot CLI writes the session with its id and name before it signs in, and Open resumes that session. Sign in with `copilot` and `/login` before handing off.
+The UUID is the handoff's thread id. A detached command gives no output and no exit code, so a start that `copilot` fails after it read the prompt still leaves the handoff, and Open resumes the session it wrote. A copilot that isn't signed in either does that or stops before it reads the prompt, which fails the start with "didn't read the prompt"; only the first was recorded, with the earlier argument start. Sign in with `copilot` and `/login` before handing off.
 
 ### Tools
 
@@ -294,6 +294,8 @@ Parent, if any: {{item.parent.key}} {{item.parent.title}}
 ```
 
 It opens with the thread's name, `[KEY] title`, the same as Ajour's default title template. It uses only the slots Ajour fills for a handoff, and Ajour fills a missing parent or description with nothing. `tests/prompt-template.test.mjs` checks it with Ajour's template rules: known slots, the `slug` filter only, and at most 16 KB.
+
+Templates saved in Ajour's template editor win over this default, so someone who saved templates with an earlier version keeps their own prompt.
 
 ## Development
 

@@ -42,7 +42,7 @@ const copilot: Tool = {
       "Ajour refused a value for copilot. Check the model; a terminal also needs a repository folder path without unusual characters.",
     output_limit: "Copilot CLI printed more than Ajour accepts.",
     stdin_failed:
-      "Copilot CLI didn't read the prompt: it stopped first, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts, then hand off again.",
+      "Copilot CLI didn't read the prompt: it stopped first, for example because it isn't signed in, or took more than 10 seconds to start. Run copilot in the repository folder to check that it starts and is signed in, then hand off again.",
   }),
   late: "Copilot CLI took too long. Try again.",
   failureLine(value) {

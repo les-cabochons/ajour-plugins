@@ -1,6 +1,7 @@
 // The default prompt template plugin.json declares, checked with the rules
 // Ajour applies to capabilities.handoff.promptTemplate. The SDK doesn't ship
-// them, so this file repeats packages/shared/agent-task-templates.ts
+// them, so this file repeats, as of les-cabochons/ajour 436b146e,
+// packages/shared/agent-task-templates.ts
 // (the slot pattern and fillTemplate) and handoff-templates.ts (the slots,
 // the 16 KB limit, and a template that fills with every slot empty).
 import assert from "node:assert/strict";

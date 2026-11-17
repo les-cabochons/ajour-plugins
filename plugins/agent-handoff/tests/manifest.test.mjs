@@ -172,9 +172,13 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   // can take one: the broker would refuse the start with hook_refused.
   for (const tool of manifest.capabilities.handoff.tools.filter(
     (t) => t.followsState === false,
-  ))
-    for (const command of commands.filter((c) => c.executable === tool.id))
+  )) {
+    const own = commands.filter((c) => c.executable === tool.id);
+    // A tool whose id isn't its executable would match nothing and check nothing.
+    assert.ok(own.length > 0, `${tool.id}: has commands to check`);
+    for (const command of own)
       assert.ok(!usesHook(command), `${command.id}: no hook-url argument`);
+  }
   assert.deepEqual(
     commands.filter(usesHook).map((c) => c.id),
     ["claude-start-hook"],

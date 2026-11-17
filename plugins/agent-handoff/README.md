@@ -190,7 +190,7 @@ Without a terminal, Copilot can't ask before it edits a file or runs a command. 
 
 ### States
 
-Copilot CLI has no command that reports a session's state, so the tool sets `followsState: false`. Ajour shows each Copilot CLI handoff as Started: it never calls `readHandoffStates` for it, never polls it, gives its start no hook, and offers no Refresh. Open still resumes the session. The plugin answers a `readHandoffStates` for Copilot CLI with an error and runs no command; Ajour never sends one.
+Copilot CLI has no command that reports a session's state, so the tool sets `followsState: false`. Ajour shows each Copilot CLI handoff as Started: it never calls `readHandoffStates` for it, never polls it, gives its start no hook, and offers no Refresh. Open still resumes the session. The plugin answers a `readHandoffStates` for Copilot CLI with an error and runs no command; Ajour never sends one. Copilot CLI handoffs started before 0.9.0 turn Started at Ajour's next check, and lose their Refresh.
 
 Checked on `copilot` 1.0.112 on Windows, signed out with its own `COPILOT_HOME`: `copilot sessions` has only `import`, and `copilot help sessions` names `/session info` as the way to see a session's details, which works only inside an interactive session. `copilot --acp` reports a session's activity only to the editor that runs that session. Copilot CLI keeps each session's events in `session-state/<uuid>/events.jsonl` and its metadata in `workspace.yaml` under `COPILOT_HOME`, but no declared command can read them, and an event log alone can't tell a finished task from one that waits for you or failed.
 

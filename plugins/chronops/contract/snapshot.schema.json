@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/les-cabochons/ajour-plugins/plugins/chronops/contract/snapshot.schema.json",
-  "title": "ChronOps snapshot for Ajour, version 2",
-  "description": "What MineHunter's GET /integration/snapshot returns to the chronops plugin: the caller's projects, their budget and their tasks, as ChronOps sees them. A change to this shape bumps version.",
+  "title": "ChronOps integration snapshot, version 3",
+  "description": "What ChronOps GET /integration/snapshot returns to integrations: the caller's projects, their budget and their tasks, as ChronOps sees them. A change to this shape bumps version.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "generatedAt", "reportAt", "me", "projects"],
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "generatedAt": {
       "type": "string",
       "format": "date-time",
@@ -43,7 +43,7 @@
       "properties": {
         "code": { "type": "string", "minLength": 1, "description": "The ChronOps project code, stable across renames." },
         "name": { "type": "string", "minLength": 1 },
-        "client": { "type": ["string", "null"] },
+        "client": { "type": ["string", "null"], "description": "The names of the project's Clients, A to Z, joined with \", \". Null when the project has no Client with a known name." },
         "complete": { "type": ["boolean", "null"], "description": "Whether ChronOps marks the project complete. Null when ChronOps cannot tell." },
         "contractStart": { "type": ["string", "null"], "format": "date" },
         "contractEnd": { "type": ["string", "null"], "format": "date" },
@@ -78,14 +78,16 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "phase", "name", "closed", "billable", "estimateHours", "assignedToMe", "myHours"],
+      "required": ["id", "name", "closed", "billable", "estimateHours", "budgetHours", "workedHours", "workedHoursAdjustment", "assignedToMe", "myHours"],
       "properties": {
         "id": { "type": "string", "minLength": 1, "description": "The ChronOps task id." },
-        "phase": { "type": "string" },
         "name": { "type": "string", "minLength": 1 },
         "closed": { "type": "boolean" },
         "billable": { "type": "boolean" },
-        "estimateHours": { "type": "number", "minimum": 0 },
+        "estimateHours": { "type": "number", "minimum": 0, "description": "Workday's estimate, which every import replaces." },
+        "budgetHours": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "The budget a lead set on the task (ADR-0047), one number for every assignee. Null without one: a consumer that shows budget hours then falls back to estimateHours when it is over 0, as ADR-0047 does." },
+        "workedHours": { "type": "number", "description": "Workday's hours on the task, every worker and all time, as of reportAt, without the adjustment. Workday rows carry no sign check, so it may be negative." },
+        "workedHoursAdjustment": { "type": "number", "description": "Hours a lead added to workedHours (ADR-0047), negative when removed, 0 without one. The task's worked hours are workedHours plus this." },
         "assignedToMe": { "type": "boolean", "description": "Whether ChronOps assigns the task to the token's user, by email. Known with or without a worker link." },
         "myHours": { "type": ["number", "null"], "minimum": 0, "description": "The caller's hours on the task in the current month, summed over the workers linked to the login. Null when not assigned or not linked." }
       }

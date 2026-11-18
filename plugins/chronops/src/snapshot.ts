@@ -113,19 +113,39 @@ function mapBudget(budget: ChronopsBudget, reportMonth: string): ProjectSourceBu
   };
 }
 
+/**
+ * The task's budget hours as ChronOps shows them (its ADR-0047): the budget a
+ * lead set, otherwise Workday's estimate when it is over 0, otherwise none.
+ */
+function budgetHours(task: ChronopsTask): number | undefined {
+  return task.budgetHours ?? (task.estimateHours > 0 ? task.estimateHours : undefined);
+}
+
+/**
+ * The task's worked hours as ChronOps shows them: Workday's plus the lead's
+ * adjustment, rounded to the hundredth so float noise never changes the
+ * snapshot. Ajour takes no negative hours, so a larger negative adjustment
+ * reads as none used. Undefined from a version 2 snapshot.
+ */
+function workedHours(task: ChronopsTask): number | undefined {
+  if (task.workedHours === null) return undefined;
+  return Math.max(0, Math.round((task.workedHours + task.workedHoursAdjustment) * 100) / 100);
+}
+
 function mapTask(task: ChronopsTask): ProjectSourceTask {
-  const group = nonBlank(task.phase);
   const id = remoteId(task.id, "task id");
+  const budget = budgetHours(task);
+  const worked = workedHours(task);
   return {
     remoteId: id,
     // Ajour refuses a blank name, so a task ChronOps left unnamed goes by its id.
     name: cut(nonBlank(task.name) ?? id, PROJECT_SOURCE_BOUNDS.name),
-    ...(group !== undefined ? { group: cut(group, PROJECT_SOURCE_BOUNDS.group) } : {}),
     closed: task.closed,
     billable: task.billable,
-    estimateHours: task.estimateHours,
+    ...(budget !== undefined ? { estimateHours: budget } : {}),
     assigned: task.assignedToMe,
     ...(task.myHours !== null ? { myHours: task.myHours } : {}),
+    ...(worked !== undefined ? { workedHours: worked } : {}),
   };
 }
 

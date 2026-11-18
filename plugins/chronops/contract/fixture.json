@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "generatedAt": "2026-11-04T13:05:00.000Z",
   "reportAt": "2026-10-31T23:59:59.000Z",
   "me": {
@@ -26,31 +26,37 @@
       "tasks": [
         {
           "id": "1001",
-          "phase": "Support",
           "name": "Billet #101 - Login",
           "closed": false,
           "billable": true,
           "estimateHours": 8,
+          "budgetHours": 10,
+          "workedHours": 8.25,
+          "workedHoursAdjustment": 1.5,
           "assignedToMe": true,
           "myHours": 5.25
         },
         {
           "id": "1002",
-          "phase": "Support",
           "name": "Billet #102 - Export CSV",
           "closed": false,
           "billable": true,
           "estimateHours": 4,
+          "budgetHours": null,
+          "workedHours": 0,
+          "workedHoursAdjustment": 0,
           "assignedToMe": false,
           "myHours": null
         },
         {
           "id": "1003",
-          "phase": "Support",
           "name": "Billet #099 - Fuseau horaire",
           "closed": true,
           "billable": true,
           "estimateHours": 2,
+          "budgetHours": null,
+          "workedHours": 2,
+          "workedHoursAdjustment": 0,
           "assignedToMe": true,
           "myHours": 2
         }
@@ -75,21 +81,25 @@
       "tasks": [
         {
           "id": "2001",
-          "phase": "Gestion",
           "name": "Suivi hebdomadaire",
           "closed": false,
           "billable": false,
           "estimateHours": 0,
+          "budgetHours": 40,
+          "workedHours": 30,
+          "workedHoursAdjustment": -2,
           "assignedToMe": true,
           "myHours": 14
         },
         {
           "id": "2002",
-          "phase": "Gestion",
           "name": "Revue de code",
           "closed": false,
           "billable": false,
           "estimateHours": 20,
+          "budgetHours": null,
+          "workedHours": 0,
+          "workedHoursAdjustment": 0,
           "assignedToMe": false,
           "myHours": null
         }
@@ -114,11 +124,13 @@
       "tasks": [
         {
           "id": "3001",
-          "phase": "Onboarding",
           "name": "Accès et comptes",
           "closed": true,
           "billable": true,
           "estimateHours": 4,
+          "budgetHours": null,
+          "workedHours": 3.5,
+          "workedHoursAdjustment": 0,
           "assignedToMe": false,
           "myHours": null
         }

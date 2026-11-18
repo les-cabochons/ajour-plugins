@@ -37,13 +37,15 @@ The plugin maps MineHunter's answer to Ajour's generic snapshot:
 | monthly budget | hours, `capHours` consumed and remaining |
 | annual budget | money, `maxBudget` and `spentBudget`, or hours when ChronOps has no money figures |
 | no cap (`capHours` null, status Unconfigured) | no budget |
-| task `id`, `phase`, `assignedToMe` | `remoteId`, `group`, `assigned` |
+| task `id`, `assignedToMe` | `remoteId`, `assigned` |
+| task `budgetHours`, else `estimateHours` over 0 | `estimateHours`, the task's budget, as ChronOps shows it (its ADR-0047) |
+| task `workedHours` plus `workedHoursAdjustment` | `workedHours`, everyone's hours on the task, all time, never below 0. Ajour adds your hours it doesn't have yet and your own adjustment |
 | `myHours` | `myHours`, the current month only, with `me.hoursSince` the first of the report's month |
 | monthly budget period | `budget.since`, the first of the report's month; an annual budget has none, since ChronOps gives no start |
 | `reportAt` | `asOf`, the moment the figures are from |
 | `me.workerLinked` | whether Ajour can compare your hours, with a note on linking your Workday name otherwise |
 
-A name, client or phase longer than Ajour accepts is cut, with an
+A name or client longer than Ajour accepts is cut, with an
 ellipsis. A blank project name falls back to the code, and a blank task
 name to the task id. A blank project code or task id fails the sync, since
 Ajour links by them. An `ETag` that is empty or longer than 2,000
@@ -68,7 +70,9 @@ integration: the route has no consumer in its path, and
 `X-ChronOps-Source: ajour` only says who asks. The file here is the plugin's
 copy of MineHunter's `plugins/chronops/contract/snapshot.schema.json`. A
 change to the shape bumps its `version`, and the plugin refuses a version it
-does not know.
+does not know. It reads versions 2 and 3, so it works before and after
+MineHunter moves to version 3: a version 2 task has no budget of its own and
+no worked hours, so Ajour shows Workday's estimate and its own time.
 
 Ajour never sees the contract. The plugin maps it to Ajour's generic project
 source snapshot.

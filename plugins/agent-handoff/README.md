@@ -84,6 +84,10 @@ The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `arc
 | Provider          | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. A provider needs a model. Leave both empty for the project's defaults. |
 | Model             | Empty   | A model slug, such as `claude-opus-5-5` or one with slashes. It can be set without a provider.                                |
 
+Ajour doesn't show these settings yet, so a start gets none and the worktree base is unset. A start without a base tries `main`, then `master`. T3 Code refuses a base that the repository and its remotes don't have before it creates anything, so trying again is safe. When neither exists, or the base Ajour sent doesn't, the start is refused with `setting: "base"`. Ajour then asks for the base, starts again with the answer in `settings.base`, and sends it with later starts from that repository folder (les-cabochons/ajour#819).
+
+When the hand-off branch already exists, T3 Code starts nothing and the start is refused with `branchExists: true`. Ajour then offers to link the item's thread, the one whose title names the item's key. An Ajour without #819 shows the reason alone.
+
 ## Claude Code
 
 Every handoff is a Claude Code background session (`claude --bg`), the only start that takes a prompt on stdin. A prompt never goes on the command line, where Ajour refuses line breaks and other processes can read it. The session works in the repository folder, keeps its own permission settings, and shows in `claude agents`.

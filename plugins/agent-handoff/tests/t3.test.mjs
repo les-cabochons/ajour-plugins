@@ -239,6 +239,57 @@ test("a start uses a worktree from main by default", async () => {
   ]);
 });
 
+// T3 refuses these before it creates a thread (fixtures from t3 v0.1.5,
+// as Ajour's log recorded them), so a start can try again (Ajour #819).
+const baseMissing = (base) =>
+  fail(read("base-missing.txt").replace('"main"', `"${base}"`));
+const worktreeBase = (argv) => argv[argv.indexOf("--worktree") + 1];
+
+test("a start without a base tries main, then master", async () => {
+  const calls = fakeT3((argv) => {
+    if (argv[2] !== "start") return out({ thread: shown });
+    return worktreeBase(argv) === "master"
+      ? out(started)
+      : baseMissing(worktreeBase(argv));
+  });
+  const result = await startHandoff(startRequest());
+  assert.equal(result.threadId, threadId);
+  assert.deepEqual(
+    calls.filter((c) => c.argv[2] === "start").map((c) => worktreeBase(c.argv)),
+    ["main", "master"],
+  );
+});
+
+test("a start Ajour can't base asks for the base: neither main nor master, or the one given", async () => {
+  fakeT3((argv) => baseMissing(worktreeBase(argv)));
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      'Neither "main" nor "master" exists in ajour, so T3 Code can\'t start the worktree. Name the branch it starts from.',
+    setting: "base",
+  });
+  const calls = fakeT3((argv) => baseMissing(worktreeBase(argv)));
+  await assert.rejects(startHandoff(startRequest({ base: "develop" })), {
+    message:
+      '"develop" doesn\'t exist in ajour, so T3 Code can\'t start the worktree. Name the branch it starts from.',
+    setting: "base",
+  });
+  // A base the user gave is the only one tried.
+  assert.equal(calls.length, 1);
+});
+
+test("a start on a branch that exists says so, for Ajour to offer the item's thread", async () => {
+  // T3 can log a warning on stderr before its error.
+  const calls = fakeT3(() =>
+    fail(`${read("db-warning.txt")}${read("branch-exists.txt")}`),
+  );
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      'The branch "aj-38-hand-off" already exists in ajour, so T3 Code started no thread. Hand off with another branch from Review prompt.',
+    branchExists: true,
+  });
+  assert.equal(calls.length, 1);
+});
+
 test("a start without a worktree passes the provider and model", async () => {
   const calls = fakeT3((argv) =>
     argv[2] === "start" ? out(started) : out({ thread: shown }),

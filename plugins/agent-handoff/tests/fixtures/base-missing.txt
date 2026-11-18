@@ -1,0 +1,1 @@
+Base ref "main" does not resolve to a commit in project "ajour" (C:\Users\example\ajour). No thread was created. Pass a branch, tag, or commit that exists there; no remote of the project has it either.

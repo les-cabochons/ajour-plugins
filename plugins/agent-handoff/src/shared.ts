@@ -35,7 +35,20 @@ export const START_DEADLINE_MS = 27_000;
 // Ajour stopped the tool before its output was whole. A refresh treats these
 // like its own deadline, and a start can't tell whether the work exists.
 const CUT_SHORT = new Set(["timeout", "capture_incomplete"]);
-export const START_UNCERTAIN = new Set([...CUT_SHORT, "output_limit"]);
+/** The tool exited 0 but printed no JSON the plugin can read. */
+export const UNREADABLE_OUTPUT = "unreadable_output";
+// A start whose output is too long or unreadable may have created the work.
+export const START_UNCERTAIN = new Set([
+  ...CUT_SHORT,
+  "output_limit",
+  UNREADABLE_OUTPUT,
+]);
+// Ajour runs at most 4 of a plugin's commands at once and refuses the next
+// one before it starts. Detection alone runs 4, so a listing or a refresh that
+// starts with it waits for a slot instead of failing: about 3 seconds, which
+// is longer than the slowest --version takes.
+const BUSY_RETRIES = 12;
+const BUSY_PAUSE_MS = 250;
 
 /** How one tool names itself in messages, and reads its own failures. */
 export interface Tool {
@@ -110,12 +123,16 @@ export function firstLine(value: string | undefined): string {
   return (value ?? "").trim().split(/\r?\n/, 1)[0]?.slice(0, 500) ?? "";
 }
 
+/** The refusal code of an error from Ajour's process broker, if it has one. */
+function codeOf(error: unknown): string | undefined {
+  return error && typeof error === "object" && "code" in error
+    ? String(error.code)
+    : undefined;
+}
+
 /** A refusal from Ajour's process broker, worded for the user. */
 export function refusal(tool: Tool, error: unknown): ToolError {
-  const code =
-    error && typeof error === "object" && "code" in error
-      ? String(error.code)
-      : undefined;
+  const code = codeOf(error);
   if (code && Object.hasOwn(tool.refusals, code))
     return new ToolError(tool.refusals[code] as string, code);
   if (code)
@@ -172,6 +189,29 @@ export function pause(ms: number, deadline: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, wait));
 }
 
+type ProcessRequest = Parameters<typeof ajour.process.run>[0];
+type ProcessResult = Awaited<ReturnType<typeof ajour.process.run>>;
+
+/**
+ * Runs a declared command through Ajour's process broker. A `concurrency`
+ * refusal comes before the command starts, so it is safe to ask again once
+ * one of the plugin's other commands ends. Any other refusal throws at once.
+ */
+async function run(
+  tool: Tool,
+  request: ProcessRequest,
+): Promise<ProcessResult> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await ajour.process.run(request);
+    } catch (error) {
+      if (codeOf(error) !== "concurrency" || attempt >= BUSY_RETRIES)
+        throw refusal(tool, error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, BUSY_PAUSE_MS));
+  }
+}
+
 /** Runs a declared capture command and returns its stdout, or throws. */
 export async function capture(
   tool: Tool,
@@ -179,16 +219,11 @@ export async function capture(
   args: Record<string, string>,
   stdin?: string,
 ): Promise<string> {
-  let result: Awaited<ReturnType<typeof ajour.process.run>>;
-  try {
-    result = await ajour.process.run({
-      command,
-      args,
-      ...(stdin === undefined ? {} : { stdin }),
-    });
-  } catch (error) {
-    throw refusal(tool, error);
-  }
+  const result = await run(tool, {
+    command,
+    args,
+    ...(stdin === undefined ? {} : { stdin }),
+  });
   if (result.started === true)
     throw new ToolError(`${tool.exe} started without returning its output.`);
   if (result.exitCode !== 0) {
@@ -201,6 +236,35 @@ export async function capture(
   return result.stdout;
 }
 
+/**
+ * The JSON document a tool printed after log lines. The t3 CLI logs warnings
+ * to stdout, such as one that the T3 Code database is newer than the CLI, so
+ * its JSON can start on a later line. The document is the first line that
+ * starts with `{` or `[` and parses through to the end of the output.
+ */
+function jsonAfterLogLines(output: string): { value: unknown } | undefined {
+  const opens = /[ \t]*[[{]/y;
+  let start = output.indexOf("\n");
+  while (start !== -1) {
+    start += 1;
+    opens.lastIndex = start;
+    if (opens.test(output)) {
+      try {
+        return { value: JSON.parse(output.slice(start)) };
+      } catch {
+        // A log line can start with a bracket too, such as "[15:16:50] WARN".
+      }
+    }
+    start = output.indexOf("\n", start);
+  }
+  return undefined;
+}
+
+/**
+ * Runs a declared capture command and returns the JSON it printed, after any
+ * log lines. Output without JSON throws `unreadable_output`, with the first
+ * line the tool printed, so the user and the log can see what it said.
+ */
 export async function captureJson(
   tool: Tool,
   command: string,
@@ -211,7 +275,15 @@ export async function captureJson(
   try {
     return JSON.parse(output);
   } catch {
-    throw new ToolError(`${tool.name} returned output Ajour can't read.`);
+    const found = jsonAfterLogLines(output);
+    if (found) return found.value;
+    const line = firstLine(output).slice(0, 200);
+    throw new ToolError(
+      line
+        ? `${tool.name} returned output Ajour can't read. It starts with: ${line}`
+        : `${tool.name} returned no output Ajour can read.`,
+      UNREADABLE_OUTPUT,
+    );
   }
 }
 
@@ -226,16 +298,11 @@ export async function launch(
   args: Record<string, string>,
   stdin?: string,
 ): Promise<void> {
-  let result: Awaited<ReturnType<typeof ajour.process.run>>;
-  try {
-    result = await ajour.process.run({
-      command,
-      args,
-      ...(stdin === undefined ? {} : { stdin }),
-    });
-  } catch (error) {
-    throw refusal(tool, error);
-  }
+  const result = await run(tool, {
+    command,
+    args,
+    ...(stdin === undefined ? {} : { stdin }),
+  });
   if (result.started !== true)
     throw new ToolError(`${tool.exe} returned output instead of starting.`);
 }

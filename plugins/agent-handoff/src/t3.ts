@@ -13,6 +13,7 @@ import {
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
   ToolError,
+  UNREADABLE_OUTPUT,
   before,
   capture,
   captureJson,
@@ -264,9 +265,18 @@ export async function startT3(
   try {
     output = await captureJson(t3, "thread-start", args, request.prompt);
   } catch (error) {
-    // Ajour stopped t3 or dropped its output, so the thread may exist.
-    if (isUncertainStart(error))
-      throw new ToolError(MAYBE_STARTED, (error as ToolError).code);
+    // Ajour stopped t3 or dropped its output, or t3 exited 0 with output
+    // Ajour can't read, so the thread may exist. An unreadable answer keeps
+    // what t3 printed first, so the user and the log see why.
+    if (isUncertainStart(error)) {
+      const { code, message } = error as ToolError;
+      throw new ToolError(
+        code === UNREADABLE_OUTPUT
+          ? `${MAYBE_STARTED} ${message}`
+          : MAYBE_STARTED,
+        code,
+      );
+    }
     throw error;
   }
   const started = record(output);

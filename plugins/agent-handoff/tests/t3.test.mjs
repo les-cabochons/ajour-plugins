@@ -23,6 +23,7 @@ import {
   out,
   refuse,
   refused,
+  settleWithTimers,
 } from "./fake-broker.mjs";
 
 const read = (name) =>
@@ -830,7 +831,9 @@ test("T3's not-running and not-found messages count on any stderr line", async (
   assert.equal(update.state, "gone");
 });
 
-test("each broker refusal reads as what to do next", async () => {
+test("each broker refusal reads as what to do next", async (t) => {
+  // A concurrency refusal is asked again for about 3 seconds first.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const cases = {
     needs_consent:
       "Open this plugin's Access section in Settings › Plugins and choose Allow and activate.",
@@ -856,7 +859,7 @@ test("each broker refusal reads as what to do next", async () => {
         throw refused(code);
       },
     });
-    const [tool] = (await detectTools()).tools;
+    const [tool] = (await settleWithTimers(t, detectTools())).tools;
     if (typeof expected === "string") assert.equal(tool.reason, expected, code);
     else assert.match(tool.reason, expected, code);
   }
@@ -1029,5 +1032,64 @@ test("a listing T3 can't answer throws what to do", async () => {
   fakeT3(() => fail(read("no-server.txt")));
   await assert.rejects(listThreads(listRequest()), /T3 Code isn't running/);
   fakeT3(() => ok("not json"));
-  await assert.rejects(listThreads(listRequest()), /can't read/);
+  await assert.rejects(listThreads(listRequest()), {
+    message:
+      "T3 Code returned output Ajour can't read. It starts with: not json",
+  });
+  fakeT3(() => ok(""));
+  await assert.rejects(listThreads(listRequest()), {
+    message: "T3 Code returned no output Ajour can read.",
+  });
+});
+
+// The t3 CLI logs to stdout. A CLI older than the T3 Code app warns that the
+// database is newer than it before every answer (t3 v0.1.5 against T3 Code
+// 0.1.11, fixtures/db-warning.txt). Ajour read none of its answers, and a
+// start it couldn't read left a thread Ajour never knew.
+const warned = (value) =>
+  ok(`${read("db-warning.txt")}${JSON.stringify(value)}\n`);
+
+test("a listing reads T3's threads after the log lines t3 prints first", async () => {
+  fakeT3(() => warned(json("list")));
+  const { threads } = await listThreads(listRequest());
+  assert.equal(threads[0].threadId, listed.threadId);
+  assert.equal(threads[0].link, link);
+});
+
+test("a start reads the new thread after the log lines t3 prints first", async () => {
+  fakeT3((argv) =>
+    argv[2] === "start" ? warned(started) : warned(json("show")),
+  );
+  const result = await startHandoff(startRequest());
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.link, link);
+  assert.equal(result.native.reason, undefined);
+});
+
+test("a start whose answer Ajour can't read says the thread may exist, and what t3 printed", async () => {
+  fakeT3(() => ok(read("db-warning.txt")));
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      "T3 Code may have started the thread. Check T3 Code before handing off again. T3 Code returned output Ajour can't read. It starts with: [15:17:44.306] WARN (#20): Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name. {",
+  });
+});
+
+test("a command Ajour refuses as busy runs once one of the plugin's commands ends", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let refusals = 0;
+  globalThis.ajour = createFakeAjour({
+    manifest,
+    processRun: async (request) => {
+      if (request.command !== "thread-list")
+        throw refused("executable_missing");
+      if (refusals < 3) {
+        refusals += 1;
+        throw refused("concurrency");
+      }
+      return out(json("list"));
+    },
+  });
+  const { threads } = await settleWithTimers(t, listThreads(listRequest()));
+  assert.equal(refusals, 3);
+  assert.equal(threads[0].threadId, listed.threadId);
 });

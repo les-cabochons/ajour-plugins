@@ -187,3 +187,20 @@ export const out = (value) => ok(`${JSON.stringify(value)}\n`);
 export const flush = async () => {
   for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
 };
+
+/**
+ * Ticks mocked timers until `promise` settles, for a plugin that waits
+ * between its tries, such as after the broker's `concurrency` refusal. The
+ * test enables `t.mock.timers` for setTimeout first.
+ */
+export async function settleWithTimers(t, promise, stepMs = 250) {
+  let settled = false;
+  const watched = promise.finally(() => {
+    settled = true;
+  });
+  for (let step = 0; step < 1000 && !settled; step++) {
+    await flush();
+    t.mock.timers.tick(stepMs);
+  }
+  return watched;
+}

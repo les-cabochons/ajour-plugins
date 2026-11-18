@@ -22,7 +22,7 @@ test("the fixture validates against the snapshot schema", async () => {
   const validate = ajv.compile(schema);
 
   assert.equal(validate(fixture), true, ajv.errorsText(validate.errors, { separator: "\n" }));
-  assert.equal(fixture.version, 2);
+  assert.equal(fixture.version, 3);
   assert.equal(fixture.me.workerLinked, true);
   // Both budget modes, a project without a cap, assigned and unassigned
   // tasks, a closed task, and a project whose completion is unknown.
@@ -35,6 +35,9 @@ test("the fixture validates against the snapshot schema", async () => {
   const tasks = fixture.projects.flatMap((project) => project.tasks);
   assert.ok(tasks.some((task) => task.assignedToMe) && tasks.some((task) => !task.assignedToMe));
   assert.ok(tasks.some((task) => task.closed));
+  // A lead's budget and none, and an adjustment each way.
+  assert.ok(tasks.some((task) => task.budgetHours !== null) && tasks.some((task) => task.budgetHours === null));
+  assert.ok(tasks.some((task) => task.workedHoursAdjustment > 0) && tasks.some((task) => task.workedHoursAdjustment < 0));
 });
 
 test("the schema rejects a snapshot of another version or with an unknown field", async () => {

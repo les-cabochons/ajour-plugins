@@ -18,7 +18,30 @@ describe("parseChronopsSnapshot", () => {
   });
 
   it("refuses a snapshot version it does not know, naming both versions", () => {
-    expect(() => parseChronopsSnapshot({ ...fixture, version: 1 })).toThrow(/version 1.*version 2/);
+    expect(() => parseChronopsSnapshot({ ...fixture, version: 1 })).toThrow(/version 1.*versions 2 and 3/);
+  });
+
+  it("reads a version 2 snapshot, whose tasks have a phase and no budget or worked hours", () => {
+    // MineHunter answers version 2 until its version 3 is deployed.
+    const v2 = {
+      ...fixture,
+      version: 2,
+      projects: fixture.projects.map((project) => ({
+        ...project,
+        tasks: project.tasks.map(({ budgetHours: _budget, workedHours: _worked, workedHoursAdjustment: _adjustment, ...task }) => ({
+          ...task,
+          phase: "",
+        })),
+      })),
+    };
+    const [task] = parseChronopsSnapshot(v2).projects[0]!.tasks;
+    expect(task).toEqual({ ...fixture.projects[0]!.tasks[0]!, budgetHours: null, workedHours: null, workedHoursAdjustment: 0 });
+    // A version 2 task with version 3's fields, or a version 3 task with a phase, strays from its contract.
+    expect(() => parseChronopsSnapshot({ ...fixture, version: 2 })).toThrow(/tasks\[0\]\.phase/);
+    const [acme] = fixture.projects;
+    expect(() =>
+      parseChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks: [{ ...acme!.tasks[0]!, phase: "" }] }] }),
+    ).toThrow(/tasks\[0\]\.phase should be left out/);
   });
 
   it("names the field that breaks the contract", () => {
@@ -49,6 +72,8 @@ describe("parseChronopsSnapshot", () => {
       [{ ...fixture, reportAt: "2026-02-30T12:00:00Z" }, /snapshot\.reportAt should be an ISO 8601/],
       [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, id: "" }] }] }, /tasks\[0\]\.id should be a non-empty string/],
       [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, myHours: -2 }] }] }, /tasks\[0\]\.myHours/],
+      [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, budgetHours: 0 }] }] }, /tasks\[0\]\.budgetHours should be a number over 0/],
+      [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, workedHours: "8" }] }] }, /tasks\[0\]\.workedHours should be a number/],
       [{ ...fixture, extra: true }, /snapshot\.extra should be left out/],
       [{ ...fixture, projects: [{ ...acme!, tasks: [{ ...task, colour: "red" }] }] }, /tasks\[0\]\.colour should be left out/],
       [{ ...fixture, me: { ...fixture.me, email: "not an email" } }, /me\.email/],
@@ -87,26 +112,53 @@ describe("mapChronopsSnapshot", () => {
       endsOn: "2026-12-31",
       budget: { unit: "hours", total: 40, consumed: 31.5, remaining: 8.5, status: "warning", since: "2026-10-01" },
       tasks: [
-        { remoteId: "1001", name: "Billet #101 - Login", group: "Support", closed: false, billable: true, estimateHours: 8, assigned: true, myHours: 5.25 },
-        { remoteId: "1002", name: "Billet #102 - Export CSV", group: "Support", closed: false, billable: true, estimateHours: 4, assigned: false },
-        { remoteId: "1003", name: "Billet #099 - Fuseau horaire", group: "Support", closed: true, billable: true, estimateHours: 2, assigned: true, myHours: 2 },
+        // The lead's budget of 10 wins over Workday's estimate of 8, and the worked hours add the lead's 1.5.
+        { remoteId: "1001", name: "Billet #101 - Login", closed: false, billable: true, estimateHours: 10, assigned: true, myHours: 5.25, workedHours: 9.75 },
+        { remoteId: "1002", name: "Billet #102 - Export CSV", closed: false, billable: true, estimateHours: 4, assigned: false, workedHours: 0 },
+        { remoteId: "1003", name: "Billet #099 - Fuseau horaire", closed: true, billable: true, estimateHours: 2, assigned: true, myHours: 2, workedHours: 2 },
       ],
     });
   });
 
-  it("leaves out what ChronOps does not know: client, dates, my hours, a blank phase", () => {
+  it("leaves out what ChronOps does not know: client, dates, my hours", () => {
     const [, globex] = snapshot.projects;
     expect(globex).not.toHaveProperty("client");
     // ChronOps cannot tell whether Globex is complete. Unknown stays open, since Ajour archives a complete project.
     expect(globex!.complete).toBe(false);
     const [acme] = fixture.projects;
-    const blank = mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, client: "  ", tasks: [{ ...acme!.tasks[0]!, phase: "" }] }] });
+    const blank = mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, client: "  " }] });
     expect(blank.projects[0]).not.toHaveProperty("client");
-    expect(blank.projects[0]!.tasks[0]).not.toHaveProperty("group");
     expect(globex).not.toHaveProperty("startsOn");
     expect(globex).not.toHaveProperty("endsOn");
     expect(globex!.tasks[1]).not.toHaveProperty("myHours");
-    expect(globex!.tasks[0]).toMatchObject({ remoteId: "2001", group: "Gestion", billable: false, estimateHours: 0, assigned: true, myHours: 14 });
+    expect(globex!.tasks[0]).toMatchObject({ remoteId: "2001", billable: false, estimateHours: 40, assigned: true, myHours: 14 });
+  });
+
+  it("gives a task the budget ChronOps shows: the lead's, else Workday's estimate over 0, else none", () => {
+    const [acme] = fixture.projects;
+    const budgetOf = (budgetHours: number | null, estimateHours: number) =>
+      mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks: [{ ...acme!.tasks[0]!, budgetHours, estimateHours }] }] })
+        .projects[0]!.tasks[0]!.estimateHours;
+    expect([budgetOf(12, 8), budgetOf(null, 8), budgetOf(null, 0)]).toEqual([12, 8, undefined]);
+  });
+
+  it("adds the lead's adjustment to the worked hours, never below 0", () => {
+    const [, globex] = snapshot.projects;
+    // 30 hours from Workday, 2 taken off by the lead.
+    expect(globex!.tasks[0]!.workedHours).toBe(28);
+    const [acme] = fixture.projects;
+    const workedOf = (workedHours: number, workedHoursAdjustment: number) =>
+      mapChronopsSnapshot({ ...fixture, projects: [{ ...acme!, tasks: [{ ...acme!.tasks[0]!, workedHours, workedHoursAdjustment }] }] })
+        .projects[0]!.tasks[0]!.workedHours;
+    expect([workedOf(0.1, 0.2), workedOf(3, -5)]).toEqual([0.3, 0]);
+  });
+
+  it("sends no worked hours from a version 2 snapshot, so Ajour reads its own time", () => {
+    const [acme] = fixture.projects;
+    const v2Task = { ...acme!.tasks[0]!, budgetHours: null, workedHours: null, workedHoursAdjustment: 0 };
+    const [task] = mapChronopsSnapshot({ ...fixture, version: 2, projects: [{ ...acme!, tasks: [v2Task] }] }).projects[0]!.tasks;
+    expect(task).not.toHaveProperty("workedHours");
+    expect(task!.estimateHours).toBe(8);
   });
 
   it("trims names and codes, and names a blank project by its code and a blank task by its id", () => {
@@ -173,7 +225,7 @@ describe("mapChronopsSnapshot", () => {
       complete: true,
       startsOn: "2026-03-01",
       endsOn: "2026-06-30",
-      tasks: [{ remoteId: "3001", name: "Accès et comptes", group: "Onboarding", closed: true, billable: true, estimateHours: 4, assigned: false }],
+      tasks: [{ remoteId: "3001", name: "Accès et comptes", closed: true, billable: true, estimateHours: 4, assigned: false, workedHours: 3.5 }],
     });
     // A cap without figures for the period, or a status ChronOps did not set, gives none either.
     const unconfigured = mapChronopsSnapshot(withBudget({ status: "Unconfigured" }));
@@ -187,14 +239,13 @@ describe("mapChronopsSnapshot", () => {
     const long = (length: number) => "x".repeat(length);
     const mapped = mapChronopsSnapshot({
       ...fixture,
-      projects: [{ ...acme!, name: long(241), client: long(241), tasks: [{ ...acme!.tasks[0]!, name: long(241), phase: long(121) }] }],
+      projects: [{ ...acme!, name: long(241), client: long(241), tasks: [{ ...acme!.tasks[0]!, name: long(241) }] }],
     });
     const [project] = mapped.projects;
     expect(project!.name).toHaveLength(240);
     expect(project!.name.endsWith("\u2026")).toBe(true);
     expect(project!.client).toHaveLength(240);
     expect(project!.tasks[0]!.name).toHaveLength(240);
-    expect(project!.tasks[0]!.group).toHaveLength(120);
     expect(mapChronopsSnapshot(fixture).projects[0]!.name).toBe("Acme - Support");
   });
 

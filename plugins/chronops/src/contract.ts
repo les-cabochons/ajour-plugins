@@ -88,9 +88,15 @@ export interface ProjectSourceTask {
   group?: string;
   closed: boolean;
   billable?: boolean;
+  /** The task's budget in hours, for everyone on it. */
   estimateHours?: number;
   assigned: boolean;
   myHours?: number;
+  /**
+   * Everyone's hours on the task as of `asOf`, all time, the user's included
+   * (les-cabochons/ajour#814). An older Ajour ignores it.
+   */
+  workedHours?: number;
 }
 
 /**

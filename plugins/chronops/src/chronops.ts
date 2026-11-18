@@ -1,12 +1,13 @@
 // What MineHunter's ChronOps Forwarder answers, as contract/snapshot.schema.json
-// (version 2) and ADR-0030 describe it. This file is the plugin's reading of
+// (version 3) and ADR-0030 describe it. Version 2 is still read, so the plugin
+// works before and after MineHunter moves to version 3. This file is the plugin's reading of
 // that contract. It holds the types, and a parser that applies the schema's
 // rules by hand (required fields, types, enums, minimums, date formats, no
 // unknown field) and refuses a body that strays from it, naming the field.
 // Ajour never sees these shapes.
 
-/** The snapshot version this plugin reads. A shape change bumps it. */
-export const CHRONOPS_SNAPSHOT_VERSION = 2;
+/** The snapshot versions this plugin reads, oldest first. A shape change bumps MineHunter's. */
+export const CHRONOPS_SNAPSHOT_VERSIONS = [2, 3] as const;
 
 /** `GET /integration/me`: the token's owner, scope and expiry. */
 export interface ChronopsMe {
@@ -19,7 +20,7 @@ export interface ChronopsMe {
 
 /** `GET /integration/snapshot`. */
 export interface ChronopsSnapshot {
-  version: 2;
+  version: (typeof CHRONOPS_SNAPSHOT_VERSIONS)[number];
   generatedAt: string;
   /** The moment the budget figures are computed for. */
   reportAt: string;
@@ -55,13 +56,27 @@ export interface ChronopsBudget {
   status: ChronopsBudgetStatus;
 }
 
+/**
+ * A task as version 3 has it. A version 2 task has no budget and no worked
+ * hours: the parser gives it null for both and an adjustment of 0, and drops
+ * its phase, always empty since MineHunter's ADR-0045.
+ */
 export interface ChronopsTask {
   id: string;
-  phase: string;
   name: string;
   closed: boolean;
   billable: boolean;
+  /** Workday's estimate, which every import replaces. */
   estimateHours: number;
+  /** The budget a lead set in ChronOps (ADR-0047). Null without one. */
+  budgetHours: number | null;
+  /**
+   * Workday's hours on the task, every worker and all time, without the
+   * adjustment. Null from a version 2 snapshot, which does not send them.
+   */
+  workedHours: number | null;
+  /** Hours a lead added to the worked hours, negative when removed. */
+  workedHoursAdjustment: number;
   /** ChronOps assigns by email, so this is known with or without a worker link. */
   assignedToMe: boolean;
   /** The caller's hours on the task in the current month. Null when not assigned or not linked. */
@@ -95,6 +110,8 @@ const nonEmpty: Reader<string> = (value, path) =>
   typeof value === "string" && value.length > 0 ? value : fail(path, "a non-empty string");
 const nonNegative: Reader<number> = (value, path) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fail(path, "a number of 0 or more");
+const positive: Reader<number> = (value, path) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fail(path, "a number over 0");
 /**
  * Whether a string starts with a real calendar day, YYYY-MM-DD. Date.parse
  * alone is not enough, since it rolls 2026-02-30 over to March 2.
@@ -155,16 +172,28 @@ function object<Shape extends Record<string, Reader<unknown>>>(
   };
 }
 
-const readTask = object({
+const taskFields = {
   id: nonEmpty,
-  phase: string,
   name: nonEmpty,
   closed: boolean,
   billable: boolean,
   estimateHours: nonNegative,
   assignedToMe: boolean,
   myHours: nullable(nonNegative),
+};
+
+const readTask: Reader<ChronopsTask> = object({
+  ...taskFields,
+  budgetHours: nullable(positive),
+  workedHours: number,
+  workedHoursAdjustment: number,
 });
+
+/** A version 2 task, in version 3's shape. */
+const readTaskV2: Reader<ChronopsTask> = (value, path) => {
+  const { phase: _phase, ...task } = object({ ...taskFields, phase: string })(value, path);
+  return { ...task, budgetHours: null, workedHours: null, workedHoursAdjustment: 0 };
+};
 
 const readBudget = object({
   mode: oneOf(["monthly", "annual"] as const),
@@ -176,24 +205,28 @@ const readBudget = object({
   status: oneOf(["Green", "Yellow", "Red", "Unconfigured"] as const),
 });
 
-const readProject = object({
-  code: nonEmpty,
-  name: nonEmpty,
-  client: nullable(string),
-  complete: nullable(boolean),
-  contractStart: nullable(date),
-  contractEnd: nullable(date),
-  budget: readBudget,
-  tasks: array(readTask),
-});
+/** A snapshot reader for one version, which only its tasks tell apart. */
+function snapshotReader(version: ChronopsSnapshot["version"], task: Reader<ChronopsTask>): Reader<ChronopsSnapshot> {
+  const readProject = object({
+    code: nonEmpty,
+    name: nonEmpty,
+    client: nullable(string),
+    complete: nullable(boolean),
+    contractStart: nullable(date),
+    contractEnd: nullable(date),
+    budget: readBudget,
+    tasks: array(task),
+  });
+  return object({
+    version: oneOf([version] as const),
+    generatedAt: dateTime,
+    reportAt: dateTime,
+    me: object({ email, workerLinked: boolean }),
+    projects: array(readProject),
+  });
+}
 
-const readSnapshot = object({
-  version: oneOf([CHRONOPS_SNAPSHOT_VERSION] as const),
-  generatedAt: dateTime,
-  reportAt: dateTime,
-  me: object({ email, workerLinked: boolean }),
-  projects: array(readProject),
-});
+const readSnapshot = { 2: snapshotReader(2, readTaskV2), 3: snapshotReader(3, readTask) };
 
 /**
  * Reads a snapshot body, refusing one of another version or a field that
@@ -202,12 +235,12 @@ const readSnapshot = object({
  */
 export function parseChronopsSnapshot(value: unknown): ChronopsSnapshot {
   const version = record(value, "snapshot").version;
-  if (version !== CHRONOPS_SNAPSHOT_VERSION) {
+  if (version !== 2 && version !== 3) {
     throw new ChronopsContractError(
-      `ChronOps answered snapshot version ${String(version)}, and this plugin reads version ${CHRONOPS_SNAPSHOT_VERSION}. Update the plugin.`,
+      `ChronOps answered snapshot version ${String(version)}, and this plugin reads versions ${CHRONOPS_SNAPSHOT_VERSIONS.join(" and ")}. Update the plugin.`,
     );
   }
-  return readSnapshot(value, "snapshot");
+  return readSnapshot[version](value, "snapshot");
 }
 
 // /integration/me is not under the versioned schema, so a field MineHunter

@@ -50,6 +50,16 @@ export interface ChronopsTimeEntry {
   updatedAt: string;
 }
 
+/**
+ * `POST /integration/entries/timer/start`: the timer it started, or the
+ * entry a repeated client reference made, running or not. ChronOps also
+ * answers the timer the start stopped, which the plugin never reads: the
+ * round's listing shows that entry stopped.
+ */
+export interface ChronopsTimerStart {
+  timer: ChronopsTimeEntry;
+}
+
 /** `GET /integration/snapshot`. */
 export interface ChronopsSnapshot {
   version: (typeof CHRONOPS_SNAPSHOT_VERSIONS)[number];
@@ -316,4 +326,10 @@ export function parseChronopsTimeEntry(value: unknown): ChronopsTimeEntry {
 
 export function parseChronopsTimeEntries(value: unknown): ChronopsTimeEntry[] {
   return array(readTimeEntry)(value, "entries");
+}
+
+const readTimerStart = object({ timer: readTimeEntry }, "ignore");
+
+export function parseChronopsTimerStart(value: unknown): ChronopsTimerStart {
+  return readTimerStart(value, "start");
 }

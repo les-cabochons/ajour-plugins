@@ -2,7 +2,7 @@
 // `syncTimeEntries` applies Ajour's changes to ChronOps Time Entries, in
 // order, then lists the window back. Ajour keeps an entry as a day and whole
 // minutes, and ChronOps as a start and an end, so this file maps between the
-// two. Running entries come with ajour-plugins#37.
+// two. Ajour's running entry is the ChronOps timer (ajour-plugins#37).
 import type {
   PluginConnection,
   TimeSyncChange,
@@ -17,6 +17,7 @@ import {
   CHRONOPS_MAX_LISTED_ENTRIES,
   parseChronopsTimeEntries,
   parseChronopsTimeEntry,
+  parseChronopsTimerStart,
   type ChronopsTimeEntry,
 } from "./chronops.ts";
 import { TIME_SYNC_BOUNDS } from "./contract.ts";
@@ -33,17 +34,20 @@ import { dayAfter, instantAt, localDateIn } from "./local-time.ts";
 import { createPacer } from "./pacer.ts";
 
 const ENTRIES = "/integration/entries";
+const TIMER_START = `${ENTRIES}/timer/start`;
 
 /** The source ChronOps records on the entries Ajour creates. Client references are unique per source. */
 const AJOUR_SOURCE = "ajour";
 
 /**
  * The pace of a round's requests. The Forwarder allows 10 a second with a
- * burst of 20 per address. A round holds at most 20 changes of up to three
- * requests each, and one or two listings. Half the burst, then 8 a second,
+ * burst of 20 per address. A round holds at most 20 changes of up to four
+ * requests each, such as an edit answered 404, the POST that finds a timer
+ * under the key, its stop and a PATCH, then the listing. A delete's lookup
+ * listing comes with a change of at most three requests. Half the burst, then 8 a second,
  * leaves room for a project sync and other tools behind the same address.
- * A full round of 62 requests then takes about 7 seconds, inside Ajour's
- * 30-second operation timeout.
+ * The longest round, 81 requests, then takes about 9 seconds, inside
+ * Ajour's 30-second operation timeout.
  */
 const PACE = { burst: 10, perSecond: 8 } as const;
 
@@ -57,9 +61,15 @@ const STAND_IN_HOUR = 9;
  */
 const CLOCK_MARGIN_MS = 60_000;
 
+/**
+ * How far from now a timer's start or stop instant may be. ChronOps takes
+ * one within 10 minutes of its own clock, so this leaves the same minute for
+ * a computer clock that differs.
+ */
+const INSTANT_REACH_MS = 10 * 60_000 - CLOCK_MARGIN_MS;
+
 /** What the user reads for a change that failed or waits. Ajour sends it again next round. */
 const MESSAGES = {
-  running: "This version of the ChronOps plugin doesn't send running entries yet.",
   future: "ChronOps takes no entry on a day after today. Ajour sends it on its day.",
   unreachable: "ChronOps could not be reached. Ajour tries again.",
   brokerLimit: "Ajour sent ChronOps too many requests at once. Ajour tries again.",
@@ -73,7 +83,7 @@ type Upsert = Extract<TimeSyncChange, { kind: "upsert" }>;
 type Delete = Extract<TimeSyncChange, { kind: "delete" }>;
 
 /** The values ChronOps holds of an entry, which a PATCH can change. */
-type Compared = Pick<TimeSyncEntryValues, "localDate" | "minutes" | "projectRemoteId" | "taskName">;
+type Compared = Pick<TimeSyncEntryValues, "localDate" | "minutes" | "countingSince" | "projectRemoteId" | "taskName">;
 
 /** What one round did, for its wide event. Counts only, never names. */
 interface Counts {
@@ -81,9 +91,15 @@ interface Counts {
   created: number;
   /** Entries a POST found under the change's client reference (200). */
   adopted: number;
+  /** Timer starts ChronOps answered, a repeated client reference included. */
+  started: number;
+  /** Running entries a stop by id stopped. */
+  stopped: number;
+  /** Stops answered 409: the entry was stopped elsewhere, such as by another tool's start. */
+  stoppedElsewhere: number;
   /** PATCHes ChronOps took. */
   updated: number;
-  /** Edits answered 404, so the entry was created again. */
+  /** Edits and stops answered 404, so the entry was created or started again. */
   recreated: number;
   deleted: number;
   refused: number;
@@ -182,16 +198,41 @@ function standInStart(localDate: string, round: Round) {
   return new Date(Math.min(nine, Math.max(Date.now() - CLOCK_MARGIN_MS, midnight))).toISOString();
 }
 
+/** An ISO instant, as ChronOps reads it, in milliseconds. */
+const iso = (instant: number) => new Date(instant).toISOString();
+
+/** Whether ChronOps takes `instant` as the start or the stop of a timer. */
+const withinReach = (instant: number) => Math.abs(instant - Date.now()) <= INSTANT_REACH_MS;
+
+/** When a running entry's count began, in milliseconds. Ajour always sends it for a running entry. */
+const countBegan = (values: Pick<TimeSyncEntryValues, "countingSince">) =>
+  values.countingSince === undefined ? Date.now() : Date.parse(values.countingSince);
+
+/**
+ * Whether a running entry's start moved. Both sides compare in whole
+ * minutes, so starts less than a minute apart are the same start: ChronOps
+ * keeps microseconds, Ajour may keep a coarser instant, and moving the start
+ * by those seconds would be an edit nobody made.
+ */
+function startMoved(values: TimeSyncEntryValues, from: Partial<Compared> | undefined) {
+  return from?.countingSince === undefined || Math.abs(countBegan(values) - Date.parse(from.countingSince)) >= 60_000;
+}
+
 /**
  * The PATCH body that brings ChronOps from `from` to Ajour's `values`: the
- * project, task and minutes that differ, and a stand-in start only when the
- * day differs, so ChronOps keeps the real start it has. Without `from`,
- * every field.
+ * project and task that differ, then for a saved entry the minutes, and a
+ * stand-in start only when the day differs, so ChronOps keeps the real start
+ * it has. A timer has no length yet, so for a running entry it is the start
+ * that moves to `countingSince`. A field `from` leaves out is sent.
  */
-function patchBody(values: TimeSyncEntryValues, from: Compared | undefined, round: Round) {
+function patchBody(values: TimeSyncEntryValues, from: Partial<Compared> | undefined, round: Round) {
   const body: Record<string, string | number> = {};
   if (from?.projectRemoteId !== values.projectRemoteId) body["workdayProject"] = values.projectRemoteId;
   if (from?.taskName !== values.taskName) body["task"] = values.taskName;
+  if (values.running) {
+    if (startMoved(values, from)) body["startedAt"] = iso(countBegan(values));
+    return body;
+  }
   if (from?.minutes !== values.minutes) body["minutes"] = values.minutes;
   if (from?.localDate !== values.localDate) body["startedAt"] = standInStart(values.localDate, round);
   return body;
@@ -238,20 +279,25 @@ async function answeredEntry(response: AjourResponse, round: Round) {
 }
 
 /**
- * Creates the entry with the sync key as its client reference. A 200 means
- * ChronOps already holds the entry this key created, such as when the
- * answer to an earlier create was lost: Ajour's values win, so it is brought
- * to them.
+ * Creates the saved entry with the sync key as its client reference. It
+ * starts at `realStart` when that is on its day, such as a stopped timer's
+ * start, and at a stand-in start otherwise. A 200 means ChronOps already
+ * holds the entry this key created, such as when the answer to an earlier
+ * create was lost: Ajour's values win, so it is brought to them. When that
+ * entry is a timer, from a start whose answer was lost, it is stopped by id
+ * first, since ChronOps gives a timer no length.
  */
-async function create(round: Round, change: Upsert): Promise<TimeSyncChangeResult> {
+async function create(round: Round, change: Upsert, realStart?: number): Promise<TimeSyncChangeResult> {
   const { values } = change;
+  const startedAt =
+    realStart !== undefined && round.localDate(realStart) === values.localDate ? iso(realStart) : standInStart(values.localDate, round);
   const response = await send(round, {
     method: "POST",
     path: ENTRIES,
     json: {
       workdayProject: values.projectRemoteId,
       task: values.taskName,
-      startedAt: standInStart(values.localDate, round),
+      startedAt,
       minutes: values.minutes,
       clientRef: change.syncKey,
     },
@@ -263,15 +309,108 @@ async function create(round: Round, change: Upsert): Promise<TimeSyncChangeResul
   if (response.status !== 200) return unsuccessful(round, change, response);
   round.counts.adopted += 1;
   const stored = parseChronopsTimeEntry(await jsonBody(response));
+  if (stored.endedAt === null) return stop(round, change, stored.id, Date.parse(stored.startedAt), "fail");
+  return bringTo(round, change, stored);
+}
+
+/**
+ * Answers the entry as ChronOps stored it, after a PATCH of what still
+ * differs from Ajour's values, if anything does.
+ */
+async function bringTo(round: Round, change: Upsert, stored: ChronopsTimeEntry) {
   const held = remoteEntry(stored, round);
-  const body = patchBody(values, held, round);
+  const body = patchBody(change.values, held, round);
   return Object.keys(body).length === 0 ? synced(change, held) : patch(round, change, stored.id, body, "fail");
 }
 
 /**
+ * Starts the ChronOps timer with the sync key as its client reference.
+ * ChronOps runs one timer per person, so the start stops whichever timer
+ * runs, at the instant the new one starts. That instant is `countingSince`
+ * when ChronOps takes it; otherwise the timer starts now and a PATCH moves
+ * its start back. A repeated client reference answers the entry it made,
+ * such as after a lost answer, and stops nothing. That entry is brought to
+ * Ajour's values while it runs. One stopped since is answered as is: the
+ * round's listing shows what stopped it.
+ */
+async function start(round: Round, change: Upsert): Promise<TimeSyncChangeResult> {
+  const { values } = change;
+  const began = countBegan(values);
+  const response = await send(round, {
+    method: "POST",
+    path: TIMER_START,
+    json: {
+      workdayProject: values.projectRemoteId,
+      task: values.taskName,
+      clientRef: change.syncKey,
+      ...(withinReach(began) ? { startedAt: iso(began) } : {}),
+    },
+  });
+  if (response.status !== 200) return unsuccessful(round, change, response);
+  round.counts.started += 1;
+  const { timer } = parseChronopsTimerStart(await jsonBody(response));
+  return timer.endedAt === null ? bringTo(round, change, timer) : synced(change, remoteEntry(timer, round));
+}
+
+/**
+ * Stops the running entry `id` by its id, never with the plain timer stop,
+ * which would stop a timer another tool started since. The stop instant is
+ * the end of Ajour's minutes from `startedAt`, when ChronOps takes it, so
+ * ChronOps keeps Ajour's minutes; otherwise it is now, and the PATCH that
+ * follows sets the minutes.
+ *
+ * A 409 means the entry no longer runs, stopped elsewhere or by another
+ * tool's start, so it is edited to Ajour's values. A 404 means it is gone,
+ * so the saved entry is created again, unless `whenMissing` is "fail".
+ */
+async function stop(
+  round: Round,
+  change: Upsert,
+  id: string,
+  startedAt: number,
+  whenMissing: "create" | "fail",
+): Promise<TimeSyncChangeResult> {
+  const { values } = change;
+  const endedAt = startedAt + values.minutes * 60_000;
+  const response = await send(round, {
+    method: "POST",
+    path: `${entryPath(id)}/stop`,
+    ...(withinReach(endedAt) ? { json: { endedAt: iso(endedAt) } } : {}),
+  });
+  if (response.ok) {
+    round.counts.stopped += 1;
+    return bringTo(round, change, parseChronopsTimeEntry(await jsonBody(response)));
+  }
+  if (response.status === 409) {
+    round.counts.stoppedElsewhere += 1;
+    // Whoever stopped it set another length, so the project, task and
+    // minutes all go. The real start stays while Ajour keeps its day.
+    return patch(round, change, id, patchBody(values, { localDate: round.localDate(startedAt) }, round), "fail");
+  }
+  if (response.status === 404 && whenMissing === "create") {
+    round.counts.recreated += 1;
+    return create(round, change, startedAt);
+  }
+  return unsuccessful(round, change, response);
+}
+
+/**
+ * Continue: Ajour runs a saved entry again. ChronOps never runs a finished
+ * entry again, and its client reference stays taken until it is deleted.
+ * So the finished entry is deleted, which frees the reference, and the
+ * timer starts with it. A 404 means a retry already deleted it.
+ */
+async function resume(round: Round, change: Upsert, remoteId: string) {
+  const response = await send(round, { method: "DELETE", path: entryPath(remoteId) });
+  if (!response.ok && response.status !== 404) return unsuccessful(round, change, response);
+  return start(round, change);
+}
+
+/**
  * Sends a PATCH and answers the entry as ChronOps stored it. An edit of an
- * entry ChronOps no longer has creates it again; a PATCH that follows a
- * create does not, so the two never loop.
+ * entry ChronOps no longer has creates it again, or starts the timer again
+ * for a running entry; a PATCH that follows a create, a start or a stop
+ * does not, so they never loop.
  */
 async function patch(
   round: Round,
@@ -287,16 +426,16 @@ async function patch(
   }
   if (response.status === 404 && whenMissing === "create") {
     round.counts.recreated += 1;
-    return create(round, change);
+    return change.values.running ? start(round, change) : create(round, change);
   }
   return unsuccessful(round, change, response);
 }
 
 /**
- * Edits only what changed since the values both sides agreed on. When
- * nothing ChronOps holds changed, such as only the task's remote id, the
- * PATCH is empty: it still answers the entry as stored, and a 404 still
- * creates the entry again.
+ * Edits only what changed since the values both sides agreed on, a running
+ * entry's included. When nothing ChronOps holds changed, such as only the
+ * task's remote id, the PATCH is empty: it still answers the entry as
+ * stored, and a 404 still creates the entry again.
  */
 async function update(round: Round, change: Upsert, remoteId: string) {
   return patch(round, change, remoteId, patchBody(change.values, change.agreed, round), "create");
@@ -306,12 +445,18 @@ async function update(round: Round, change: Upsert, remoteId: string) {
  * Deletes the entry. ChronOps deletes for good, so a 404 means it is
  * already gone. Without a remote id, the entry is found by the client
  * reference Ajour gave it, in case the create's answer was lost; with none,
- * there is nothing to delete.
+ * there is nothing to delete. A remote id answered 404 is looked up the same
+ * way: a Continue whose answer was lost deleted that entry and started a
+ * timer under the same reference, which must not keep running.
  */
 async function remove(round: Round, change: Delete) {
   const id = change.remoteId ?? (await ajourEntryWithKey(round, change.syncKey))?.id;
   if (id !== undefined) {
-    const response = await send(round, { method: "DELETE", path: entryPath(id) });
+    let response = await send(round, { method: "DELETE", path: entryPath(id) });
+    if (response.status === 404 && change.remoteId !== undefined) {
+      const underKey = (await ajourEntryWithKey(round, change.syncKey))?.id;
+      if (underKey !== undefined && underKey !== id) response = await send(round, { method: "DELETE", path: entryPath(underKey) });
+    }
     if (!response.ok && response.status !== 404) return unsuccessful(round, change, response);
   }
   round.counts.deleted += 1;
@@ -337,15 +482,27 @@ async function listWindow(round: Round) {
   return listed;
 }
 
+/**
+ * Picks what a change does from where the entry runs. A running entry and
+ * the saved entry it becomes share one sync key, so `agreed.running` tells
+ * a stop from an edit, and a saved entry sent running again is Continue.
+ * Discard is a delete.
+ */
+async function upsert(round: Round, change: Upsert) {
+  const { values, agreed, remoteId } = change;
+  if (remoteId === undefined) return values.running ? start(round, change) : create(round, change);
+  if (values.running) return agreed?.running ? update(round, change, remoteId) : resume(round, change, remoteId);
+  if (agreed?.running) return stop(round, change, remoteId, countBegan(agreed), "create");
+  return update(round, change, remoteId);
+}
+
 async function apply(round: Round, change: TimeSyncChange, today: string): Promise<TimeSyncChangeResult> {
   if (round.unreachable) return failed(round, change, MESSAGES.unreachable);
   try {
     if (change.kind === "delete") return await remove(round, change);
-    // Starting, stopping and continuing a ChronOps timer come with #37.
-    if (change.values.running || change.agreed?.running) return failed(round, change, MESSAGES.running);
     // Ajour waits for the day, so this only guards a stand-in start ChronOps would put on today.
     if (change.values.localDate > today) return failed(round, change, MESSAGES.future);
-    return change.remoteId === undefined ? await create(round, change) : await update(round, change, change.remoteId);
+    return await upsert(round, change);
   } catch (error) {
     if (!(error instanceof ChronopsUnavailable)) throw error;
     if (error.unreachable) round.unreachable = true;
@@ -358,8 +515,9 @@ async function apply(round: Round, change: TimeSyncChange, today: string): Promi
  * from midnight on `from` to midnight after `to` in the user's time zone. A
  * refused token, a forbidden request or a listing that fails throws, and
  * Ajour applies nothing from the round. Every change Ajour sends again is
- * safe to repeat: a create finds its entry by client reference, an edit
- * sets the same values, and a delete of a gone entry is synced.
+ * safe to repeat: a create or a start finds its entry by client reference,
+ * an edit sets the same values, a repeated stop answers 409 and sets them,
+ * and a delete of a gone entry is synced.
  */
 export async function syncTimeEntries(connection: PluginConnection, request: TimeSyncRequest): Promise<TimeSyncResult> {
   const startedAt = performance.now();
@@ -374,7 +532,19 @@ export async function syncTimeEntries(connection: PluginConnection, request: Tim
     },
     pace: createPacer(PACE),
     unreachable: false,
-    counts: { created: 0, adopted: 0, updated: 0, recreated: 0, deleted: 0, refused: 0, failed: 0, requests: 0 },
+    counts: {
+      created: 0,
+      adopted: 0,
+      started: 0,
+      stopped: 0,
+      stoppedElsewhere: 0,
+      updated: 0,
+      recreated: 0,
+      deleted: 0,
+      refused: 0,
+      failed: 0,
+      requests: 0,
+    },
   };
   const event = (outcome: string) => ({
     connectionId: connection.id,

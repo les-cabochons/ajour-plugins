@@ -94,7 +94,8 @@ Each change gets a result. A ChronOps validation answer, such as an entry
 over 24 hours or a task over 200 characters, is `refused` with ChronOps'
 message, and Ajour shows it until the entry changes. A 409, which a
 concurrent request with the same client reference gets, a 429, a 5xx or a
-network error is `failed`, and Ajour sends the change again next round. Once
+network error is `failed`, and Ajour sends the change again next round. A
+stop's 409 means something else, below. Once
 ChronOps can't be reached, the round's other changes fail without a request.
 A refused token (401) or a forbidden request (403) fails the whole round, as
 does a listing that fails.
@@ -113,12 +114,48 @@ entries, the newest first. A listing that long fails the round, since the
 entries it leaves out would look deleted to Ajour.
 
 A round stays under the Forwarder's limit of 10 requests a second with a
-burst of 20: it sends 10 requests at once, then 8 a second. A full round of
-20 changes needs at most 62 requests, about 7 seconds.
+burst of 20: it sends 10 requests at once, then 8 a second. A change takes
+at most four requests, so a round of 20 changes needs at most 81 with the
+listing, about 9 seconds.
 
-Running entries, Stop and Continue come in a later version
-(les-cabochons/ajour-plugins#37). Until then a change for a running entry is
-`failed`, and Ajour doesn't send one.
+### The running entry
+
+Ajour's running entry is the ChronOps timer, so a team lead sees what the
+user is on now, with Ajour's elapsed time. ChronOps runs one timer per
+person, whichever tool started it. A running entry and the saved entry it
+becomes share one sync key, so ChronOps sees a stop, not a delete and a new
+entry.
+
+- **A start** is a `POST /integration/entries/timer/start` with the sync key
+  as `clientRef`. ChronOps takes a start instant within 10 minutes of its
+  clock, so `countingSince` goes as `startedAt` when it is within 9 minutes
+  of now. Otherwise the timer starts now, and a PATCH moves its start back to
+  `countingSince`. The start stops whichever timer runs, such as the Azure
+  DevOps extension's. A retry with the same client reference gets the timer
+  the first start made, and stops nothing.
+- **An edit of the running entry** PATCHes the project and task that
+  changed, and the start once it moved by a minute or more. Both sides
+  compare in whole minutes, and ChronOps keeps microseconds, so seconds apart
+  is the same start. A timer has no length, so the minutes never go. An edit
+  answered 404 starts the timer again.
+- **A stop** is a `POST /integration/entries/{id}/stop`, by id, so a timer
+  another tool started since keeps running. The manifest doesn't allow the
+  plain timer stop. The stop instant is the end of Ajour's minutes from the
+  agreed start, when ChronOps takes it, so ChronOps keeps Ajour's minutes.
+  Otherwise the stop is now. A PATCH then sends what still differs, such as
+  minutes Ajour changed while stopping. A stop answered 409, because another
+  tool's start or someone in ChronOps already stopped the entry, PATCHes its
+  project, task and minutes to Ajour's. A stop answered 404 creates the saved
+  entry again at its real start.
+- **Continue**, a saved entry Ajour runs again, deletes the saved entry,
+  which frees its client reference, then starts the timer with it from
+  `countingSince`, as a start does. ChronOps never runs a finished entry
+  again.
+- **Discard** deletes the running entry.
+
+A start whose answer was lost leaves a timer under the key. When Ajour saved
+the entry before the retry, the POST of the saved entry finds that timer, and
+the plugin stops it by id.
 
 ## Contract
 
@@ -159,7 +196,18 @@ change, under `/integration`:
   with the stored entry, unchanged, for a client reference the same source
   already used. A concurrent request with the same reference gets 409.
 - `PATCH /entries/{id}` changes the project, task, start or minutes. Moving
-  the start keeps the length. A start after ChronOps' clock is refused.
+  the start keeps the length. A start after ChronOps' clock is refused. A
+  running entry's start moves back by any amount, and minutes are refused on
+  it.
+- `POST /entries/timer/start` starts the person's timer: `workdayProject`,
+  `task`, `clientRef` and an optional `startedAt` within 10 minutes of
+  ChronOps' clock. It stops the timer that runs, whichever tool started it,
+  at that instant, and answers `{ timer, stopped }`. A client reference the
+  same source already used answers that entry as `timer`, running or not,
+  with `stopped` null.
+- `POST /entries/{id}/stop` stops that entry, at an optional `endedAt` within
+  10 minutes of ChronOps' clock. It answers 409 when the entry no longer
+  runs and 404 when it is gone.
 - `DELETE /entries/{id}` deletes for good and frees the client reference.
 - Every entry carries `clientRef`, null when none, and `updatedAt`. A
   refusal is 400 with `{ "error": "..." }`. `workdayProject` is the code the
@@ -195,7 +243,9 @@ just fake --scope read-write --expires-at 2026-12-01T00:00:00Z
 node contract/fake-minehunter.mjs --port 8787
 ```
 
-It has no timer routes, and limits the rate only when a test asks.
+It serves the timer start and the stop by id, with one timer per person, but
+not the plain timer stop, which the plugin never calls. It limits the rate
+only when a test asks.
 
 To try the plugin in a development build of Ajour, point
 `AJOUR_DEV_PLUGIN_DIRS` at this folder, run `just fake`, and add a

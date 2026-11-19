@@ -45,7 +45,9 @@
       { "method": "GET", "path": "/integration/entries" },
       { "method": "POST", "path": "/integration/entries" },
       { "method": "PATCH", "path": "/integration/entries/*" },
-      { "method": "DELETE", "path": "/integration/entries/*" }
+      { "method": "DELETE", "path": "/integration/entries/*" },
+      { "method": "POST", "path": "/integration/entries/timer/start" },
+      { "method": "POST", "path": "/integration/entries/*/stop" }
     ],
     "requestHeaders": ["X-ChronOps-Source", "If-None-Match", "Content-Type"]
   },

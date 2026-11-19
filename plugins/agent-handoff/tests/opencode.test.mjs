@@ -92,13 +92,15 @@ const handoff = (session, native = { state: "working" }, id = "h1") => ({
   native,
 });
 
-const read = (...handoffs) =>
-  readHandoffStates({ tool: "opencode", handoffs });
+const read = (...handoffs) => readHandoffStates({ tool: "opencode", handoffs });
+
+// Detection answers each tool once, in the manifest's order.
+const opencodeOf = (tools) => tools.find((tool) => tool.id === "opencode");
 
 test("detection reads opencode --version and takes OpenCode 2.3.2", async () => {
   const calls = fakeOpenCode();
   const { tools } = await detectTools();
-  assert.deepEqual(tools[3], {
+  assert.deepEqual(opencodeOf(tools), {
     id: "opencode",
     available: true,
     version: "2.3.2",
@@ -123,7 +125,11 @@ test("detection refuses OpenCode 1 and a later major version, with what to do", 
   ]) {
     fakeOpenCode({ run: () => ok(output) });
     const { tools } = await detectTools();
-    assert.deepEqual(tools[3], { id: "opencode", available: false, reason });
+    assert.deepEqual(opencodeOf(tools), {
+      id: "opencode",
+      available: false,
+      reason,
+    });
   }
 });
 
@@ -131,7 +137,7 @@ test("a missing opencode is unavailable with the reason", async () => {
   fakeOpenCode({ run: refuse("executable_missing") });
   const { tools } = await detectTools();
   assert.equal(
-    tools[3].reason,
+    opencodeOf(tools).reason,
     "OpenCode isn't installed, or its opencode command isn't on PATH.",
   );
 });
@@ -236,7 +242,13 @@ test("a session whose run succeeded is ready for review, from one read", async (
     calls.map((c) => [c.argv, c.mode]),
     [
       [
-        ["opencode", "api", "session.get", "--param", `sessionID=${SUCCEEDED.id}`],
+        [
+          "opencode",
+          "api",
+          "session.get",
+          "--param",
+          `sessionID=${SUCCEEDED.id}`,
+        ],
         "capture",
       ],
     ],
@@ -349,7 +361,9 @@ test("a session with a run in progress is working, a later turn included", async
     ...SUCCEEDED,
     time: { ...SUCCEEDED.time, busy: SUCCEEDED.time.idle + 5000 },
   };
-  fakeOpenCode({ sessions: { [running.id]: running, ses_again0000000: again } });
+  fakeOpenCode({
+    sessions: { [running.id]: running, ses_again0000000: again },
+  });
   const updates = await read(
     handoff(running),
     handoff("ses_again0000000", { state: "ready" }, "h2"),

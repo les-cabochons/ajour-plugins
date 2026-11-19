@@ -1,11 +1,11 @@
 // Hands backlog items off to coding agents and reads back the state of their
 // work: T3 Code threads through the `t3` CLI, Claude Code background
-// sessions through `claude`, Copilot CLI sessions through `copilot`,
-// OpenCode 2 sessions through `opencode`, Codex threads through
-// `codex app-server`, which Ajour keeps running as a process session while a
-// turn runs, and VS Code chats through `code chat`. Every command runs
-// through Ajour's process broker, as declared in plugin.json's `processes`
-// block. No tool uses a connection.
+// sessions through `claude`, opened in a terminal or in the Claude desktop
+// app, Copilot CLI sessions through `copilot`, OpenCode 2 sessions through
+// `opencode`, Codex threads through `codex app-server`, which Ajour keeps
+// running as a process session while a turn runs, and VS Code chats through
+// `code chat`. Every command runs through Ajour's process broker, as declared
+// in plugin.json's `processes` block. No tool uses a connection.
 import type {
   DetectToolsResult,
   HandoffArguments,
@@ -18,6 +18,7 @@ import type {
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
+  CLAUDE_DESKTOP_TOOL,
   CLAUDE_TOOL,
   detectClaude,
   listClaude,
@@ -53,6 +54,11 @@ import {
   startVsCode,
 } from "./vscode.ts";
 
+/** Claude Code and Claude Code desktop run the same sessions. */
+function isClaude(tool: string): boolean {
+  return tool === CLAUDE_TOOL || tool === CLAUDE_DESKTOP_TOOL;
+}
+
 function unknownTool(id: string): never {
   throw new Error(`This plugin has no handoff tool "${id}".`);
 }
@@ -67,7 +73,7 @@ function requestOf<Request>(args: HandoffArguments<Request>): Request {
 
 /** Ajour detects the tools together, in plugin.json's order. */
 export async function detectTools(): Promise<DetectToolsResult> {
-  const tools = await Promise.all([
+  const [t3, claude, copilot, opencode, codex, vscode] = await Promise.all([
     detectT3(),
     detectClaude(),
     detectCopilot(),
@@ -75,7 +81,7 @@ export async function detectTools(): Promise<DetectToolsResult> {
     detectCodex(),
     detectVsCode(),
   ]);
-  return { tools };
+  return { tools: [t3, ...claude, copilot, opencode, codex, vscode] };
 }
 
 export async function startHandoff(
@@ -84,7 +90,7 @@ export async function startHandoff(
   const request = requestOf(args);
   if (request.tool === OPENCODE_TOOL) return startOpenCode(request);
   if (request.tool === T3_TOOL) return startT3(request);
-  if (request.tool === CLAUDE_TOOL) return startClaude(request);
+  if (isClaude(request.tool)) return startClaude(request);
   if (request.tool === COPILOT_TOOL) return startCopilot(request);
   if (request.tool === CODEX_TOOL) return startCodex(request);
   if (request.tool === VSCODE_TOOL) return startVsCode(request);
@@ -102,7 +108,7 @@ export async function readHandoffStates(
   const request = requestOf(args);
   if (request.tool === OPENCODE_TOOL) return readOpenCode(request);
   if (request.tool === T3_TOOL) return readT3(request);
-  if (request.tool === CLAUDE_TOOL) return readClaude(request);
+  if (isClaude(request.tool)) return readClaude(request);
   if (request.tool === CODEX_TOOL) return readCodex(request);
   if (request.tool === COPILOT_TOOL)
     throw new Error(`${NO_STATE} Open the session to follow it.`);
@@ -122,7 +128,7 @@ export async function listThreads(
   const request = requestOf(args);
   if (request.tool === OPENCODE_TOOL) return listOpenCode(request);
   if (request.tool === T3_TOOL) return listT3(request);
-  if (request.tool === CLAUDE_TOOL) return listClaude(request);
+  if (isClaude(request.tool)) return listClaude(request);
   if (request.tool === CODEX_TOOL) return listCodex(request);
   if (request.tool === COPILOT_TOOL)
     throw new Error(

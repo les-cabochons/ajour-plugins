@@ -130,6 +130,7 @@ test("detection says Claude Code isn't installed when claude is missing", async 
     [
       ["t3", false],
       ["claude", false],
+      ["claude-desktop", false],
       ["copilot", false],
       ["opencode", false],
       ["codex", false],
@@ -816,4 +817,272 @@ test("a listing claude can't answer throws what to do", async () => {
   await assert.rejects(listThreads(listRequest()), /isn't installed/);
   fakeClaude(() => ok("not json"));
   await assert.rejects(listThreads(listRequest()), /can't read/);
+});
+
+// Claude Code desktop: the same background sessions, opened in the Claude
+// desktop app from claude://resume?session=<id>. Checked on Claude 6.6395.1
+// for macOS with Claude Code 2.1.328: the app imports a CLI session from that
+// link, even a running one or one claude rm removed, but can't take a turn
+// while a background job runs it, even a job whose turn ended ("This session
+// is running in the background"). It can once claude stop stopped the job.
+// claude stop prints `stopped <job>` (stop.txt), also for a job already
+// stopped, and fails on a job it doesn't know (stop-missing.txt).
+const DESKTOP = "claude-desktop";
+const stopOutput = read("stop.txt");
+const stopMissing = read("stop-missing.txt");
+const RELEASED =
+  "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.";
+const desktopLink = (id) => `claude://resume?session=${id}`;
+
+/** Answers claude agents with `sessions`, and claude stop as recorded. */
+const stoppingClaude =
+  (sessions, stop = () => ok(stopOutput)) =>
+  (argv) => {
+    if (argv[1] === "agents") return out(sessions);
+    if (argv[1] === "stop") return stop(argv);
+    return undefined;
+  };
+const desktopRefresh = (handoffs) =>
+  readHandoffStates({ tool: DESKTOP, handoffs });
+const stops = (calls) =>
+  calls.filter((c) => c.argv[1] === "stop").map((c) => c.argv);
+
+test("one claude --version detects both Claude tools", async () => {
+  const calls = fakeClaude(() => ok(version));
+  const { tools } = await detectTools();
+  assert.deepEqual(
+    tools.filter((tool) => tool.id.startsWith("claude")),
+    [
+      { id: "claude", available: true, version: "2.1.325" },
+      { id: DESKTOP, available: true, version: "2.1.325" },
+    ],
+  );
+  assert.equal(calls.filter((c) => c.argv[0] === "claude").length, 1);
+});
+
+test("the desktop tool starts the same background session, and Open goes to the Claude app", async () => {
+  const calls = fakeClaude(recordedClaude());
+  const terminal = await startHandoff(startRequest());
+  const startCalls = calls.map((c) => c.argv);
+  calls.length = 0;
+  const result = await startHandoff({ ...startRequest(), tool: DESKTOP });
+  assert.deepEqual(
+    calls.map((c) => c.argv),
+    startCalls,
+  );
+  // Ajour opens the link when there is one, else the resume command.
+  assert.deepEqual(result, { ...terminal, link: desktopLink(sessionId) });
+  assertPrivate(result);
+});
+
+test("the desktop tool opens no terminal at start, whatever the start mode says", async () => {
+  const calls = fakeClaude(recordedClaude());
+  await startHandoff({
+    ...startRequest({ startMode: "terminal" }),
+    tool: DESKTOP,
+  });
+  assert.deepEqual(
+    calls.map((c) => c.argv[1]),
+    ["--bg", "agents"],
+  );
+});
+
+test("a desktop refresh stops a background job whose turn ended, so the Claude app can open it", async () => {
+  const calls = fakeClaude(stoppingClaude([done]));
+  const [update] = await desktopRefresh([handoff("h1", done.sessionId)]);
+  assert.deepEqual(stops(calls), [["claude", "stop", done.id]]);
+  assert.equal(update.state, "ready");
+  assert.equal(update.native.label, "Done");
+  assert.equal(update.native.reason, undefined);
+  assert.equal(update.native.released, undefined);
+  // The next read lists the job without a process: it stays ready, and
+  // claude stop doesn't run again.
+  const later = fakeClaude(stoppingClaude([{ ...done, status: undefined }]));
+  const [after] = await desktopRefresh([
+    handoff("h1", done.sessionId, update.native),
+  ]);
+  assert.deepEqual(stops(later), []);
+  assert.equal(after.state, "ready");
+});
+
+test("a desktop refresh stops a job that waits for you, and it keeps waiting for you", async () => {
+  const calls = fakeClaude(stoppingClaude([permission]));
+  const [update] = await desktopRefresh([handoff("h1", permission.sessionId)]);
+  assert.deepEqual(stops(calls), [["claude", "stop", permission.id]]);
+  assert.equal(update.state, "needs-you");
+  assert.deepEqual(update.native, {
+    state: "needs-you",
+    label: "Permission prompt",
+    kind: "background",
+    claudeState: "blocked",
+    status: "waiting",
+    waitingFor: "permission prompt",
+    job: permission.id,
+    released: true,
+    reason: RELEASED,
+  });
+  assertPrivate(update);
+
+  // Stopped, the job no longer says it waits. It still does, until a
+  // process runs the session again.
+  const stoppedJob = {
+    ...permission,
+    state: "stopped",
+    status: undefined,
+    waitingFor: undefined,
+  };
+  const later = fakeClaude(stoppingClaude([stoppedJob]));
+  const [waiting] = await desktopRefresh([
+    handoff("h1", permission.sessionId, update.native),
+  ]);
+  assert.deepEqual(stops(later), []);
+  assert.equal(waiting.state, "needs-you");
+  assert.equal(waiting.native.label, "Permission prompt");
+  assert.equal(waiting.native.released, true);
+  assert.equal(waiting.native.reason, RELEASED);
+
+  // The Claude app runs the session: claude agents lists its process too.
+  const app = {
+    ...interactive,
+    sessionId: permission.sessionId,
+    status: "busy",
+  };
+  const taken = fakeClaude(stoppingClaude([stoppedJob, app]));
+  const [working] = await desktopRefresh([
+    handoff("h1", permission.sessionId, waiting.native),
+  ]);
+  assert.deepEqual(stops(taken), []);
+  assert.equal(working.state, "working");
+  assert.equal(working.native.released, undefined);
+  assert.equal(working.native.reason, undefined);
+});
+
+test("a released session keeps waiting for you through a refresh that can't list", async () => {
+  // A list claude can't give makes every session unknown, a released one too.
+  fakeClaude(refuse("executable_missing"));
+  const [update] = await desktopRefresh([
+    handoff("h1", permission.sessionId, {
+      state: "needs-you",
+      label: "Permission prompt",
+      job: permission.id,
+      released: true,
+    }),
+  ]);
+  assert.equal(update.state, "unknown");
+  assert.equal(update.native.released, true);
+  // The next list that works waits for you again, labeled Waiting for you
+  // rather than with the Unknown of the failed read.
+  fakeClaude(
+    stoppingClaude([{ ...permission, state: "stopped", status: undefined }]),
+  );
+  const [waiting] = await desktopRefresh([
+    handoff("h1", permission.sessionId, update.native),
+  ]);
+  assert.equal(waiting.state, "needs-you");
+  assert.equal(waiting.native.label, "Waiting for you");
+  assert.equal(waiting.native.released, true);
+});
+
+test("a desktop refresh leaves a working job and interactive sessions alone, and the terminal tool never stops a job", async () => {
+  // An interactive session has no job to stop: it is open in its terminal.
+  const asking = { ...interactive, status: "waiting" };
+  const desktop = fakeClaude(stoppingClaude([dispatched, asking]));
+  const updates = await desktopRefresh([
+    handoff("h1", sessionId),
+    handoff("h2", interactive.sessionId),
+  ]);
+  assert.deepEqual(stops(desktop), []);
+  assert.deepEqual(
+    updates.map((u) => [u.state, u.native.released]),
+    [
+      ["working", undefined],
+      ["needs-you", undefined],
+    ],
+  );
+
+  const terminal = fakeClaude(stoppingClaude([done, permission]));
+  const read = await readHandoffStates({
+    tool: "claude",
+    handoffs: [
+      handoff("h1", done.sessionId),
+      handoff("h2", permission.sessionId),
+    ],
+  });
+  assert.deepEqual(stops(terminal), []);
+  assert.deepEqual(
+    read.map((u) => [u.state, u.native.released]),
+    [
+      ["ready", undefined],
+      ["needs-you", undefined],
+    ],
+  );
+});
+
+test("a job claude can't stop keeps its state, with why the Claude app can't go on with it yet", async () => {
+  fakeClaude(stoppingClaude([done], () => fail(stopMissing)));
+  const [update] = await desktopRefresh([handoff("h1", done.sessionId)]);
+  assert.equal(update.state, "ready");
+  assert.equal(update.native.released, undefined);
+  assert.equal(
+    update.native.reason,
+    "Ajour couldn't stop Claude Code's background session, so the Claude app can't go on with it yet. Ajour tries again at the next refresh. No session matching 'deadbeef'. Run 'claude agents' to list running sessions.",
+  );
+});
+
+test("a waiting job whose stop fails stays released, since the stop may still land", async () => {
+  // The plugin stops waiting at the refresh deadline, but Ajour's claude
+  // stop runs on and can still stop the job.
+  fakeClaude(stoppingClaude([permission], () => fail(stopMissing)));
+  const [update] = await desktopRefresh([handoff("h1", permission.sessionId)]);
+  assert.equal(update.state, "needs-you");
+  assert.equal(update.native.released, true);
+  assert.match(update.native.reason, /^Ajour couldn't stop/);
+  // The stop landed: the next read lists the job stopped, still waiting.
+  fakeClaude(
+    stoppingClaude([{ ...permission, state: "stopped", status: undefined }]),
+  );
+  const [after] = await desktopRefresh([
+    handoff("h1", permission.sessionId, update.native),
+  ]);
+  assert.equal(after.state, "needs-you");
+  assert.equal(after.native.label, "Permission prompt");
+});
+
+test("a desktop session missing from the list still opens in the Claude app", async () => {
+  fakeClaude(stoppingClaude(recorded));
+  const [update] = await desktopRefresh([
+    handoff("h1", "11111111-2222-4333-8444-555555555555", {
+      state: "ready",
+      label: "Done",
+      job: "11111111",
+    }),
+  ]);
+  assert.equal(update.state, "ready");
+  assert.equal(update.native.missing, true);
+  assert.equal(
+    update.native.reason,
+    "Claude Code no longer lists this session, such as after claude rm. Open still opens it in the Claude app.",
+  );
+});
+
+test("a desktop listing links each background job to the Claude app", async () => {
+  listedClaude();
+  const terminal = await listThreads(listRequest());
+  const { threads } = await listThreads(listRequest({ tool: DESKTOP }));
+  assert.deepEqual(
+    threads.map((t) => t.threadId),
+    terminal.threads.map((t) => t.threadId),
+  );
+  for (const [index, thread] of threads.entries()) {
+    const job = thread.resume?.args.job;
+    // An interactive session alone has no job: it is open in its terminal,
+    // where the app can't take it over.
+    assert.equal(thread.link, job ? desktopLink(thread.threadId) : undefined);
+    assert.deepEqual(
+      { ...thread, link: undefined },
+      { ...terminal.threads[index], link: undefined },
+    );
+  }
+  assert.ok(threads.some((t) => t.link));
+  assert.ok(threads.some((t) => !t.link));
 });

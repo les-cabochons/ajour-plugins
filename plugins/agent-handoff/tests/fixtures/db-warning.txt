@@ -1,0 +1,30 @@
+[15:17:44.306] WARN (#20): Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name. {
+  divergent: [
+    '73:ActiveTurnItemIndexes (unknown to this build)',
+    '74:ExcludeAttachmentPlaceholdersFromSearch (unknown to this build)',
+    '75:SubagentDeliveryState (unknown to this build)',
+    '76:ProjectionProjectsPinArchive (unknown to this build)',
+    '77:RepairBooleanSettledOverride (unknown to this build)',
+    '78:DropOrchestrationEventCorrelationIndex (unknown to this build)',
+    '79:DelegatedRecoveryIndexes (unknown to this build)',
+    '80:ScheduledTaskThreadMode (unknown to this build)',
+    '81:ProjectionMessageSearchText (unknown to this build)',
+    '82:TurnItemConversationIndex (unknown to this build)',
+    '83:CommandReadIndexes (unknown to this build)',
+    '84:LastExecutedRunIndex (unknown to this build)',
+    '85:TurnItemCounts (unknown to this build)',
+    '86:QueuedTurnInputIndex (unknown to this build)',
+    '87:ProjectionProjectsCustomTitle (unknown to this build)',
+    '88:TurnItemTypeStatusIndex (unknown to this build)',
+    '89:ShellThreadReadIndexes (unknown to this build)',
+    '90:AuthConnectDevices (unknown to this build)',
+    '91:AuthConnectDeniedRequests (unknown to this build)',
+    '92:QueuedTurnInputIndexJsonValid (unknown to this build)',
+    '93:ProviderTurnAttemptIndex (unknown to this build)',
+    '94:TurnItemMessageOrdinalIndex (unknown to this build)',
+    '95:TurnItemInlineWorkOutput (unknown to this build)',
+    '96:RepairStaleTitleRegeneration (unknown to this build)',
+    '97:IssueTrackerBindings (unknown to this build)',
+    '98:ActiveShellIndexIndexes (unknown to this build)'
+  ]
+}

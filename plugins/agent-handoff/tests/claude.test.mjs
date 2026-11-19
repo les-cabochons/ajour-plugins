@@ -22,6 +22,7 @@ import {
   out,
   refuse,
   refused,
+  settleWithTimers,
 } from "./fake-broker.mjs";
 
 const read = (name) =>
@@ -632,7 +633,9 @@ test("a refresh with no handoffs runs nothing", async () => {
   assert.deepEqual(calls, []);
 });
 
-test("each broker refusal names Claude Code and says what to do next", async () => {
+test("each broker refusal names Claude Code and says what to do next", async (t) => {
+  // A concurrency refusal is asked again for about 3 seconds first.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const cases = {
     concurrency: "Ajour is busy with other Claude Code commands; try again.",
     spawn_refused:
@@ -645,7 +648,7 @@ test("each broker refusal names Claude Code and says what to do next", async () 
   };
   for (const [code, expected] of Object.entries(cases)) {
     fakeClaude(refuse(code));
-    const { tools } = await detectTools();
+    const { tools } = await settleWithTimers(t, detectTools());
     assert.equal(tools[1].reason, expected, code);
   }
 });

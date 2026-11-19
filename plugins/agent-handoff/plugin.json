@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex, and follow their work where the tool reports it.",
@@ -361,6 +361,13 @@
         "args": ["--version"],
         "mode": "capture",
         "timeoutSeconds": 10
+      },
+      {
+        "id": "claude-trust",
+        "executable": "claude",
+        "args": [],
+        "cwd": "{folder:folder}",
+        "mode": "terminal"
       },
       {
         "id": "copilot-start",

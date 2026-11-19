@@ -186,7 +186,7 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   );
 });
 
-test("the declared commands are four t3, six claude, four copilot, two opencode and three codex commands", () => {
+test("the declared commands are four t3, seven claude, four copilot, two opencode and three codex commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -302,6 +302,15 @@ test("the declared commands are four t3, six claude, four copilot, two opencode 
       args: ["--version"],
       mode: "capture",
       timeoutSeconds: 10,
+    },
+    // claude in a terminal in the folder, with nothing on its command line:
+    // Claude Code asks whether to trust a folder only in an interactive
+    // session, and --bg refuses one it doesn't trust yet.
+    "claude-trust": {
+      executable: "claude",
+      args: [],
+      cwd: "{folder:folder}",
+      mode: "terminal",
     },
     // Without a terminal, copilot reads the prompt from stdin, runs the task
     // and exits when done, so it starts detached with the prompt on stdin,

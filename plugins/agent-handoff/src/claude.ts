@@ -60,6 +60,10 @@ const SESSION_ID = /^[A-Za-z0-9._:][A-Za-z0-9:._-]{0,199}$/;
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAYBE_STARTED =
   "Claude Code may have started the session. Check claude agents before handing off again.";
+const TRUST_FIRST =
+  "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again.";
+const TRUST_OPENED =
+  "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.";
 // Open attaches to a listed job. Once `claude rm` removes the job, only its
 // transcript is left, which `claude --resume` reopens.
 const missing = (sessionId: string) =>
@@ -96,8 +100,7 @@ const claude: Tool = {
   explain(message) {
     if (UNTRUSTED_ROOT.test(message))
       return "Ajour started Claude Code at the system root instead of the repository folder, so Claude Code refused it. This needs an Ajour update.";
-    if (UNTRUSTED.test(message))
-      return "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again.";
+    if (UNTRUSTED.test(message)) return TRUST_FIRST;
     return message;
   },
 };
@@ -246,6 +249,36 @@ function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
   return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
+/** True when claude refused the repository folder because it doesn't trust it. */
+function untrusted(error: unknown): boolean {
+  return (
+    error instanceof ToolError &&
+    error.code === undefined &&
+    UNTRUSTED.test(error.message) &&
+    !UNTRUSTED_ROOT.test(error.message)
+  );
+}
+
+/**
+ * Claude Code asks whether to trust a folder only in an interactive session,
+ * and `--bg` refuses a folder it doesn't trust yet. So the plugin opens
+ * claude in a terminal in the folder, where the user accepts the prompt and
+ * hands off again. Returns what to tell the user.
+ */
+async function openTrustPrompt(
+  folder: string,
+  deadline: number,
+): Promise<string> {
+  try {
+    await before(claude, deadline, () =>
+      launch(claude, "claude-trust", { folder }),
+    );
+    return TRUST_OPENED;
+  } catch (error) {
+    return `${TRUST_FIRST} Ajour couldn't open a terminal: ${reasonOf(claude, error)}`;
+  }
+}
+
 /**
  * Open attaches a terminal to the job, which also wakes a stopped one.
  * `claude --resume` can't open a job that is still running once it is given
@@ -279,6 +312,8 @@ export async function startClaude(
     // Ajour stopped claude or dropped its output, so the session may exist.
     if (isUncertainStart(error))
       throw new ToolError(MAYBE_STARTED, (error as ToolError).code);
+    if (untrusted(error))
+      throw new ToolError(await openTrustPrompt(request.folder.id, deadline));
     throw new ToolError(
       reasonOf(claude, error),
       error instanceof ToolError ? error.code : undefined,

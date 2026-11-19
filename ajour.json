@@ -6,7 +6,7 @@
       "id": "agent-handoff",
       "name": "Agent handoff",
       "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "pluginApiVersion": 4,
       "capabilities": [
         "handoff"
@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/agent-handoff",
       "files": [
         {
@@ -42,22 +42,22 @@
         },
         {
           "path": "package.json",
-          "sha256": "54a054c8553ae3980831466e493662c1634c82f774365b43d25bc01d03c7cc15",
+          "sha256": "7dd5c0fe7625aa22b798bec8591b6251994d8af3e022ee1ee3da72ca3d937d23",
           "size": 1200
         },
         {
           "path": "plugin.json",
-          "sha256": "368f07389fe9e3961f1ed5af9a01be4741632014ab13e2d856efc5658fb8e016",
-          "size": 20739
+          "sha256": "783b0b8af88368215bc304625f07add5fe581396eac82102a4d6fb643fd5db7b",
+          "size": 20899
         },
         {
           "path": "src/claude.ts",
-          "sha256": "4bdb87c6e0624ec9a335b862a56c5d84bd1f8b92e84cec3c488b2a988ba27072",
-          "size": 14383
+          "sha256": "bc94e34df8904482b1b26cfab61d2fb3a946749cc6368ba60e419aa7294ddfca",
+          "size": 15593
         },
         {
           "path": "src/codex.ts",
-          "sha256": "df1bdf242a46b4d4349d729b26b143faeb5554dc6f87d2691b62fd528377c288",
+          "sha256": "7c60b2d084e9ab657c0e822abec4eabbb70a0808af57b2902a344dc543c3e811",
           "size": 35396
         },
         {
@@ -77,8 +77,8 @@
         },
         {
           "path": "src/shared.ts",
-          "sha256": "87e18dbcb94548bcd2e740cc0bc942541c92625adf54a2f8d7c5e03eb7dde7b6",
-          "size": 14595
+          "sha256": "ce53fd607333c50a676d8651474ad8499e87031931bbab9d95b38eb87c16dfbd",
+          "size": 15410
         },
         {
           "path": "src/t3.ts",
@@ -117,7 +117,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -255,7 +255,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/chronops",
       "files": [
         {
@@ -324,7 +324,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/github",
       "files": [
         {
@@ -407,7 +407,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/ics",
       "files": [
         {
@@ -495,7 +495,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/jira",
       "files": [
         {
@@ -615,7 +615,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "b76d6b6057ecc62a28aaeaed6a3555553f39eb5c",
+      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
       "path": "plugins/workday-agent",
       "files": [
         {

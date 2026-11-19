@@ -36,7 +36,10 @@ const threadId = started.threadId;
 const listed = json("list")[0];
 const shown = json("show").thread;
 const completed = json("completed").thread;
-const link = listed.link;
+// Open goes to the T3 Code app: the web link's path on its t3code: scheme.
+const appLink = (web) =>
+  web.replace("https://app.t3.codes/threads/", "t3code://threads/");
+const link = appLink(listed.link);
 const FOLDER = "folder-1";
 const late = /T3 Code took too long; refreshing again later/;
 
@@ -299,7 +302,7 @@ test("a start Ajour can't base asks for the base: neither main nor master, or th
   const calls = fakeT3((argv) => baseMissing(worktreeBase(argv)));
   await assert.rejects(startHandoff(startRequest({ base: "develop" })), {
     message:
-      '"develop" doesn\'t exist in ajour, so T3 Code can\'t start the worktree. Name the branch it starts from.',
+      "\"develop\" doesn't exist in ajour, so T3 Code can't start the worktree. Name the branch it starts from.",
     setting: "base",
   });
   // A base the user gave is the only one tried.
@@ -394,6 +397,23 @@ test("a start refuses a provider without a model, or a worktree without a branch
     /Name a branch/,
   );
   assert.deepEqual(calls, []);
+});
+
+test("a thread opens in the T3 Code app, which the manifest declares; a link T3 serves elsewhere stays https", async () => {
+  assert.ok(manifest.processes.openSchemes.includes("t3code"));
+  // The app routes t3code://threads/<environment>/<thread> to the thread's
+  // page, so the id keeps the encoding T3 gave it.
+  assert.equal(
+    link,
+    "t3code://threads/48ed0ee0-97a7-4156-8cc9-73e223805014/mcp%3Ac1e0d197-f95e-4388-b011-c17ab63ddef3",
+  );
+  const elsewhere = "https://t3.example.com/threads/env/thread-1";
+  fakeT3((argv) =>
+    argv[2] === "start"
+      ? out(started)
+      : out({ thread: { ...shown, link: elsewhere } }),
+  );
+  assert.equal((await startHandoff(startRequest())).link, elsewhere);
 });
 
 test("a start keeps the thread when reading its link fails, and never lists the folder", async () => {
@@ -983,7 +1003,12 @@ test("a listing runs thread list for the folder and answers its threads newest f
   const top = folderThreads.slice(0, 4);
   assert.deepEqual(
     threads.map((t) => [t.threadId, t.title, t.link, t.updatedAt]),
-    top.map((t) => [t.threadId, t.title, t.link, Date.parse(t.updatedAt)]),
+    top.map((t) => [
+      t.threadId,
+      t.title,
+      appLink(t.link),
+      Date.parse(t.updatedAt),
+    ]),
   );
   // A title with several keys stays whole; Ajour reads its keys.
   assert.equal(threads[0].title, "[PAY-12] [PAY-13] Share the session cookie");
@@ -1096,8 +1121,8 @@ test("a listed thread refreshes through readHandoffStates and opens from its lin
       ["h1", "done", settled.title],
     ],
   );
-  // Open goes to T3's https link, as for a started thread.
-  assert.match(ready.link, /^https:\/\/app\.t3\.codes\/threads\//);
+  // Open goes to the T3 Code app, as for a started thread.
+  assert.match(ready.link, /^t3code:\/\/threads\//);
   // T3 shows a listed thread by the id it listed it under.
   assert.deepEqual(
     argvOf({

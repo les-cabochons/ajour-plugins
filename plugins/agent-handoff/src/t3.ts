@@ -107,6 +107,25 @@ const t3: Tool = {
   },
 };
 
+// T3's web app, whose thread pages the T3 Code app opens on its own scheme.
+const WEB_APP = "https://app.t3.codes";
+const WEB_THREAD = /^\/threads\/[^/]+\/[^/]+\/?$/;
+
+/**
+ * The thread's link, for Open. The T3 Code app routes
+ * `t3code://threads/<environment>/<thread>` to the page T3's web link
+ * shows, so Open goes straight to the app instead of the browser. A link to
+ * another address stays the https link T3 gave.
+ */
+function appLink(value: unknown): string | undefined {
+  const link = https(value);
+  if (!link) return undefined;
+  const url = new URL(link);
+  return url.origin === WEB_APP && WEB_THREAD.test(url.pathname)
+    ? `t3code:/${url.pathname}${url.search}`
+    : link;
+}
+
 function isNotFound(error: unknown): boolean {
   return error instanceof ToolError && NOT_FOUND.test(error.message);
 }
@@ -219,7 +238,7 @@ function updateOf(id: string, thread: Json, notes: Native = {}): Update {
   const state = stateOf(thread);
   const title = text(thread.title, 500);
   const branch = text(thread.branch, 500);
-  const link = https(thread.link);
+  const link = appLink(thread.link);
   const pullRequests = pullRequestsOf(thread);
   return {
     id,
@@ -310,7 +329,7 @@ export async function startT3(
   } catch (error) {
     notes = { reason: reasonOf(t3, error) };
   }
-  const link = https(thread.link);
+  const link = appLink(thread.link);
   return {
     threadId,
     ...(link ? { link } : {}),
@@ -411,7 +430,7 @@ export async function listT3(
     const threadId = text(thread.threadId);
     const title = listTitle(thread.title);
     if (!threadId || !title || thread.parentThreadId) continue;
-    const link = https(thread.link);
+    const link = appLink(thread.link);
     const updatedAt = timeOf(thread.updatedAt);
     result.push({
       threadId,

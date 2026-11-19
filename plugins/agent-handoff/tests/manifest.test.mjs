@@ -86,8 +86,9 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
     tools[4].settings[0].options.map((option) => option.value),
     ["app", "terminal"],
   );
-  // The Codex app opens a thread from its codex://threads/<id> link.
-  assert.deepEqual(manifest.processes.openSchemes, ["codex"]);
+  // The Codex app opens a thread from its codex://threads/<id> link, and the
+  // T3 Code app from t3code://threads/<environment>/<thread>.
+  assert.deepEqual(manifest.processes.openSchemes, ["codex", "t3code"]);
 });
 
 test("OpenCode's connection is its loopback server, reached on-premises through the broker", () => {

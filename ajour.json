@@ -5,8 +5,8 @@
     {
       "id": "agent-handoff",
       "name": "Agent handoff",
-      "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
-      "version": "0.12.0",
+      "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode, Codex or VS Code and follow their work.",
+      "version": "0.14.0",
       "pluginApiVersion": 4,
       "capabilities": [
         "handoff"
@@ -20,7 +20,8 @@
         "claude-code",
         "copilot",
         "opencode",
-        "codex"
+        "codex",
+        "vscode"
       ],
       "author": {
         "name": "Alex Trépanier",
@@ -32,7 +33,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/agent-handoff",
       "files": [
         {
@@ -42,13 +43,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "7dd5c0fe7625aa22b798bec8591b6251994d8af3e022ee1ee3da72ca3d937d23",
-          "size": 1200
+          "sha256": "7a3375e95dba4a8267d14320b03111d5cfa26414ac4af49036a2e9a7591d48b8",
+          "size": 1225
         },
         {
           "path": "plugin.json",
-          "sha256": "783b0b8af88368215bc304625f07add5fe581396eac82102a4d6fb643fd5db7b",
-          "size": 20899
+          "sha256": "2e0316c67ca3a3b6dd408da355740e580b1679b7ecaa5283d3b02fbd41d7839f",
+          "size": 22084
         },
         {
           "path": "src/claude.ts",
@@ -57,7 +58,7 @@
         },
         {
           "path": "src/codex.ts",
-          "sha256": "7c60b2d084e9ab657c0e822abec4eabbb70a0808af57b2902a344dc543c3e811",
+          "sha256": "f029ae46654f54e7720cae09b3d541a868cb332a4ba675a58a2ed8b573eae7da",
           "size": 35396
         },
         {
@@ -67,23 +68,28 @@
         },
         {
           "path": "src/opencode.ts",
-          "sha256": "7c77e2110d89054bec52226a0d0f3d310847dc964bef5f5368082e660f5fe7da",
-          "size": 27821
+          "sha256": "f458676ce9714797b0e1cb948654846de65eed5c43854a6e51b716c79380a5f1",
+          "size": 16065
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "6a9b7515b09e22838d3f1cd3b3aedf070efe5b822e351705106e1397e828b64f",
-          "size": 4786
+          "sha256": "f4c45cd22488053fdb54776c6919fd68174aa0a38e153cc14a07bf08c5df683a",
+          "size": 4523
         },
         {
           "path": "src/shared.ts",
-          "sha256": "ce53fd607333c50a676d8651474ad8499e87031931bbab9d95b38eb87c16dfbd",
-          "size": 15410
+          "sha256": "49cd02c0fe4b5f8ccbb08c970807396dd12d4952f4f84b84dc44829d1eb3268a",
+          "size": 15561
         },
         {
           "path": "src/t3.ts",
           "sha256": "3fb4bd500d8c2785518b95e567c0cc8a49ca97970db15db973d8ab52da3f4d75",
           "size": 17924
+        },
+        {
+          "path": "src/vscode.ts",
+          "sha256": "bf3f0dae2d5403ff53b3bd1d59397598bcab055f235e89cbfe79f9db22eb5997",
+          "size": 3907
         }
       ]
     },
@@ -117,7 +123,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -258,7 +264,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/chronops",
       "files": [
         {
@@ -347,7 +353,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/github",
       "files": [
         {
@@ -430,7 +436,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/ics",
       "files": [
         {
@@ -518,7 +524,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/jira",
       "files": [
         {
@@ -638,7 +644,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
+      "commit": "06cf761f2e029439d3197b5616043db76b67e62c",
       "path": "plugins/workday-agent",
       "files": [
         {

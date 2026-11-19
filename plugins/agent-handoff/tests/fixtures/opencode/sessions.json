@@ -1,1 +1,26 @@
-[{"id":"ses_e18b1daabffe0l0EPAHN3a1ALh","slug":"witty-nebula","projectID":"acad080ba97fcf33e01c7c06fa36d04a847e0635","directory":"C:\\Users\\dev\\repos\\ajour","path":"","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"title":"Untitled exploration","version":"1.19.5","time":{"created":1794882020692,"updated":1794882020692}},{"id":"ses_e18b1def7ffe5DWc6ltJJGW3Tm","slug":"tidy-lagoon","projectID":"acad080ba97fcf33e01c7c06fa36d04a847e0635","directory":"C:\\Users\\dev\\repos\\ajour","path":"","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"title":"[PAY-12] [PAY-13] Share the session cookie","version":"1.19.5","time":{"created":1794882019592,"updated":1794882019592}},{"id":"ses_e18b1e358ffeCsgdyAr8iFxfLD","slug":"happy-forest","projectID":"acad080ba97fcf33e01c7c06fa36d04a847e0635","directory":"C:\\Users\\dev\\repos\\ajour","path":"","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"title":"[PAY-12] Fix login redirect","version":"1.19.5","time":{"created":1794882018471,"updated":1794882018471}}]
+[
+  {
+    "id": "ses_e0ae17976ffe8BuYD16wV8CSsK",
+    "title": "AJ-52 In a subfolder",
+    "updated": 1795113782084,
+    "created": 1795113781881,
+    "projectId": "71b35ae43bb28d72229f8f71205f5e9803940ada",
+    "directory": "/Users/dev/repos/ajour/packages"
+  },
+  {
+    "id": "ses_e0ae1830effeUlBUlDnbFk0v2q",
+    "title": "AJ-51 Second in the repository",
+    "updated": 1795113779642,
+    "created": 1795113779425,
+    "projectId": "71b35ae43bb28d72229f8f71205f5e9803940ada",
+    "directory": "/Users/dev/repos/ajour"
+  },
+  {
+    "id": "ses_e0ae18d9effe6aK6Ebf8mEIlfe",
+    "title": "AJ-50 First in the repository",
+    "updated": 1795113777149,
+    "created": 1795113776822,
+    "projectId": "71b35ae43bb28d72229f8f71205f5e9803940ada",
+    "directory": "/Users/dev/repos/ajour"
+  }
+]

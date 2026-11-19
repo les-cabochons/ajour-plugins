@@ -1,41 +1,32 @@
 # OpenCode answers
 
-Recorded on Windows from `opencode serve --hostname 127.0.0.1 --port 41978`,
-opencode-ai 1.19.5 installed into a throwaway npm prefix, with its own
-`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME`, in
-an empty git repository. No provider was signed in to. The repository path is
-replaced with `C:\Users\dev\repos\ajour`; nothing else is changed.
+Recorded on macOS with the `opencode` 2.3.2 CLI, with its own `XDG_DATA_HOME`,
+`XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME`, and `--standalone`
+on every command, so each ran its own private server on those folders instead
+of the computer's background service. No provider was signed in to; the
+successful run used OpenCode's free `opencode/deepseek-v4.1-flash-free`. Each
+`opencode run` got its prompt on stdin and a session id made the way the
+plugin makes one. The repository path is replaced with
+`/Users/dev/repos/ajour`; nothing else is changed.
 
-| File                       | Request                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `version.txt`              | `opencode --version`                                                                                         |
-| `health.json`              | `GET /global/health`                                                                                         |
-| `session-created.json`     | `POST /session` with `{"title":"AJ-42 Hand off to OpenCode"}`                                                |
-| `status-idle.json`         | `GET /session/status` with no session busy, and right after `prompt_async` answered 204                      |
-| `status-busy.json`         | `GET /session/status` while that session worked                                                              |
-| `permissions-none.json`    | `GET /permission`                                                                                            |
-| `questions-none.json`      | `GET /question`                                                                                              |
-| `session.json`             | `GET /session/<id>` after the session answered                                                               |
-| `session-not-found.json`   | `GET /session/ses_doesnotexist000000000000`, which answered 404                                              |
-| `messages-answered.json`   | `GET /session/<id>/message?limit=1` after OpenCode's free model answered "OK"                                |
-| `messages-unanswered.json` | The same for a session whose prompt named `missing-provider/missing-model`: no answer and no error is stored |
+| File                          | Command                                                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `version.txt`                 | `opencode --version`                                                                                                                    |
+| `session-succeeded.json`      | `opencode api session.get` after `opencode run -s <id> --title "AJ-42 Hand off to OpenCode"`, which the free model answered "OK"         |
+| `session-failed.json`         | The same after a run with `--model missing-provider/missing-model`                                                                       |
+| `messages-failed.json`        | `opencode api session.message.list --param sessionID=<id> --param limit=2` for that session: the `idle` message with the error, then the prompt |
+| `session-interrupted.json`    | `opencode api session.get` after a run stopped with SIGINT six seconds in                                                               |
+| `session-created.json`        | `opencode api session.get` for a session made with `opencode api session.create` and an id, never run                                    |
+| `session-create-own-id.json`  | `opencode api session.create` without an id, so OpenCode made its own                                                                   |
+| `session-not-found.json`      | `opencode api session.get --param sessionID=ses_doesnotexist000000000000`: stdout, which exited 1 with `HTTP 404 Not Found` on stderr     |
+| `sessions.json`               | `opencode session list --format json -n 50` in the repository                                                                            |
 
-The listing files come from a second throwaway server, `opencode serve` 1.19.5
-on 127.0.0.1:41979 with its own XDG folders, started in an empty git
-repository (`C:\Users\dev\repos\ajour`). Its sessions were created with
-`POST /session` and a title only, never a prompt: three in the repository,
-one in its `packages` subfolder (`?directory=`), one subagent's (`parentID`),
-and one in another repository, which OpenCode keeps under another project.
+`sessions.json` comes from its own XDG folders, with two repositories whose
+first commits differ: two sessions in the repository, one in its `packages`
+subfolder and one in the other repository, each from a run with the missing
+model. OpenCode lists the repository's project, so the subfolder's session is
+there and the other repository's isn't.
 
-| File                    | Request                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------- |
-| `path.json`             | `GET /path`                                                                             |
-| `sessions.json`         | `GET /session?roots=true&directory=<repository>&limit=50`: the repository's own three   |
-| `sessions-since.json`   | The same with `start` one millisecond after the second session's `time.updated`         |
-| `sessions-project.json` | `GET /session?roots=true&limit=50`: the whole project, the subfolder's session included |
-
-`schema/` holds the answers a server gives only while a model works on a
-task, written from the server's own `/doc` OpenAPI document (1.19.5):
-`SessionStatus` `retry`, `PermissionRequest`, `QuestionRequest`, a subagent's
-session with `parentID`, and an assistant message with an `APIError` or a
-`MessageAbortedError`.
+A session with a run going, `time.busy` without a later `time.idle`, isn't
+recorded: a `--standalone` read runs its own server, which doesn't see
+another process's run. The tests derive it from `session-succeeded.json`.

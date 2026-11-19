@@ -89,6 +89,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
       ["t3", false],
       ["claude", false],
       ["copilot", false],
+      ["opencode", false],
       ["codex", false],
       ["vscode", false],
     ],

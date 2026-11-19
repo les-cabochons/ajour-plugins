@@ -312,6 +312,31 @@ test("a later failed run reads its own reason, not the one before", async () => 
   );
 });
 
+test("a failed handoff takes OpenCode's reason back after a refresh cut short", async () => {
+  // A cut-short refresh keeps the failed state with its own reason, which
+  // must never pass for the run's error on the next read.
+  const failed = {
+    state: "failed",
+    label: "Failed",
+    idle: FAILED.time.idle,
+    outcome: "failed",
+    reason: "Model unavailable: missing-provider/missing-model",
+  };
+  fakeOpenCode({ run: refuse("timeout") });
+  const [cut] = await read(handoff(FAILED, failed));
+  assert.equal(cut.state, "failed");
+  assert.match(cut.native.reason, late);
+  fakeOpenCode({
+    sessions: { [FAILED.id]: FAILED },
+    messages: { [FAILED.id]: recorded("messages-failed.json") },
+  });
+  const [after] = await read(handoff(FAILED, cut.native));
+  assert.equal(
+    after.native.reason,
+    "Model unavailable: missing-provider/missing-model",
+  );
+});
+
 test("a session with a run in progress is working, a later turn included", async () => {
   // Between the start and the end of a run, OpenCode stores `time.busy`, and
   // `time.idle` stays at the previous run's end, if any.
@@ -389,7 +414,8 @@ test("a refresh cut short keeps every state", async () => {
   );
   assert.equal(update.state, "ready");
   assert.equal(update.native.label, "Ready for review");
-  assert.equal(update.native.idle, 1);
+  // Without `idle`, the next read tells the state from the session again.
+  assert.equal(update.native.idle, undefined);
   assert.match(update.native.reason, late);
 });
 

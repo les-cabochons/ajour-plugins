@@ -313,10 +313,14 @@ function update(handoff: Handoff, state: State, notes: Native): Update {
   };
 }
 
-/** Keeps what the plugin read last, with another state, label or reason. */
+/**
+ * Keeps what the plugin read last, with another state, label or reason. It
+ * drops `idle`, so the next read of a failed run takes OpenCode's reason
+ * again instead of this one.
+ */
 function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
   const kept: Native = { state };
-  for (const key of ["idle", "started", "outcome", "error"] as const) {
+  for (const key of ["started", "outcome", "error"] as const) {
     const value = handoff.native[key];
     if (typeof value === "number" || typeof value === "string")
       kept[key] = value;

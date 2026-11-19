@@ -487,11 +487,18 @@ async function release(
         capture(claude, "claude-stop", { job }),
       );
     } catch (error) {
+      // A stop that outlived the deadline still runs and may stop the job,
+      // so a job that waited stays released: `released` only counts once no
+      // process runs the session, and a job still live is stopped again.
       return {
         ...update,
-        native: withNotes(update.native as Native, {
-          reason: `${NOT_RELEASED} ${reasonOf(claude, error)}`,
-        }),
+        native: withNotes(
+          {
+            ...(update.native as Native),
+            ...(waits ? { released: true } : {}),
+          },
+          { reason: `${NOT_RELEASED} ${reasonOf(claude, error)}` },
+        ),
       };
     }
     return waits ? released(update, update.native as Native) : update;

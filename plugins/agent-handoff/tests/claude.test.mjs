@@ -1029,6 +1029,25 @@ test("a job claude can't stop keeps its state, with why the Claude app can't go 
   );
 });
 
+test("a waiting job whose stop fails stays released, since the stop may still land", async () => {
+  // The plugin stops waiting at the refresh deadline, but Ajour's claude
+  // stop runs on and can still stop the job.
+  fakeClaude(stoppingClaude([permission], () => fail(stopMissing)));
+  const [update] = await desktopRefresh([handoff("h1", permission.sessionId)]);
+  assert.equal(update.state, "needs-you");
+  assert.equal(update.native.released, true);
+  assert.match(update.native.reason, /^Ajour couldn't stop/);
+  // The stop landed: the next read lists the job stopped, still waiting.
+  fakeClaude(
+    stoppingClaude([{ ...permission, state: "stopped", status: undefined }]),
+  );
+  const [after] = await desktopRefresh([
+    handoff("h1", permission.sessionId, update.native),
+  ]);
+  assert.equal(after.state, "needs-you");
+  assert.equal(after.native.label, "Permission prompt");
+});
+
 test("a desktop session missing from the list still opens in the Claude app", async () => {
   fakeClaude(stoppingClaude(recorded));
   const [update] = await desktopRefresh([

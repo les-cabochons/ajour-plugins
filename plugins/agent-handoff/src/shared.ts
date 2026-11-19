@@ -351,15 +351,32 @@ export function withNotes(native: Native, notes: Native): Native {
     : { ...native, ...notes, reason: null };
 }
 
-/** A handoff title on one line: the broker refuses line breaks, and a value
- * that starts with "-", which the tool would read as a flag. */
+/** The most characters a handoff title keeps, for every tool. */
+export const TITLE_LIMIT = 80;
+
+/**
+ * The title a start names the thread with, on one line and at most
+ * {@link TITLE_LIMIT} characters. The broker refuses line breaks, and a
+ * value that starts with "-", which the tool would read as a flag. Copilot
+ * CLI exits on a session name over 100 characters, so a longer title ends in
+ * "…" at 80, after its last whole word when one ends in the second half. The
+ * cut keeps the start, where Ajour puts the item's key that links a thread to
+ * its item.
+ */
 export function oneLineTitle(title: string): string {
-  return (
+  const line =
     title
       .replace(/\s+/g, " ")
       .trim()
-      .replace(/^[\s-]+/, "") || "Ajour handoff"
-  );
+      .replace(/^[\s-]+/, "") || "Ajour handoff";
+  if (line.length <= TITLE_LIMIT) return line;
+  let cut = line.slice(0, TITLE_LIMIT - 1);
+  const space = cut.lastIndexOf(" ");
+  if (line[cut.length] !== " " && space > TITLE_LIMIT / 2)
+    cut = cut.slice(0, space);
+  // Never keep half of a character such as an emoji, cut at its middle.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
 }
 
 /**

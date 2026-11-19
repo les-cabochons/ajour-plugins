@@ -68,6 +68,12 @@ const LABELS: Record<State, string> = {
 const NOT_RUNNING = /No running T3 Code server\b/i;
 const NOT_FOUND =
   /Thread \S+ (?:is no longer available|was not found|does not exist)/i;
+// A start's two refusals Ajour can help with (Ajour #819). T3 creates no
+// thread for either, so trying again is safe.
+const BRANCH_EXISTS = /Branch "[^"]*" already exists\b/i;
+const BASE_MISSING = /Base ref "[^"]*" does not resolve\b/i;
+/** The bases a start tries, in order, when the user gave none. */
+const DEFAULT_BASES = ["main", "master"];
 const SHOW_CONCURRENCY = 3;
 const MAYBE_STARTED =
   "T3 Code may have started the thread. Check T3 Code before handing off again.";
@@ -87,8 +93,10 @@ const t3: Tool = {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
-    const known = lines.find(
-      (line) => NOT_RUNNING.test(line) || NOT_FOUND.test(line),
+    const known = lines.find((line) =>
+      [NOT_RUNNING, NOT_FOUND, BRANCH_EXISTS, BASE_MISSING].some((pattern) =>
+        pattern.test(line),
+      ),
     );
     return (known ?? lines[0] ?? "").slice(0, 500);
   },
@@ -250,7 +258,6 @@ export async function startT3(
         "Name a branch for the T3 worktree, or turn off Create a worktree.",
       );
     args.branch = branch;
-    args.base = settingText(request.settings.base) ?? "main";
   }
   const provider = settingText(request.settings.provider);
   const model = settingText(request.settings.model);
@@ -263,12 +270,15 @@ export async function startT3(
   if (model) args.model = model;
   let output: unknown;
   try {
-    output = await captureJson(t3, "thread-start", args, request.prompt);
+    output = args.branch
+      ? await startOnBase(request, args, began + START_DEADLINE_MS)
+      : await captureJson(t3, "thread-start", args, request.prompt);
   } catch (error) {
-    // Ajour stopped t3 or dropped its output, or t3 exited 0 with output
-    // Ajour can't read, so the thread may exist. An unreadable answer keeps
-    // what t3 printed first, so the user and the log see why.
-    if (isUncertainStart(error)) {
+    // Ajour stopped t3 or dropped its output, t3 exited 0 with output Ajour
+    // can't read, or the start's deadline came while t3 ran, so the thread
+    // may exist. An unreadable answer keeps what t3 printed first, so the
+    // user and the log see why.
+    if (isUncertainStart(error) || isLate(error)) {
       const { code, message } = error as ToolError;
       throw new ToolError(
         code === UNREADABLE_OUTPUT
@@ -306,6 +316,61 @@ export async function startT3(
     ...(link ? { link } : {}),
     native: withNotes(nativeOf(thread, "working"), notes),
   };
+}
+
+/**
+ * A refusal Ajour can act on (Ajour #819): it asks for the tool's `setting`,
+ * or offers the item's thread when `branchExists`. Older Ajour shows the
+ * message alone.
+ */
+function refusedFor(
+  message: string,
+  hint: { setting: string } | { branchExists: true },
+): ToolError {
+  return Object.assign(new ToolError(message), hint);
+}
+
+/**
+ * Starts the thread in a worktree. The base the user gave is tried alone.
+ * Without one, `main`, then `master`: T3 refuses a base the repository and
+ * its remotes don't have before it creates anything. A missing base is
+ * refused as the `base` setting, so Ajour asks for it, and a branch that
+ * exists as `branchExists`, so Ajour offers the item's thread.
+ *
+ * The attempts share the start's `deadline`: each command may take 20
+ * seconds, so a slow refusal of `main` leaves `master` only the rest, and
+ * Ajour gets the answer before it ends the operation at 30.
+ */
+async function startOnBase(
+  request: StartHandoffRequest,
+  args: Record<string, string>,
+  deadline: number,
+): Promise<unknown> {
+  const given = settingText(request.settings.base);
+  const bases = given ? [given] : DEFAULT_BASES;
+  const folder = request.folder.name;
+  for (const base of bases) {
+    try {
+      return await before(t3, deadline, () =>
+        captureJson(t3, "thread-start", { ...args, base }, request.prompt),
+      );
+    } catch (error) {
+      if (!(error instanceof ToolError) || error.code !== undefined)
+        throw error;
+      if (BRANCH_EXISTS.test(error.message))
+        throw refusedFor(
+          `The branch "${args.branch}" already exists in ${folder}, so T3 Code started no thread. Hand off with another branch from Review prompt.`,
+          { branchExists: true },
+        );
+      if (!BASE_MISSING.test(error.message)) throw error;
+    }
+  }
+  throw refusedFor(
+    given
+      ? `"${given}" doesn't exist in ${folder}, so T3 Code can't start the worktree. Name the branch it starts from.`
+      : `Neither "main" nor "master" exists in ${folder}, so T3 Code can't start the worktree. Name the branch it starts from.`,
+    { setting: "base" },
+  );
 }
 
 /** A folder's threads, newest first, as T3 lists them. */

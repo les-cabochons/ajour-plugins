@@ -60,7 +60,7 @@ const startRequest = (extra = {}) => ({
 test("detection returns the recorded version", async () => {
   const calls = fakeCode(() => ok(version));
   const { tools } = await detectTools();
-  assert.deepEqual(tools[4], {
+  assert.deepEqual(tools[5], {
     id: "vscode",
     available: true,
     version: "1.146.0",
@@ -80,12 +80,13 @@ test("detection says VS Code isn't installed when code is missing", async () => 
       ["t3", false],
       ["claude", false],
       ["copilot", false],
+      ["opencode", false],
       ["codex", false],
       ["vscode", false],
     ],
   );
   assert.equal(
-    tools[4].reason,
+    tools[5].reason,
     "VS Code isn't installed, or its code command isn't on PATH.",
   );
 });
@@ -93,7 +94,7 @@ test("detection says VS Code isn't installed when code is missing", async () => 
 test("detection refuses output that isn't a version", async () => {
   fakeCode(() => ok(""));
   const { tools } = await detectTools();
-  assert.deepEqual(tools[4], {
+  assert.deepEqual(tools[5], {
     id: "vscode",
     available: false,
     reason: "code returned no version.",

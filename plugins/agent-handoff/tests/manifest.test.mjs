@@ -31,7 +31,7 @@ const copilotStart = (extra) => [
   ...extra,
 ];
 
-test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, OpenCode and Codex tools", () => {
+test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, OpenCode, Codex and VS Code tools", () => {
   assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.ts");
   assert.deepEqual(Object.keys(manifest.capabilities), ["handoff"]);
@@ -44,6 +44,7 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
       ["copilot", "Copilot CLI", undefined],
       ["opencode", "OpenCode", "required"],
       ["codex", "Codex", undefined],
+      ["vscode", "VS Code", undefined],
     ],
   );
   for (const tool of tools) {
@@ -86,6 +87,8 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
     tools[4].settings[0].options.map((option) => option.value),
     ["app", "terminal"],
   );
+  // code chat has no model option, and handoffs always run in agent mode.
+  assert.deepEqual(settings(tools[5]), []);
   // The Codex app opens a thread from its codex://threads/<id> link, and the
   // T3 Code app from t3code://threads/<environment>/<thread>.
   assert.deepEqual(manifest.processes.openSchemes, ["codex", "t3code"]);
@@ -136,7 +139,8 @@ test("every tool declares the features it supports, explicitly", () => {
   // Ajour #759 and #764: `followsState` (true when absent), `listsThreads` and
   // `hooks` (false when absent). Copilot CLI 1.0.112 has no command that
   // reports a session's state and lists sessions only in its interactive
-  // picker, so it only starts sessions. Only Claude Code's start posts hooks.
+  // picker, so it only starts sessions. VS Code 1.146's code command reports
+  // and lists no chat either. Only Claude Code's start posts hooks.
   const tools = manifest.capabilities.handoff.tools;
   assert.deepEqual(
     tools.map((tool) => [
@@ -151,6 +155,7 @@ test("every tool declares the features it supports, explicitly", () => {
       ["copilot", false, false, false],
       ["opencode", true, true, false],
       ["codex", true, true, false],
+      ["vscode", false, false, false],
     ],
   );
   for (const tool of tools)
@@ -186,13 +191,15 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   );
 });
 
-test("the declared commands are four t3, seven claude, four copilot, two opencode and three codex commands", () => {
+test("the declared commands are four t3, seven claude, four copilot, two opencode, three codex and two code commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
     copilot: { names: ["copilot"] },
     opencode: { names: ["opencode"] },
     codex: { names: ["codex"] },
+    // The tool id is the executable id; VS Code's command is code.
+    vscode: { names: ["code"] },
   });
   const shapes = Object.fromEntries(
     commands.map(({ id, ...command }) => [id, command]),
@@ -376,6 +383,23 @@ test("the declared commands are four t3, seven claude, four copilot, two opencod
     },
     "codex-version": {
       executable: "codex",
+      args: ["--version"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    // code chat takes the prompt only from its arguments, where Ajour
+    // refuses line breaks, and attaches stdin as a file (-). So the plugin
+    // passes one line and the whole prompt on stdin. code chat opens the
+    // folder it runs in, which cwd sets.
+    "vscode-chat": {
+      executable: "vscode",
+      args: ["chat", "-m", "agent", "{request:text}", "-"],
+      cwd: "{folder:folder}",
+      stdin: "text",
+      mode: "detached",
+    },
+    "vscode-version": {
+      executable: "vscode",
       args: ["--version"],
       mode: "capture",
       timeoutSeconds: 10,

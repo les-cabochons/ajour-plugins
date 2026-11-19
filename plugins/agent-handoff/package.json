@@ -1,12 +1,12 @@
 {
   "name": "@les-cabochons/ajp-agent-handoff",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
   "ajour": {
-    "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
+    "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode, Codex or VS Code and follow their work.",
     "features": [
       "agent-handoff"
     ],
@@ -16,7 +16,8 @@
       "claude-code",
       "copilot",
       "opencode",
-      "codex"
+      "codex",
+      "vscode"
     ],
     "author": {
       "name": "Alex Trépanier",

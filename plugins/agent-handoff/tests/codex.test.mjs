@@ -162,7 +162,7 @@ async function settle(t, promise, steps = 1300) {
 test("detects Codex from codex --version", async () => {
   fakeCodex();
   const { tools } = await detectTools();
-  assert.deepEqual(tools.at(-1), {
+  assert.deepEqual(tools.find((tool) => tool.id === "codex"), {
     id: "codex",
     available: true,
     version: "0.169.0",
@@ -172,7 +172,7 @@ test("detects Codex from codex --version", async () => {
 test("a missing codex is unavailable with the reason", async () => {
   fakeCodex([], { run: refuse("executable_missing") });
   const { tools } = await detectTools();
-  assert.deepEqual(tools.at(-1), {
+  assert.deepEqual(tools.find((tool) => tool.id === "codex"), {
     id: "codex",
     available: false,
     reason: "Codex isn't installed, or its codex command isn't on PATH.",

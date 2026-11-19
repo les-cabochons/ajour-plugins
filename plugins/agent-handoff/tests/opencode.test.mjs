@@ -156,7 +156,7 @@ test("detection without a connection asks only the other tools", async () => {
   const { tools } = await detectTools();
   assert.deepEqual(
     tools.map((tool) => tool.id),
-    ["t3", "claude", "copilot", "codex"],
+    ["t3", "claude", "copilot", "codex", "vscode"],
   );
   assert.deepEqual(requests(), []);
   assert.ok(calls.every((c) => c.argv[0] !== "opencode"));

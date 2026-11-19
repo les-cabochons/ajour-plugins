@@ -1,9 +1,9 @@
 // Hands backlog items off to coding agents and reads back the state of their
 // work: T3 Code threads through the `t3` CLI, Claude Code background
 // sessions through `claude`, Copilot CLI sessions through `copilot`,
-// OpenCode sessions through the `opencode serve` HTTP server, and Codex
-// threads through `codex app-server`, which Ajour keeps running as a process
-// session while a turn runs. Every command runs through Ajour's process
+// OpenCode sessions through the `opencode serve` HTTP server, Codex threads
+// through `codex app-server`, which Ajour keeps running as a process session
+// while a turn runs, and VS Code chats through `code chat`. Every command runs through Ajour's process
 // broker, as declared in plugin.json's `processes` block, and every request to
 // OpenCode through its credential broker, to the address of the connection
 // the user picked.
@@ -49,6 +49,13 @@ import {
   validateOpenCode,
 } from "./opencode.ts";
 import { T3_TOOL, detectT3, listT3, readT3, startT3 } from "./t3.ts";
+import {
+  NO_LIST as VSCODE_NO_LIST,
+  NO_STATE as VSCODE_NO_STATE,
+  VSCODE_TOOL,
+  detectVsCode,
+  startVsCode,
+} from "./vscode.ts";
 
 function unknownTool(id: string): never {
   throw new Error(`This plugin has no handoff tool "${id}".`);
@@ -77,6 +84,7 @@ export async function detectTools(
     detectClaude(),
     detectCopilot(),
     detectCodex(),
+    detectVsCode(),
   ]);
   return { tools };
 }
@@ -97,12 +105,14 @@ export async function startHandoff(
   if (request.tool === CLAUDE_TOOL) return startClaude(request);
   if (request.tool === COPILOT_TOOL) return startCopilot(request);
   if (request.tool === CODEX_TOOL) return startCodex(request);
+  if (request.tool === VSCODE_TOOL) return startVsCode(request);
   return unknownTool(request.tool);
 }
 
 /**
  * The state of the tools that follow it. Ajour asks only the tools
- * plugin.json doesn't mark `followsState: false`, so never Copilot CLI.
+ * plugin.json doesn't mark `followsState: false`, so never Copilot CLI or
+ * VS Code.
  */
 export async function readHandoffStates(
   ...args: HandoffArguments<ReadHandoffStatesRequest>
@@ -114,6 +124,8 @@ export async function readHandoffStates(
   if (request.tool === CODEX_TOOL) return readCodex(request);
   if (request.tool === COPILOT_TOOL)
     throw new Error(`${NO_STATE} Open the session to follow it.`);
+  if (request.tool === VSCODE_TOOL)
+    throw new Error(`${VSCODE_NO_STATE} Open VS Code to follow it.`);
   return unknownTool(request.tool);
 }
 
@@ -134,6 +146,7 @@ export async function listThreads(
     throw new Error(
       "Copilot CLI lists its sessions only in its interactive picker, so Ajour can't list them.",
     );
+  if (request.tool === VSCODE_TOOL) throw new Error(VSCODE_NO_LIST);
   return unknownTool(request.tool);
 }
 

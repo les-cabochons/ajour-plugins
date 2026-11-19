@@ -132,6 +132,7 @@ test("detection says Claude Code isn't installed when claude is missing", async 
       ["claude", false],
       ["copilot", false],
       ["codex", false],
+      ["vscode", false],
     ],
   );
   assert.equal(

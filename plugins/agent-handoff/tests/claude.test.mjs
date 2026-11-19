@@ -897,11 +897,11 @@ test("a desktop refresh stops a background job whose turn ended, so the Claude a
   assert.equal(update.native.released, undefined);
   // The next read lists the job without a process: it stays ready, and
   // claude stop doesn't run again.
-  calls.length = 0;
-  fakeClaude(stoppingClaude([{ ...done, status: undefined }]));
+  const later = fakeClaude(stoppingClaude([{ ...done, status: undefined }]));
   const [after] = await desktopRefresh([
     handoff("h1", done.sessionId, update.native),
   ]);
+  assert.deepEqual(stops(later), []);
   assert.equal(after.state, "ready");
 });
 
@@ -958,6 +958,7 @@ test("a desktop refresh stops a job that waits for you, and it keeps waiting for
 });
 
 test("a released session keeps waiting for you through a refresh that can't list", async () => {
+  // A list claude can't give makes every session unknown, a released one too.
   fakeClaude(refuse("executable_missing"));
   const [update] = await desktopRefresh([
     handoff("h1", permission.sessionId, {
@@ -969,6 +970,17 @@ test("a released session keeps waiting for you through a refresh that can't list
   ]);
   assert.equal(update.state, "unknown");
   assert.equal(update.native.released, true);
+  // The next list that works waits for you again, labeled Waiting for you
+  // rather than with the Unknown of the failed read.
+  fakeClaude(
+    stoppingClaude([{ ...permission, state: "stopped", status: undefined }]),
+  );
+  const [waiting] = await desktopRefresh([
+    handoff("h1", permission.sessionId, update.native),
+  ]);
+  assert.equal(waiting.state, "needs-you");
+  assert.equal(waiting.native.label, "Waiting for you");
+  assert.equal(waiting.native.released, true);
 });
 
 test("a desktop refresh leaves a working job and interactive sessions alone, and the terminal tool never stops a job", async () => {
@@ -1006,14 +1018,14 @@ test("a desktop refresh leaves a working job and interactive sessions alone, and
   );
 });
 
-test("a job claude can't stop keeps its state, with why the Claude app can't open it yet", async () => {
+test("a job claude can't stop keeps its state, with why the Claude app can't go on with it yet", async () => {
   fakeClaude(stoppingClaude([done], () => fail(stopMissing)));
   const [update] = await desktopRefresh([handoff("h1", done.sessionId)]);
   assert.equal(update.state, "ready");
   assert.equal(update.native.released, undefined);
   assert.equal(
     update.native.reason,
-    "Ajour couldn't stop Claude Code's background session, so the Claude app can't open it yet. Ajour tries again at the next refresh. No session matching 'deadbeef'. Run 'claude agents' to list running sessions.",
+    "Ajour couldn't stop Claude Code's background session, so the Claude app can't go on with it yet. Ajour tries again at the next refresh. No session matching 'deadbeef'. Run 'claude agents' to list running sessions.",
   );
 });
 

@@ -80,7 +80,7 @@ const missing = (sessionId: string, app: boolean) =>
 const RELEASED =
   "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.";
 const NOT_RELEASED =
-  "Ajour couldn't stop Claude Code's background session, so the Claude app can't open it yet. Ajour tries again at the next refresh.";
+  "Ajour couldn't stop Claude Code's background session, so the Claude app can't go on with it yet. Ajour tries again at the next refresh.";
 
 const claude: Tool = {
   name: "Claude Code",
@@ -125,8 +125,7 @@ const claude: Tool = {
  */
 export async function detectClaude(): Promise<DetectToolsResult["tools"]> {
   let found:
-    | { available: true; version: string }
-    | { available: false; reason: string };
+    { available: true; version: string } | { available: false; reason: string };
   try {
     const output = firstLine(await capture(claude, "claude-version", {}));
     const version = /^v?(\S+)\s+\(Claude Code\)$/i.exec(output)?.[1] ?? output;
@@ -497,12 +496,17 @@ async function release(
     }
     return waits ? released(update, update.native as Native) : update;
   }
-  // A stopped job's listing no longer says it waited for the user.
-  if (handoff.native.released === true && !live(session))
+  // A stopped job's listing no longer says it waited for the user, or for
+  // what: the kept `waitingFor` does, since a failed read can replace the
+  // label with Unknown.
+  if (handoff.native.released === true && !live(session)) {
+    const waitingFor = text(handoff.native.waitingFor);
     return released(update, {
       ...(update.native as Native),
-      label: text(handoff.native.label) ?? LABELS["needs-you"],
+      ...(waitingFor ? { waitingFor } : {}),
+      label: waitingFor ? capitalized(waitingFor) : LABELS["needs-you"],
     });
+  }
   return update;
 }
 

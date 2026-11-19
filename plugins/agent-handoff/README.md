@@ -199,7 +199,7 @@ The Claude app can't take a turn in a session that a background job runs, even a
 
 - **Waiting for you.** A job stopped while it waited for you no longer says so in `claude agents`. The handoff stays Waiting for you, with `released: true` and "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.", until a process runs the session again. The question is in the transcript the app shows; a tool call that waited for permission didn't run.
 - **Going on in the app.** The app runs the session in its own bundled `claude`, which `claude agents` lists as an interactive session with the same session id, so the handoff follows it, as it follows a job resumed in a terminal.
-- **A stop that fails** keeps the state read, with "Ajour couldn't stop Claude Code's background session, so the Claude app can't open it yet. Ajour tries again at the next refresh." and claude's reason.
+- **A stop that fails** keeps the state read, with "Ajour couldn't stop Claude Code's background session, so the Claude app can't go on with it yet. Ajour tries again at the next refresh." and claude's reason.
 - **Missing from the list.** After `claude rm`, the app still imports the session from its transcript, so the handoff keeps its last state and says Open still opens it.
 - **A terminal next to it.** A refresh stops a done job even if you attached to it in a terminal yourself. Use Claude Code to work in a terminal.
 - **Detection.** One `claude --version` detects both Claude tools. Whether the Claude app is installed isn't checked: without it, Open fails. The Claude desktop app runs on macOS and Windows.

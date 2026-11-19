@@ -20,6 +20,12 @@ export interface ChronopsMe {
 }
 
 /**
+ * The most entries `GET /integration/entries` answers, the newest first
+ * (MineHunter's `maxListedEntries`). A listing this long may lack older ones.
+ */
+export const CHRONOPS_MAX_LISTED_ENTRIES = 2000;
+
+/**
  * A Time Entry as `GET`, `POST` and `PATCH /integration/entries` answer it,
  * with the fields the plugin reads. ChronOps also sends the owner's email,
  * the description and the work item, which the plugin never reads, so they

@@ -108,7 +108,9 @@ remote id, the task name, `updatedAt`, and `clientRef` on Ajour's own
 entries only. A running timer has the minutes since its start and that start
 as `countingSince`. An entry whose project code or task Ajour can't hold is
 left out. The description, the owner's email and the work item never leave
-the plugin, and Ajour never sends a note.
+the plugin, and Ajour never sends a note. ChronOps lists at most 2,000
+entries, the newest first. A listing that long fails the round, since the
+entries it leaves out would look deleted to Ajour.
 
 A round stays under the Forwarder's limit of 10 requests a second with a
 burst of 20: it sends 10 requests at once, then 8 a second. A full round of

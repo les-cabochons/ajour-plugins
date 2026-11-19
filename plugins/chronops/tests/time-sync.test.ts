@@ -422,6 +422,16 @@ describe("syncTimeEntries lists the window", () => {
       'ChronOps answered HTTP 400: "to must be after from, at most 93 days later".',
     );
   });
+
+  it("fails the whole round when ChronOps lists as many entries as it can, so the oldest never look deleted", async () => {
+    // GET /integration/entries answers the newest 2,000 only.
+    const entries = Array.from({ length: 2000 }, (_, index) =>
+      held({ clientRef: `key-${index}`, startedAt: new Date(Date.parse("2026-10-13T13:00:00.000Z") + index * 15 * 60_000).toISOString(), minutes: 10 }),
+    );
+    await withFake({ entries });
+
+    await expect(syncTimeEntries(connection, request([]))).rejects.toThrow(/2,000 time entries/);
+  });
 });
 
 describe("syncTimeEntries paces and reports", () => {

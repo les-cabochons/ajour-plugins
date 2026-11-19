@@ -13,9 +13,15 @@ import type {
   TimeSyncResult,
   AjourResponse,
 } from "@ajour/plugin-sdk";
-import { parseChronopsTimeEntries, parseChronopsTimeEntry, type ChronopsTimeEntry } from "./chronops.ts";
+import {
+  CHRONOPS_MAX_LISTED_ENTRIES,
+  parseChronopsTimeEntries,
+  parseChronopsTimeEntry,
+  type ChronopsTimeEntry,
+} from "./chronops.ts";
 import { TIME_SYNC_BOUNDS } from "./contract.ts";
 import {
+  ChronopsError,
   ChronopsUnavailable,
   forwarderGet,
   forwarderRequest,
@@ -59,6 +65,8 @@ const MESSAGES = {
   brokerLimit: "Ajour sent ChronOps too many requests at once. Ajour tries again.",
   rateLimited: "ChronOps rate limited Ajour. Ajour tries again.",
   concurrent: "ChronOps was saving this entry from another request. Ajour tries again.",
+  tooMany:
+    "ChronOps listed 2,000 time entries for these weeks, the most it lists, so some may be missing. Ajour syncs time entries again once there are fewer.",
 } as const;
 
 type Upsert = Extract<TimeSyncChange, { kind: "upsert" }>;
@@ -319,11 +327,14 @@ async function ajourEntryWithKey(round: Round, syncKey: string) {
  * Every source's entries started in the window, and the running one
  * wherever it started, as ChronOps lists them. A failure here fails the
  * whole round: Ajour must not read a missing listing as deleted entries.
+ * So does a listing at ChronOps' cap, which leaves out the oldest entries.
  */
 async function listWindow(round: Round) {
   await round.pace();
   round.counts.requests += 1;
-  return parseChronopsTimeEntries(await jsonBody(await forwarderGet(round.connection, ENTRIES, {}, round.window)));
+  const listed = parseChronopsTimeEntries(await jsonBody(await forwarderGet(round.connection, ENTRIES, {}, round.window)));
+  if (listed.length >= CHRONOPS_MAX_LISTED_ENTRIES) throw new ChronopsError(MESSAGES.tooMany);
+  return listed;
 }
 
 async function apply(round: Round, change: TimeSyncChange, today: string): Promise<TimeSyncChangeResult> {

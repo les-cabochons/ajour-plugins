@@ -181,6 +181,22 @@ test("a start passes the model, the title on one line, and allows all tools when
   assert.equal(result.native.tools, "allow");
 });
 
+// Copilot CLI 1.0.109 exits with "Session name must be 100 characters or
+// less." Its start is detached, so Ajour showed the handoff as Started, and
+// Open then found no session.
+test("a title over 80 characters reaches copilot cut after its last whole word, so copilot keeps the session", async () => {
+  const calls = fakeCopilot();
+  const title =
+    "[AJ-42] Send each customer the price list for their own products, every week, from the warehouse";
+  await startHandoff(startRequest({}, { title }));
+  const name = calls[0].argv[calls[0].argv.indexOf("-n") + 1];
+  assert.equal(
+    name,
+    "[AJ-42] Send each customer the price list for their own products, every week,…",
+  );
+  assert.ok(name.length <= 80);
+});
+
 test("another tools value never allows all tools", async () => {
   const calls = fakeCopilot();
   const result = await startHandoff(startRequest({ tools: "yes" }));

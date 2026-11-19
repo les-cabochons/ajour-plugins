@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex, and follow their work where the tool reports it.",

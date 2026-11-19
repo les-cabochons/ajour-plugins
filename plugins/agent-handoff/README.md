@@ -22,6 +22,8 @@ Every tool sets all three keys, even where the value is Ajour's default (`follow
 
 0.9.0 needs an Ajour that includes les-cabochons/ajour#764, which adds `followsState` and `hooks`. An older Ajour refuses this manifest.
 
+Since 0.11.1, every tool gets a title of at most 80 characters. A longer one ends in "…" after its last whole word, and keeps its start, where the item's key is. Copilot CLI 1.0.109 exits when a session name passes 100 characters, and its detached start hid that: Ajour showed the handoff as Started, and Open found no session.
+
 Since 0.11.0, each tool's `iconSvg` is its own logo, drawn as a tile in its own colours. Ajour draws a tool's icon as an image, where `currentColor` is black on both themes, so a logo that used it faded on the dark theme. The logos are their owners' trademarks, used here only to name each tool.
 
 ## Threads you started

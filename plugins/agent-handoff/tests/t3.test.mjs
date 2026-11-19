@@ -260,6 +260,35 @@ test("a start without a base tries main, then master", async () => {
   );
 });
 
+test("a slow refusal of main leaves master the rest of the start's deadline, and a cut-off master may have started", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const after = (ms, result) =>
+    new Promise((resolve) => setTimeout(() => resolve(result), ms));
+  // master alone would answer at 34 s, after Ajour ends the operation at 30.
+  fakeT3((argv) =>
+    worktreeBase(argv) === "main"
+      ? after(19_000, baseMissing("main"))
+      : after(15_000, out(started)),
+  );
+  let settled = false;
+  const pending = assert
+    .rejects(startHandoff(startRequest()), {
+      message:
+        "T3 Code may have started the thread. Check T3 Code before handing off again.",
+    })
+    .finally(() => {
+      settled = true;
+    });
+  await flush();
+  t.mock.timers.tick(19_000);
+  await flush();
+  t.mock.timers.tick(7_999);
+  await flush();
+  assert.equal(settled, false);
+  t.mock.timers.tick(1);
+  await pending;
+});
+
 test("a start Ajour can't base asks for the base: neither main nor master, or the one given", async () => {
   fakeT3((argv) => baseMissing(worktreeBase(argv)));
   await assert.rejects(startHandoff(startRequest()), {

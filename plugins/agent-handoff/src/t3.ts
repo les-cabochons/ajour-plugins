@@ -271,13 +271,14 @@ export async function startT3(
   let output: unknown;
   try {
     output = args.branch
-      ? await startOnBase(request, args)
+      ? await startOnBase(request, args, began + START_DEADLINE_MS)
       : await captureJson(t3, "thread-start", args, request.prompt);
   } catch (error) {
-    // Ajour stopped t3 or dropped its output, or t3 exited 0 with output
-    // Ajour can't read, so the thread may exist. An unreadable answer keeps
-    // what t3 printed first, so the user and the log see why.
-    if (isUncertainStart(error)) {
+    // Ajour stopped t3 or dropped its output, t3 exited 0 with output Ajour
+    // can't read, or the start's deadline came while t3 ran, so the thread
+    // may exist. An unreadable answer keeps what t3 printed first, so the
+    // user and the log see why.
+    if (isUncertainStart(error) || isLate(error)) {
       const { code, message } = error as ToolError;
       throw new ToolError(
         code === UNREADABLE_OUTPUT
@@ -335,21 +336,23 @@ function refusedFor(
  * its remotes don't have before it creates anything. A missing base is
  * refused as the `base` setting, so Ajour asks for it, and a branch that
  * exists as `branchExists`, so Ajour offers the item's thread.
+ *
+ * The attempts share the start's `deadline`: each command may take 20
+ * seconds, so a slow refusal of `main` leaves `master` only the rest, and
+ * Ajour gets the answer before it ends the operation at 30.
  */
 async function startOnBase(
   request: StartHandoffRequest,
   args: Record<string, string>,
+  deadline: number,
 ): Promise<unknown> {
   const given = settingText(request.settings.base);
   const bases = given ? [given] : DEFAULT_BASES;
   const folder = request.folder.name;
   for (const base of bases) {
     try {
-      return await captureJson(
-        t3,
-        "thread-start",
-        { ...args, base },
-        request.prompt,
+      return await before(t3, deadline, () =>
+        captureJson(t3, "thread-start", { ...args, base }, request.prompt),
       );
     } catch (error) {
       if (!(error instanceof ToolError) || error.code !== undefined)

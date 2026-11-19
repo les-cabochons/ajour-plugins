@@ -108,6 +108,7 @@ Every handoff is a Claude Code background session (`claude --bg`), the only star
 | `claude agents --json --all --cwd <folder>`                        | Lists the sessions started in the folder or under it, for [linking](#threads-you-started). Times out after 10 seconds.                                                                                                              |
 | `claude attach <job> <folder>` in a terminal                       | Opens the session: Open on the handoff, and right after a start in the terminal start mode. It also wakes a stopped job.                                                                                                            |
 | `claude --version`                                                 | Detects Claude Code. Times out after 10 seconds.                                                                                                                                                                                    |
+| `claude` in a terminal                                             | Opens the trust prompt in the repository folder, when Claude Code refused a start there because it doesn't trust the folder yet. See [Trust](#trust-and-where-the-start-runs).                                                      |
 
 `--bg` chooses the session id and prints only the job's short id, so a start reads `claude agents` to find the full id, up to three times, a second apart, until 27 seconds. The full id is the handoff's thread id. If the list never shows the job, the start fails and names the job, so the user opens it with `claude attach <job>` instead of handing off again.
 
@@ -115,7 +116,9 @@ Every handoff is a Claude Code background session (`claude --bg`), the only star
 
 ### Trust and where the start runs
 
-Claude Code starts a background session only in a folder the user trusted. The plugin never accepts the trust prompt: an untrusted folder fails with "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again."
+Claude Code starts a background session only in a folder the user trusted, and asks only in an interactive session. Claude Code 2.1.327 has no flag or command that trusts a folder. So when `claude --bg` refuses a folder, the plugin opens `claude` in a terminal there and the start fails with "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again." The user accepts the prompt, which Claude Code remembers for the folder, closes or keeps that session, and hands off again. The plugin never accepts the prompt itself.
+
+The prompt can't go to that terminal instead: a terminal command takes no stdin, and Ajour refuses an argument with a line break. When Ajour can't open the terminal, such as a Windows folder path with `&`, the start says to run `claude` in the folder, with Ajour's reason. The terminal command came in 0.12.0, so Ajour asks to allow it once in the plugin's Access section.
 
 `claude --bg` works in the folder it starts in; `--add-dir` only adds the folder. Ajour runs a capture command in its first folder argument since les-cabochons/ajour#746. An older Ajour starts it at the system root, which Claude Code refuses as an untrusted folder, and the plugin says so: "Ajour started Claude Code at the system root instead of the repository folder, so Claude Code refused it. This needs an Ajour update."
 

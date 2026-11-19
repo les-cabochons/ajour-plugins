@@ -324,13 +324,31 @@ test("a hook Ajour refuses is a start failure that names Claude Code", async () 
   });
 });
 
-test("an untrusted folder asks the user to trust it in Claude Code first", async () => {
-  const calls = fakeClaude(() => fail(read("untrusted.txt")));
+test("an untrusted folder opens claude in a terminal there, for the user to trust it", async () => {
+  const calls = fakeClaude((argv) =>
+    argv[1] === "--bg" ? fail(read("untrusted.txt")) : undefined,
+  );
   await assert.rejects(startHandoff(startRequest()), {
     message:
-      "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again.",
+      "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.",
   });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], {
+    argv: ["claude"],
+    mode: "terminal",
+    cwd: FOLDER,
+    stdin: undefined,
+  });
+});
+
+test("an untrusted folder Ajour can't open a terminal in says to run claude there", async () => {
+  // Windows Terminal takes no & in the folder path.
+  folders[FOLDER] = "C:\\Users\\me\\R&D\\probe";
+  fakeClaude(() => fail(read("untrusted.txt")));
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again. Ajour couldn't open a terminal: Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.",
+  });
 });
 
 test("a start Ajour runs at the system root says Ajour needs an update", async () => {

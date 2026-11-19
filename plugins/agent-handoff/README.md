@@ -1,6 +1,6 @@
 # Ajour agent handoff
 
-An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), [OpenCode](https://opencode.ai) and [Codex](https://developers.openai.com/codex). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, a Copilot CLI session with `copilot`, an OpenCode session on the server `opencode serve` runs, or a Codex thread through `codex app-server`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
+An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), [OpenCode](https://opencode.ai), [Codex](https://developers.openai.com/codex) and [VS Code](https://code.visualstudio.com). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, a Copilot CLI session with `copilot`, an OpenCode session on the server `opencode serve` runs, a Codex thread through `codex app-server`, or a VS Code chat with `code chat`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
 
 The plugin runs only the commands it declares, through Ajour's process broker, after you approve them in Access. Its only network access is OpenCode's server, at the address of a connection you add, through Ajour's credential broker: the plugin names a path such as `/session/status`, never a URL.
 
@@ -17,8 +17,9 @@ Each tool declares its features in `plugin.json`, and Ajour uses only those (les
 | Copilot CLI | Yes            | No, see [States](#states-2)    | No                             | No                               |
 | OpenCode    | Yes            | Yes                            | Yes                            | No                               |
 | Codex       | Yes            | Yes                            | Yes                            | No                               |
+| VS Code     | Yes            | No, see [States](#states-5)    | No                             | No                               |
 
-Every tool sets all three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's commands takes one.
+Every tool sets all three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's or VS Code's commands takes one.
 
 0.9.0 needs an Ajour that includes les-cabochons/ajour#764, which adds `followsState` and `hooks`. An older Ajour refuses this manifest.
 
@@ -28,7 +29,7 @@ Since 0.11.0, each tool's `iconSvg` is its own logo, drawn as a tile in its own 
 
 ## Threads you started
 
-Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it.
+Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it. VS Code's `code` command lists no chats either, so VS Code leaves it off too.
 
 A listing answers each thread once, newest first, at most as many as Ajour asks for (it asks for 50), with what a start would have answered for that thread: the same thread id, link, resume command and native state. Open and refreshes then work on a linked thread as on one Ajour started. Ajour shows a linked thread as Unknown until its first refresh, which runs right after you link it. A listing that fails throws the reason, which Ajour keeps in the operation's event; the item gets no offer.
 
@@ -367,6 +368,35 @@ A session id Ajour no longer knows, after a quit or the idle timeout, is no evid
 The terminal follows the same rules as Claude Code's: Windows Terminal takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path.
 
 Open in a terminal while the handoff is Working runs `codex resume` beside Ajour's session, which still holds the thread and runs its turn. Two app-servers then work on one thread, and their turns may conflict. Wait until the handoff leaves Working, which closes the session, before opening it in a terminal. The Codex app refuses to continue a thread another app holds, so it can't conflict.
+
+## VS Code
+
+The plugin runs `code chat` detached in the repository folder, in agent mode. VS Code opens the folder, or brings its window forward, and sends the chat at once.
+
+`code chat` takes its prompt only from its arguments, where Ajour refuses line breaks. With `-`, it saves stdin to a file in the system's temporary folder and attaches that file to the chat. So the command line carries one line, "Follow the handoff in the attached file: <title>", and the whole prompt goes on stdin, where it keeps its line breaks and stays out of the process list. The agent reads the item from the attached file. A prompt over Ajour's 1,048,576 characters of stdin is refused before `code` runs.
+
+Checked in VS Code 1.146.0's own code, not in a recorded start, since a start opens VS Code and runs an agent: `code chat` joins the words after `chat` into the prompt and sends it, opens the folder it runs in when neither `-r` nor `-n` is given, and attaches stdin with `--add-file`. VS Code first asks you to trust the folder if you haven't. If you decline, VS Code drops the chat, and the handoff still says Started.
+
+### Commands it runs
+
+| Command                                                                     | What for                                                                           |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `code chat -m agent <line> -` in the repository folder, the prompt on stdin | Starts the chat, detached, in agent mode. Returns once `code` has read the prompt. |
+| `code --version`                                                            | Detects VS Code. Times out after 10 seconds.                                       |
+
+The `code` command must be on PATH. On macOS, run Shell Command: Install 'code' command in PATH from VS Code's Command Palette once.
+
+On Windows, `code` is a `.cmd` launcher, and Ajour runs only the launchers it recognises: npm, pnpm, Yarn and T3 Code. Ajour will likely refuse VS Code's, so detection says Ajour couldn't start code safely. This isn't tested on Windows.
+
+### States
+
+VS Code has no command that reports a chat's state or lists its chats, so the tool sets `followsState: false` and `listsThreads: false`. Ajour shows each VS Code handoff as Started and never asks about it again. VS Code names no chat, so the plugin chooses the thread id, a new UUID. A handoff has no link and no resume, so Open says there is nothing to open: the chat is already open in VS Code.
+
+The Agents window (`code --agents`) takes a prompt only from a `vscode://agents/new?prompt=` link. That link fills in the prompt without sending it, and needs the folder's path, which Ajour never gives a plugin. So the tool uses the chat.
+
+### Settings
+
+None. `code chat` has no model option, so the chat uses the model selected in VS Code, and a handoff always runs in agent mode.
 
 ## Default prompt
 

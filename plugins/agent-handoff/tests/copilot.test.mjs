@@ -90,6 +90,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
       ["claude", false],
       ["copilot", false],
       ["codex", false],
+      ["vscode", false],
     ],
   );
   assert.equal(

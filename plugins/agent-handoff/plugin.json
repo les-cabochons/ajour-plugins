@@ -1,9 +1,9 @@
 {
   "id": "agent-handoff",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
-  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex, and follow their work where the tool reports it.",
+  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode, Codex or VS Code, and follow their work where the tool reports it.",
   "entrypoint": "src/plugin.ts",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M3 5h18v12H11l-5 4v-4H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>",
   "capabilities": {
@@ -174,6 +174,15 @@
               "helpText": "A model name for the thread. Leave empty for your Codex default."
             }
           ]
+        },
+        {
+          "id": "vscode",
+          "label": "VS Code",
+          "followsState": false,
+          "listsThreads": false,
+          "hooks": false,
+          "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" rx=\"5.5\" fill=\"#007ACC\"/><path transform=\"translate(4.5 4.5) scale(.0586)\" fill=\"#fff\" fill-rule=\"evenodd\" d=\"M181.534 254.252a15.934 15.934 0 0 0 12.7-.488l52.706-25.361a16.002 16.002 0 0 0 9.06-14.42V42.018c0-6.15-3.522-11.754-9.06-14.42L194.234 2.238a15.939 15.939 0 0 0-18.185 3.097l-100.9 92.052-43.95-33.361a10.655 10.655 0 0 0-13.614.605L3.49 77.453c-4.648 4.227-4.653 11.54-.011 15.774L41.593 128 3.478 162.773c-4.642 4.235-4.637 11.547.011 15.775l14.097 12.822a10.655 10.655 0 0 0 13.613.606l43.95-33.362 100.9 92.053a15.915 15.915 0 0 0 5.485 3.585Zm10.505-184.367L115.479 128l76.56 58.115V69.885Z\"/></svg>",
+          "settings": []
         }
       ]
     }
@@ -240,6 +249,9 @@
       },
       "codex": {
         "names": ["codex"]
+      },
+      "vscode": {
+        "names": ["code"]
       }
     },
     "commands": [
@@ -455,6 +467,21 @@
       {
         "id": "codex-version",
         "executable": "codex",
+        "args": ["--version"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "vscode-chat",
+        "executable": "vscode",
+        "args": ["chat", "-m", "agent", "{request:text}", "-"],
+        "cwd": "{folder:folder}",
+        "stdin": "text",
+        "mode": "detached"
+      },
+      {
+        "id": "vscode-version",
+        "executable": "vscode",
         "args": ["--version"],
         "mode": "capture",
         "timeoutSeconds": 10

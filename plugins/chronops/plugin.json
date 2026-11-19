@@ -1,6 +1,6 @@
 {
   "id": "chronops",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "apiVersion": 4,
   "displayName": "ChronOps",
   "description": "Bring your ChronOps projects, tasks and budgets into Ajour through MineHunter's ChronOps Forwarder. With Time entries on, your time entries reach ChronOps too.",
@@ -47,8 +47,10 @@
       { "method": "PATCH", "path": "/integration/entries/*" },
       { "method": "DELETE", "path": "/integration/entries/*" },
       { "method": "POST", "path": "/integration/entries/timer/start" },
-      { "method": "POST", "path": "/integration/entries/*/stop" }
+      { "method": "POST", "path": "/integration/entries/*/stop" },
+      { "method": "GET", "path": "/integration/change-marker" }
     ],
+    "publicHosts": ["stchronopsmarkers.blob.core.windows.net"],
     "requestHeaders": ["X-ChronOps-Source", "If-None-Match", "Content-Type"]
   },
   "runtime": { "start": "whenNeeded" }

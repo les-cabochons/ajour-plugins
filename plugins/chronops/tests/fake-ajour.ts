@@ -18,6 +18,7 @@ const manifest = JSON.parse(readFileSync(new URL("../plugin.json", import.meta.u
     auth: { header: string };
     endpoints: { method: string; path: string }[];
     requestHeaders: string[];
+    publicHosts?: string[];
   };
 };
 
@@ -39,8 +40,19 @@ export interface CannedResponse {
 
 export type Responder = (request: RecordedRequest) => CannedResponse | Promise<CannedResponse>;
 
+export interface RecordedPublicRequest {
+  method: string;
+  url: string;
+  /** Header names lowercase. */
+  headers: Record<string, string>;
+}
+
+/** Answers what the plugin fetches with `ajour.publicFetch`, such as the change marker's HEAD. */
+export type PublicResponder = (request: RecordedPublicRequest) => CannedResponse | Promise<CannedResponse>;
+
 export interface FakeAjour extends Ajour {
   requests: RecordedRequest[];
+  publicRequests: RecordedPublicRequest[];
   logs: { level: string; message: string; fields?: Record<string, unknown> }[];
 }
 
@@ -106,13 +118,20 @@ function toResponse(canned: CannedResponse): AjourResponse {
   };
 }
 
-export function createFakeAjour(respond: Responder): FakeAjour {
+/** A public responder that answers the change marker's HEAD from the fake MineHunter. */
+export function markerOf(fake: { marker: { head(ifNoneMatch?: string): CannedResponse } }): PublicResponder {
+  return (request) => fake.marker.head(request.headers["if-none-match"]);
+}
+
+export function createFakeAjour(respond: Responder, publicRespond?: PublicResponder): FakeAjour {
   const requests: RecordedRequest[] = [];
+  const publicRequests: RecordedPublicRequest[] = [];
   const logs: FakeAjour["logs"] = [];
   const listed = new Set(manifest.network.requestHeaders.map((header) => header.toLowerCase()));
   const authHeader = manifest.network.auth.header.toLowerCase();
   return {
     requests,
+    publicRequests,
     logs,
     async http(request) {
       if (request.body !== undefined && typeof request.body !== "string") {
@@ -139,8 +158,20 @@ export function createFakeAjour(respond: Responder): FakeAjour {
       }
       return toResponse(await respond(recorded));
     },
-    async publicFetch(url) {
-      throw requestError("refused", `The manifest declares no public host for ${url}.`);
+    // As the broker does: https on the default port, an exact host plugin.json
+    // declares, GET or HEAD, and only the headers it lists.
+    async publicFetch(url, init = {}) {
+      const recorded: RecordedPublicRequest = { method: init.method ?? "GET", url, headers: lowercaseHeaders(init.headers) };
+      publicRequests.push(recorded);
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" || parsed.port !== "" || !(manifest.network.publicHosts ?? []).includes(parsed.hostname)) {
+        throw requestError("refused", `The manifest declares no public host for ${url}.`);
+      }
+      for (const name of Object.keys(recorded.headers)) {
+        if (!listed.has(name)) throw requestError("refused", `The manifest doesn't list the ${name} header.`);
+      }
+      if (publicRespond === undefined) throw requestError("network", `Nothing answers ${parsed.hostname}.`);
+      return toResponse(await publicRespond(recorded));
     },
     log(level, message, fields) {
       logs.push({ level, message, ...(fields ? { fields } : {}) });

@@ -10,7 +10,8 @@ import type {
   AjourResponse,
   PluginConnection,
   PluginHttpMethod,
-} from "../src/contract.ts";
+} from "@ajour/plugin-sdk";
+import { routeMatches } from "@ajour/plugin-sdk/testing";
 
 const manifest = JSON.parse(readFileSync(new URL("../plugin.json", import.meta.url), "utf8")) as {
   network: {
@@ -26,6 +27,8 @@ export interface RecordedRequest {
   query?: AjourHttpRequest["query"];
   /** Header names lowercase. */
   headers: Record<string, string>;
+  /** The JSON body, parsed, when there is one. */
+  body?: unknown;
 }
 
 export interface CannedResponse {
@@ -77,6 +80,7 @@ export function forwardTo(url: string, token: string | undefined = "personal-tok
     const response = await fetch(`${url}${request.path}${search}`, {
       method: request.method,
       headers: { ...request.headers, ...(token === undefined ? {} : { "X-ChronOps-Token": token }) },
+      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
     });
     return {
       status: response.status,
@@ -111,17 +115,21 @@ export function createFakeAjour(respond: Responder): FakeAjour {
     requests,
     logs,
     async http(request) {
+      if (request.body !== undefined && typeof request.body !== "string") {
+        throw new Error("The ChronOps plugin sends JSON bodies as strings.");
+      }
       const recorded: RecordedRequest = {
         method: request.method,
         path: request.path,
         ...(request.query === undefined ? {} : { query: request.query }),
         headers: lowercaseHeaders(request.headers),
+        ...(request.body === undefined ? {} : { body: JSON.parse(request.body) }),
       };
       requests.push(recorded);
       if (request.host !== undefined || request.connectionId !== connection.id) {
         throw requestError("refused", `No connection ${request.connectionId} on host ${request.host ?? "base"}.`);
       }
-      if (!manifest.network.endpoints.some((endpoint) => endpoint.method === request.method && endpoint.path === request.path)) {
+      if (!manifest.network.endpoints.some((endpoint) => endpoint.method === request.method && routeMatches(endpoint.path, request.path))) {
         throw requestError("refused", `The manifest allows no ${request.method} ${request.path}.`);
       }
       for (const name of Object.keys(recorded.headers)) {

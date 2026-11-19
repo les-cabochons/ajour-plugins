@@ -130,3 +130,127 @@ test("the fake refuses a write with a read token with 403, and passes the scope 
   const allowed = await fetch(`${readWrite.url}/integration/entries/timer/start`, { method: "POST", headers });
   assert.equal(allowed.status, 404);
 });
+
+// The fake's Time Entry routes follow MineHunter's rules from its branch
+// feat/chronops-time-entry-client-ref (plugins/chronops/pkg/timetracking/
+// entries.go and integration.go), so the plugin's tests meet the same answers.
+
+/** Sends a JSON request to the fake with the read-write headers. */
+async function call(fake, method, path, body, extraHeaders = {}) {
+  const response = await fetch(`${fake.url}${path}`, {
+    method,
+    headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...extraHeaders },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await response.text();
+  return { status: response.status, body: text ? JSON.parse(text) : undefined };
+}
+
+const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+test("the fake refuses a request without X-ChronOps-Source with 400, as the Forwarder does", async (t) => {
+  const fake = await withFake(t);
+  const response = await fetch(`${fake.url}/integration/me`, { headers: { "X-ChronOps-Token": "fake-token" } });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "X-ChronOps-Source must be azure_devops or ajour" });
+});
+
+test("the fake adds an entry once per client reference and source, and answers a repeat with 200 unchanged", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const startedAt = minutesAgo(120);
+  const added = await call(fake, "POST", "/integration/entries", { workdayProject: "ACME-SUP", task: " Login ", startedAt, minutes: 90, clientRef: "key-1" });
+  assert.equal(added.status, 201);
+  assert.equal(added.body.task, "Login");
+  assert.equal(added.body.minutes, 90);
+  assert.equal(added.body.clientRef, "key-1");
+  assert.equal(added.body.source, "ajour");
+  assert.equal(added.body.endedAt, new Date(Date.parse(startedAt) + 90 * 60_000).toISOString());
+  assert.match(added.body.updatedAt, /Z$/);
+
+  // The repeat ignores its body, even a start too far in the future.
+  const repeat = await call(fake, "POST", "/integration/entries", { workdayProject: "OTHER", task: "Other", startedAt: minutesAgo(-60), minutes: 5, clientRef: "key-1" });
+  assert.equal(repeat.status, 200);
+  assert.deepEqual(repeat.body, added.body);
+
+  // Another source keeps its own references.
+  const devops = await call(fake, "POST", "/integration/entries", { workdayProject: "ACME-SUP", task: "Login", startedAt, minutes: 90, clientRef: "key-1" }, { "X-ChronOps-Source": "azure_devops" });
+  assert.equal(devops.status, 201);
+  assert.equal(fake.entries().length, 2);
+});
+
+test("the fake refuses an invalid entry with 400 and MineHunter's message", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const valid = { workdayProject: "ACME-SUP", task: "Login", startedAt: minutesAgo(60), minutes: 30 };
+  for (const [body, error] of [
+    [{ ...valid, minutes: 1441 }, "minutes must be between 1 and 1440"],
+    [{ ...valid, minutes: 0 }, "minutes must be between 1 and 1440"],
+    [{ ...valid, task: "x".repeat(201) }, "the task must be 1 to 200 characters"],
+    [{ ...valid, workdayProject: " ACME" }, "invalid Workday Project code"],
+    [{ ...valid, startedAt: minutesAgo(-11) }, "startedAt is required and cannot be in the future"],
+    [{ ...valid, note: "private" }, "invalid entry payload"],
+  ]) {
+    assert.deepEqual(await call(fake, "POST", "/integration/entries", body), { status: 400, body: { error } }, error);
+  }
+});
+
+test("the fake edits an entry: moving the start keeps the length, minutes changes it", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const { body: entry } = await call(fake, "POST", "/integration/entries", { workdayProject: "ACME-SUP", task: "Login", startedAt: minutesAgo(600), minutes: 60 });
+
+  const moved = await call(fake, "PATCH", `/integration/entries/${entry.id}`, { startedAt: minutesAgo(300) });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.minutes, 60);
+  assert.ok(Date.parse(moved.body.updatedAt) >= Date.parse(entry.updatedAt));
+
+  const longer = await call(fake, "PATCH", `/integration/entries/${entry.id}`, { minutes: 75, task: "Export", workdayProject: "GLOBEX-INT" });
+  assert.deepEqual([longer.body.minutes, longer.body.task, longer.body.workdayProject, longer.body.startedAt], [75, "Export", "GLOBEX-INT", moved.body.startedAt]);
+
+  assert.deepEqual(await call(fake, "PATCH", `/integration/entries/${entry.id}`, { startedAt: minutesAgo(-1) }), {
+    status: 400,
+    body: { error: "startedAt must be set and cannot be in the future" },
+  });
+  assert.deepEqual(await call(fake, "PATCH", `/integration/entries/${entry.id}`, { clientRef: "new" }), { status: 400, body: { error: "invalid entry payload" } });
+  assert.deepEqual(await call(fake, "PATCH", "/integration/entries/7d3c5bb4-0000-4000-8000-000000000000", { minutes: 5 }), {
+    status: 404,
+    body: { error: "entry not found" },
+  });
+});
+
+test("the fake deletes an entry for good, which frees its client reference", async (t) => {
+  const fake = await withFake(t, { scope: "read-write" });
+  const body = { workdayProject: "ACME-SUP", task: "Login", startedAt: minutesAgo(60), minutes: 30, clientRef: "key-1" };
+  const { body: entry } = await call(fake, "POST", "/integration/entries", body);
+
+  assert.deepEqual(await call(fake, "DELETE", `/integration/entries/${entry.id}`), { status: 204, body: undefined });
+  assert.deepEqual(await call(fake, "DELETE", `/integration/entries/${entry.id}`), { status: 404, body: { error: "entry not found" } });
+  assert.equal((await call(fake, "POST", "/integration/entries", body)).status, 201);
+});
+
+test("the fake lists entries started in [from, to), newest first, and the running timer wherever it started", async (t) => {
+  const day = (date, time) => `${date}T${time}:00.000Z`;
+  const entry = (id, startedAt, endedAt) => ({
+    id, ownerEmail: "marie.tremblay@example.com", workdayProject: "ACME-SUP", task: "Login", description: "",
+    startedAt, endedAt, source: "grafana", workItem: null, clientRef: null, updatedAt: startedAt,
+  });
+  const fake = await withFake(t, {
+    entries: [
+      entry("a", day("2026-11-02", "13:00"), day("2026-11-02", "14:00")),
+      entry("b", day("2026-11-03", "13:00"), day("2026-11-03", "13:30")),
+      entry("c", day("2026-11-09", "13:00"), day("2026-11-09", "14:00")),
+      entry("running", day("2026-10-01", "13:00"), null),
+    ],
+  });
+  const listed = await call(fake, "GET", `/integration/entries?from=${day("2026-11-02", "05:00")}&to=${day("2026-11-09", "05:00")}`);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.map((item) => [item.id, item.minutes]), [["b", 30], ["a", 60], ["running", null]]);
+
+  const tooLong = await call(fake, "GET", `/integration/entries?from=${day("2026-01-01", "05:00")}&to=${day("2026-04-05", "05:00")}`);
+  assert.deepEqual(tooLong, { status: 400, body: { error: "to must be after from, at most 93 days later" } });
+});
+
+test("the fake limits requests like the Forwarder when asked, with 429", async (t) => {
+  const fake = await withFake(t, { rateLimit: { perSecond: 10, burst: 3 } });
+  const statuses = [];
+  for (let index = 0; index < 4; index += 1) statuses.push((await call(fake, "GET", "/integration/me")).status);
+  assert.deepEqual(statuses, [200, 200, 200, 429]);
+});

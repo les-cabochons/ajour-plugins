@@ -1,20 +1,22 @@
 {
   "name": "@les-cabochons/ajp-chronops",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.7.0",
   "ajour": {
-    "description": "Bring your ChronOps projects, tasks and budgets into Ajour, read-only, through MineHunter's ChronOps Forwarder.",
+    "description": "Bring your ChronOps projects, tasks and budgets into Ajour through MineHunter's ChronOps Forwarder, and keep your time entries in ChronOps with Time entries on.",
     "features": [
-      "project-source"
+      "project-source",
+      "time-sync"
     ],
     "tags": [
       "chronops",
       "minehunter",
       "projects",
-      "budgets"
+      "budgets",
+      "time-entries"
     ],
     "author": {
       "name": "Alex Trépanier",
@@ -40,6 +42,7 @@
     "verify": "corepack pnpm test && corepack pnpm typecheck"
   },
   "devDependencies": {
+    "@ajour/plugin-sdk": "file:../../vendor/ajour-plugin-sdk-0.2.0.tgz",
     "@types/node": "^22.13.10",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",

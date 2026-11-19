@@ -8,15 +8,25 @@ function cloneManifest() {
   return structuredClone(validManifest);
 }
 
-describe("project source manifest packaging contract", () => {
+describe("project source and time sync manifest packaging contract", () => {
   it("accepts the repository manifest", () => {
     expect(assertProjectSourcePluginManifest(cloneManifest())).toEqual(validManifest);
   });
 
-  it("declares plugin API 4 and the projectSource capability alone", () => {
+  it("declares plugin API 4, the projectSource capability and timeSync beside it", () => {
     expect(validManifest.apiVersion).toBe(4);
-    expect(validManifest.capabilities).toEqual({ projectSource: {} });
+    expect(validManifest.capabilities).toEqual({ projectSource: {}, timeSync: {} });
     expect(validManifest.entrypoint).toBe("src/plugin.ts");
+  });
+
+  it("rejects timeSync without projectSource, and an option on timeSync", () => {
+    const alone = cloneManifest();
+    delete alone.capabilities.projectSource;
+    expect(() => assertProjectSourcePluginManifest(alone)).toThrow(/must declare projectSource/);
+
+    const option = cloneManifest();
+    option.capabilities.timeSync = { running: true };
+    expect(() => assertProjectSourcePluginManifest(option)).toThrow(/takes no option/);
   });
 
   it("sends the personal token as X-ChronOps-Token and lists the headers the plugin sets", () => {
@@ -27,22 +37,28 @@ describe("project source manifest packaging contract", () => {
       template: "{secret}",
       secretField: "personalToken",
     });
-    expect(connectionFields.find((field: { id: string }) => field.id === "personalToken")).toMatchObject({
-      type: "password",
-      secret: true,
-      required: true,
-    });
+    const tokenField = connectionFields.find((field: { id: string }) => field.id === "personalToken");
+    expect(tokenField).toMatchObject({ type: "password", secret: true, required: true });
+    // Time entries writes, so the help no longer asks for a read token.
+    expect(tokenField.placeholder).not.toMatch(/read token/);
+    expect(tokenField.helpText).toMatch(/Time entries need a read-write token/);
     expect(network.baseAddress).toEqual({ field: "forwarderUrl", allowOnPremises: true });
     expect(connectionFields.find((field: { id: string }) => field.id === "forwarderUrl")).toMatchObject({
       type: "url",
       defaultValue: "https://chronops-forwarder.minehunter.az.nventive.com",
     });
     // Ajour's broker refuses a header the manifest does not list: the source
-    // tag on every request, and the cursor sent as an ETag on the snapshot.
-    expect(network.requestHeaders).toEqual(["X-ChronOps-Source", "If-None-Match"]);
+    // tag on every request, the cursor sent as an ETag on the snapshot, and
+    // the JSON type of a Time Entry write.
+    expect(network.requestHeaders).toEqual(["X-ChronOps-Source", "If-None-Match", "Content-Type"]);
+    // Only the Time Entry routes the time sync calls. `*` is one path segment, the entry's id.
     expect(network.endpoints).toEqual([
       { method: "GET", path: "/integration/me" },
       { method: "GET", path: "/integration/snapshot" },
+      { method: "GET", path: "/integration/entries" },
+      { method: "POST", path: "/integration/entries" },
+      { method: "PATCH", path: "/integration/entries/*" },
+      { method: "DELETE", path: "/integration/entries/*" },
     ]);
   });
 

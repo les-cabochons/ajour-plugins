@@ -1,10 +1,11 @@
 // What MineHunter's ChronOps Forwarder answers, as contract/snapshot.schema.json
-// (version 3) and ADR-0030 describe it. Version 2 is still read, so the plugin
-// works before and after MineHunter moves to version 3. This file is the plugin's reading of
-// that contract. It holds the types, and a parser that applies the schema's
-// rules by hand (required fields, types, enums, minimums, date formats, no
-// unknown field) and refuses a body that strays from it, naming the field.
-// Ajour never sees these shapes.
+// (version 3) and ADR-0030 describe it, and its Time Entries since its client
+// reference change. Version 2 of the snapshot is still read, so the plugin
+// works before and after MineHunter moves to version 3. This file is the
+// plugin's reading of that contract. It holds the types, and a parser that
+// applies the schema's rules by hand (required fields, types, enums, minimums,
+// date formats, no unknown field) and refuses a body that strays from it,
+// naming the field. Ajour never sees these shapes.
 
 /** The snapshot versions this plugin reads, oldest first. A shape change bumps MineHunter's. */
 export const CHRONOPS_SNAPSHOT_VERSIONS = [2, 3] as const;
@@ -16,6 +17,37 @@ export interface ChronopsMe {
   scope: "read" | "read-write";
   /** ISO 8601, null for a token that never expires. */
   expiresAt: string | null;
+}
+
+/**
+ * The most entries `GET /integration/entries` answers, the newest first
+ * (MineHunter's `maxListedEntries`). A listing this long may lack older ones.
+ */
+export const CHRONOPS_MAX_LISTED_ENTRIES = 2000;
+
+/**
+ * A Time Entry as `GET`, `POST` and `PATCH /integration/entries` answer it,
+ * with the fields the plugin reads. ChronOps also sends the owner's email,
+ * the description and the work item, which the plugin never reads, so they
+ * never reach Ajour.
+ */
+export interface ChronopsTimeEntry {
+  id: string;
+  /** The Workday Project code, the same code the snapshot gives a project. */
+  workdayProject: string;
+  task: string;
+  /** ISO 8601. */
+  startedAt: string;
+  /** ISO 8601, null while the entry runs. */
+  endedAt: string | null;
+  /** The span rounded to the minute, null while the entry runs. */
+  minutes: number | null;
+  /** The tool that created it: grafana for My time, azure_devops or ajour. */
+  source: string;
+  /** The key the integration that created it gave it, or null. Unique per source. */
+  clientRef: string | null;
+  /** ISO 8601, the entry's last change, a stop included. */
+  updatedAt: string;
 }
 
 /** `GET /integration/snapshot`. */
@@ -112,6 +144,8 @@ const nonNegative: Reader<number> = (value, path) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fail(path, "a number of 0 or more");
 const positive: Reader<number> = (value, path) =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fail(path, "a number over 0");
+const count: Reader<number> = (value, path) =>
+  Number.isInteger(value) && (value as number) >= 0 ? (value as number) : fail(path, "a whole number of 0 or more");
 /**
  * Whether a string starts with a real calendar day, YYYY-MM-DD. Date.parse
  * alone is not enough, since it rolls 2026-02-30 over to March 2.
@@ -257,4 +291,29 @@ const readMe = object(
 
 export function parseChronopsMe(value: unknown): ChronopsMe {
   return readMe(value, "me");
+}
+
+// The Time Entry routes are not under the versioned schema either, so a
+// field MineHunter adds later is ignored rather than refused.
+const readTimeEntry = object(
+  {
+    id: nonEmpty,
+    workdayProject: string,
+    task: string,
+    startedAt: dateTime,
+    endedAt: nullable(dateTime),
+    minutes: nullable(count),
+    source: string,
+    clientRef: nullable(string),
+    updatedAt: dateTime,
+  },
+  "ignore",
+);
+
+export function parseChronopsTimeEntry(value: unknown): ChronopsTimeEntry {
+  return readTimeEntry(value, "entry");
+}
+
+export function parseChronopsTimeEntries(value: unknown): ChronopsTimeEntry[] {
+  return array(readTimeEntry)(value, "entries");
 }

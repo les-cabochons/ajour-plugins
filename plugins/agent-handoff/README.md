@@ -1,6 +1,6 @@
 # Ajour agent handoff
 
-An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), [OpenCode](https://opencode.ai), [Codex](https://developers.openai.com/codex) and [VS Code](https://code.visualstudio.com). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, a Copilot CLI session with `copilot`, an OpenCode session with `opencode run`, a Codex thread through `codex app-server`, or a VS Code chat with `code chat`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
+An Ajour plugin that hands a backlog item off to a coding agent and follows its work. Its tools are [T3 Code](https://t3.codes), [Claude Code](https://code.claude.com), Claude Code desktop, [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), [OpenCode](https://opencode.ai), [Codex](https://developers.openai.com/codex) and [VS Code](https://code.visualstudio.com). Ajour fills the prompt, title and branch, then the plugin starts a T3 Code thread with the `t3` CLI, a Claude Code background session with `claude`, which Claude Code desktop opens in the Claude desktop app, a Copilot CLI session with `copilot`, an OpenCode session with `opencode run`, a Codex thread through `codex app-server`, or a VS Code chat with `code chat`, and reads its state back where the tool reports it: working, waiting for you, ready for review, settled.
 
 The plugin runs only the commands it declares, through Ajour's process broker, after you approve them in Access. It has no network access and no connection of its own.
 
@@ -10,14 +10,15 @@ Ajour ends a plugin operation after 30 seconds, so a refresh stops waiting for a
 
 Each tool declares its features in `plugin.json`, and Ajour uses only those (les-cabochons/ajour#759). The plugin's page in Settings › Plugins lists them for each tool.
 
-| Tool        | Starts threads | Follows state (`followsState`) | Finds threads (`listsThreads`) | Updates within seconds (`hooks`) |
-| ----------- | -------------- | ------------------------------ | ------------------------------ | -------------------------------- |
-| T3 Code     | Yes            | Yes                            | Yes                            | No                               |
-| Claude Code | Yes            | Yes                            | Yes                            | Yes, see [Hooks](#hooks)         |
-| Copilot CLI | Yes            | No, see [States](#states-2)    | No                             | No                               |
-| OpenCode    | Yes            | Yes                            | Yes                            | No                               |
-| Codex       | Yes            | Yes                            | Yes                            | No                               |
-| VS Code     | Yes            | No, see [States](#states-5)    | No                             | No                               |
+| Tool                | Starts threads | Follows state (`followsState`) | Finds threads (`listsThreads`) | Updates within seconds (`hooks`) |
+| ------------------- | -------------- | ------------------------------ | ------------------------------ | -------------------------------- |
+| T3 Code             | Yes            | Yes                            | Yes                            | No                               |
+| Claude Code         | Yes            | Yes                            | Yes                            | Yes, see [Hooks](#hooks)         |
+| Claude Code desktop | Yes            | Yes                            | Yes                            | Yes, see [Hooks](#hooks)         |
+| Copilot CLI         | Yes            | No, see [States](#states-2)    | No                             | No                               |
+| OpenCode            | Yes            | Yes                            | Yes                            | No                               |
+| Codex               | Yes            | Yes                            | Yes                            | No                               |
+| VS Code             | Yes            | No, see [States](#states-5)    | No                             | No                               |
 
 Every tool sets all three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's or VS Code's commands takes one.
 
@@ -31,7 +32,7 @@ Since 0.11.0, each tool's `iconSvg` is its own logo, drawn as a tile in its own 
 
 ## Threads you started
 
-Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it. VS Code's `code` command lists no chats either, so VS Code leaves it off too.
+Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, Claude Code desktop, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it. VS Code's `code` command lists no chats either, so VS Code leaves it off too.
 
 A listing answers each thread once, newest first, at most as many as Ajour asks for (it asks for 50), with what a start would have answered for that thread: the same thread id, link, resume command and native state. Open and refreshes then work on a linked thread as on one Ajour started. Ajour shows a linked thread as Unknown until its first refresh, which runs right after you link it. A listing that fails throws the reason, which Ajour keeps in the operation's event; the item gets no offer.
 
@@ -46,6 +47,7 @@ Ajour never gives the plugin a folder's path. `claude` gets it in the `--cwd` ar
 
 - **The same work under each tool you turn on.** Tools that run each other list the same work under each of them. T3 Code runs its Codex and Claude threads as real Codex threads and Claude Code sessions, so with T3 Code, Codex and Claude Code all turned on, one T3 Code thread is offered under T3 Code, Codex and Claude Code. That is intended: you choose which tools Ajour uses.
 - **Claude Code.** A background job opens with `claude attach`, as a started one does. A job you resumed in a terminal reads its live state, and still attaches to the job. An interactive session has no job to attach to, and is open in its terminal already, so its thread has no resume. Once you close it, Claude Code stops listing it, and its handoff keeps its last state with how to resume it.
+- **Claude Code desktop.** Lists the folder's sessions as Claude Code does, and each background job also gets the Claude app's link. An interactive session gets none: it is open in its terminal.
 - **OpenCode.** OpenCode lists by project, which it finds from the folder's git repository, so a session started in a subfolder is listed too.
 - **Codex.** A listing holds one of the plugin's two sessions for a moment. While two handoffs run, it fails with "Both of Ajour's Codex sessions are running handoffs, so Ajour can't list Codex's threads until one is free." A listing has no settings, so a linked thread opens in the Codex app, the Open setting's default. `hooks/list` reports the folder Ajour started the app-server in, since the app-server ignores `-C`. If it reports a filesystem root such as `C:\` or `/`, the listing fails rather than list the root's threads.
 
@@ -127,7 +129,7 @@ The prompt can't go to that terminal instead: a terminal command takes no stdin,
 
 ### Hooks
 
-A start tells Ajour when to read the session again, so the item says Waiting for you within seconds of the session asking for you, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ready still arrives at the next refresh: see the limits below for why `Stop` isn't sent. Claude Code is the only tool that declares `hooks: true`. Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
+A start tells Ajour when to read the session again, so the item says Waiting for you within seconds of the session asking for you, instead of at the next refresh (les-cabochons/ajour#726, ADR 0020). Ready still arrives at the next refresh: see the limits below for why `Stop` isn't sent. Claude Code and Claude Code desktop are the only tools that declare `hooks: true`. Ajour gives each start a hook URL, a loopback address with that handoff's own token. When a start has one, the plugin runs `claude-start-hook` instead of `claude-start`, which adds `--settings` and this fixed text, where Ajour writes the URL at each `{url}`:
 
 ```json
 {
@@ -184,6 +186,33 @@ The native state keeps the last state read, the label, and Claude's `kind`, `sta
 | Model   | Empty             | A model alias such as `opus` or `sonnet`, or a full model name. Empty uses your Claude Code default.                |
 
 A terminal is Windows Terminal on Windows and Terminal on macOS, set in Settings › General › Terminal. On Windows it takes only letters, digits, spaces and `. _ : \ / @ + = , ~ ( ) -` in the folder path; with others, the session still starts and the handoff says the terminal couldn't open.
+
+## Claude Code desktop
+
+Claude Code desktop starts the same background session as [Claude Code](#claude-code), with the same commands, [hooks](#hooks) and [states](#states-1), and opens it in the [Claude desktop app](https://claude.ai/download) instead of a terminal. Open goes to `claude://resume?session=<session id>`, a link from which the app imports a CLI session and opens it. The plugin declares the `claude` scheme for it.
+
+| Command             | What it is for                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude stop <job>` | Stops the background job once its turn ended or it waits for you, so the Claude app can take the session over. Times out after 10 seconds. |
+
+The Claude app can't take a turn in a session that a background job runs, even a job whose turn ended. It shows "This session is running in the background" with a Try again button. So each refresh of a Claude Code desktop handoff runs `claude stop` on a background job that is done or waits for you. A working job is left alone: Open while it works shows the session in the app, with that message, until the turn ends and a refresh stops the job. `claude stop` keeps the job and its transcript, and prints `stopped <job>` again for a job already stopped.
+
+- **Waiting for you.** A job stopped while it waited for you no longer says so in `claude agents`. The handoff stays Waiting for you, with `released: true` and "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.", until a process runs the session again. The question is in the transcript the app shows; a tool call that waited for permission didn't run.
+- **Going on in the app.** A process that resumes the session is listed by `claude agents` as an interactive session with the same session id, so the handoff follows it, as it follows a job resumed in a terminal. Checked with `claude -p --resume`; the app's own process wasn't checked.
+- **A stop that fails** keeps the state read, with "Ajour couldn't stop Claude Code's background session, so the Claude app can't open it yet. Ajour tries again at the next refresh." and claude's reason.
+- **Missing from the list.** After `claude rm`, the app still imports the session from its transcript, so the handoff keeps its last state and says Open still opens it.
+- **A terminal next to it.** A refresh stops a done job even if you attached to it in a terminal yourself. Use Claude Code to work in a terminal.
+- **Detection.** One `claude --version` detects both Claude tools. Whether the Claude app is installed isn't checked: without it, Open fails. The Claude desktop app runs on macOS and Windows.
+
+Checked on Claude 6.6395.1 for macOS with Claude Code 2.1.328: a running session, a stopped one and one `claude rm` removed all imported, and only the stopped one could take a turn. Windows wasn't checked. Anthropic doesn't document the `claude://resume` link, so a later app can change it. 0.15.0 adds the `claude` scheme and the `claude-stop` command, so Ajour asks to allow the plugin's new access once.
+
+### Settings
+
+| Setting | Default | What it does                                                                                         |
+| ------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| Model   | Empty   | A model alias such as `opus` or `sonnet`, or a full model name. Empty uses your Claude Code default. |
+
+There is no start mode: the app can't open a session until its turn ends.
 
 ## Copilot CLI
 

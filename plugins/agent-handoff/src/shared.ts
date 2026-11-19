@@ -196,8 +196,10 @@ type ProcessResult = Awaited<ReturnType<typeof ajour.process.run>>;
  * Runs a declared command through Ajour's process broker. A `concurrency`
  * refusal comes before the command starts, so it is safe to ask again once
  * one of the plugin's other commands ends. Any other refusal throws at once.
+ * The result keeps a failed command's exit code and output, for a tool whose
+ * failure means something, such as `opencode api` answering 404.
  */
-async function run(
+export async function run(
   tool: Tool,
   request: ProcessRequest,
 ): Promise<ProcessResult> {

@@ -1,24 +1,21 @@
 // Hands backlog items off to coding agents and reads back the state of their
 // work: T3 Code threads through the `t3` CLI, Claude Code background
 // sessions through `claude`, Copilot CLI sessions through `copilot`,
-// OpenCode sessions through the `opencode serve` HTTP server, Codex threads
-// through `codex app-server`, which Ajour keeps running as a process session
-// while a turn runs, and VS Code chats through `code chat`. Every command runs through Ajour's process
-// broker, as declared in plugin.json's `processes` block, and every request to
-// OpenCode through its credential broker, to the address of the connection
-// the user picked.
+// OpenCode 2 sessions through `opencode`, Codex threads through
+// `codex app-server`, which Ajour keeps running as a process session while a
+// turn runs, and VS Code chats through `code chat`. Every command runs
+// through Ajour's process broker, as declared in plugin.json's `processes`
+// block. No tool uses a connection.
 import type {
   DetectToolsResult,
   HandoffArguments,
   ListThreadsRequest,
   ListThreadsResult,
-  PluginConnection,
   PluginModule,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
   StartHandoffRequest,
   StartHandoffResult,
-  ValidationResult,
 } from "@ajour/plugin-sdk";
 import {
   CLAUDE_TOOL,
@@ -46,7 +43,6 @@ import {
   listOpenCode,
   readOpenCode,
   startOpenCode,
-  validateOpenCode,
 } from "./opencode.ts";
 import { T3_TOOL, detectT3, listT3, readT3, startT3 } from "./t3.ts";
 import {
@@ -62,45 +58,31 @@ function unknownTool(id: string): never {
 }
 
 /**
- * The connection and the request. Ajour passes the connection first for a
- * tool that uses one (OpenCode), and only the request for the others.
+ * The request. Ajour passes a connection before it only for a tool that uses
+ * one, and none of this plugin's tools does.
  */
-function split<Request>(
-  args: HandoffArguments<Request>,
-): [PluginConnection | undefined, Request] {
-  return args.length === 2 ? [args[0], args[1]] : [undefined, args[0]];
+function requestOf<Request>(args: HandoffArguments<Request>): Request {
+  return args.length === 2 ? args[1] : args[0];
 }
 
-/**
- * Ajour detects the tools without a connection together, and OpenCode once
- * for each connection its settings picked.
- */
-export async function detectTools(
-  connection?: PluginConnection,
-): Promise<DetectToolsResult> {
-  if (connection) return { tools: [await detectOpenCode(connection)] };
+/** Ajour detects the tools together, in plugin.json's order. */
+export async function detectTools(): Promise<DetectToolsResult> {
   const tools = await Promise.all([
     detectT3(),
     detectClaude(),
     detectCopilot(),
+    detectOpenCode(),
     detectCodex(),
     detectVsCode(),
   ]);
   return { tools };
 }
 
-/** A connection is OpenCode's server: Ajour checks it answers before saving. */
-export async function validateConnection(
-  connection: PluginConnection,
-): Promise<ValidationResult> {
-  return validateOpenCode(connection);
-}
-
 export async function startHandoff(
   ...args: HandoffArguments<StartHandoffRequest>
 ): Promise<StartHandoffResult> {
-  const [connection, request] = split(args);
-  if (request.tool === OPENCODE_TOOL) return startOpenCode(connection, request);
+  const request = requestOf(args);
+  if (request.tool === OPENCODE_TOOL) return startOpenCode(request);
   if (request.tool === T3_TOOL) return startT3(request);
   if (request.tool === CLAUDE_TOOL) return startClaude(request);
   if (request.tool === COPILOT_TOOL) return startCopilot(request);
@@ -117,8 +99,8 @@ export async function startHandoff(
 export async function readHandoffStates(
   ...args: HandoffArguments<ReadHandoffStatesRequest>
 ): Promise<ReadHandoffStatesResult> {
-  const [connection, request] = split(args);
-  if (request.tool === OPENCODE_TOOL) return readOpenCode(connection, request);
+  const request = requestOf(args);
+  if (request.tool === OPENCODE_TOOL) return readOpenCode(request);
   if (request.tool === T3_TOOL) return readT3(request);
   if (request.tool === CLAUDE_TOOL) return readClaude(request);
   if (request.tool === CODEX_TOOL) return readCodex(request);
@@ -137,8 +119,8 @@ export async function readHandoffStates(
 export async function listThreads(
   ...args: HandoffArguments<ListThreadsRequest>
 ): Promise<ListThreadsResult> {
-  const [connection, request] = split(args);
-  if (request.tool === OPENCODE_TOOL) return listOpenCode(connection, request);
+  const request = requestOf(args);
+  if (request.tool === OPENCODE_TOOL) return listOpenCode(request);
   if (request.tool === T3_TOOL) return listT3(request);
   if (request.tool === CLAUDE_TOOL) return listClaude(request);
   if (request.tool === CODEX_TOOL) return listCodex(request);
@@ -153,7 +135,6 @@ export async function listThreads(
 // Keep the exported operations checked against the host's contract.
 const _module = {
   detectTools,
-  validateConnection,
   startHandoff,
   readHandoffStates,
   listThreads,

@@ -1,6 +1,6 @@
 {
   "id": "agent-handoff",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "apiVersion": 4,
   "displayName": "Agent handoff",
   "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode, Codex or VS Code, and follow their work where the tool reports it.",
@@ -120,7 +120,6 @@
           "id": "opencode",
           "label": "OpenCode",
           "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" rx=\"5.5\" fill=\"#F1ECEC\"/><g transform=\"translate(6.4 5) scale(.35)\"><path d=\"M24 32H8V16H24V32Z\" fill=\"#BCBBBB\"/><path d=\"M24 8H8V32H24V8ZM32 40H0V0H32V40Z\" fill=\"#211E1E\"/></g><rect x=\".5\" y=\".5\" width=\"23\" height=\"23\" rx=\"5\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".12\"/></svg>",
-          "connection": "required",
           "followsState": true,
           "listsThreads": true,
           "hooks": false,
@@ -137,7 +136,7 @@
               "label": "Agent",
               "type": "text",
               "placeholder": "build",
-              "helpText": "An OpenCode agent, such as build or plan. Leave empty for your OpenCode default."
+              "helpText": "An OpenCode agent, such as build or plan. Leave empty for your OpenCode default. OpenCode works without a terminal, so it can't ask you first: it skips each action the agent would ask about, such as reading a .env file, and goes on."
             }
           ]
         },
@@ -186,52 +185,6 @@
         }
       ]
     }
-  },
-  "connectionFields": [
-    {
-      "id": "label",
-      "label": "Connection label",
-      "type": "text",
-      "required": true,
-      "defaultValue": "OpenCode",
-      "placeholder": "Name this connection"
-    },
-    {
-      "id": "tenantLabel",
-      "label": "Computer",
-      "type": "text",
-      "required": true,
-      "defaultValue": "This computer",
-      "placeholder": "Where the server runs"
-    },
-    {
-      "id": "serverUrl",
-      "label": "Server address",
-      "type": "url",
-      "required": true,
-      "defaultValue": "http://127.0.0.1:4096",
-      "helpText": "Where opencode serve listens. Start it in the repository folder with opencode serve --hostname 127.0.0.1 --port 4096, and mark this connection as on-premises."
-    }
-  ],
-  "network": {
-    "baseAddress": {
-      "field": "serverUrl",
-      "allowOnPremises": true
-    },
-    "endpoints": [
-      { "method": "GET", "path": "/global/health" },
-      { "method": "GET", "path": "/path" },
-      { "method": "GET", "path": "/session" },
-      { "method": "POST", "path": "/session" },
-      { "method": "GET", "path": "/session/status" },
-      { "method": "GET", "path": "/session/*" },
-      { "method": "DELETE", "path": "/session/*" },
-      { "method": "GET", "path": "/session/*/message" },
-      { "method": "POST", "path": "/session/*/prompt_async" },
-      { "method": "GET", "path": "/permission" },
-      { "method": "GET", "path": "/question" }
-    ],
-    "requestHeaders": ["Content-Type"]
   },
   "processes": {
     "executables": {
@@ -432,16 +385,60 @@
         "timeoutSeconds": 10
       },
       {
-        "id": "opencode-attach",
+        "id": "opencode-run",
         "executable": "opencode",
         "args": [
-          "attach",
-          "{server:connection-url}",
+          "run",
           "-s",
           "{session:id}",
-          "--dir",
-          "{folder:folder}"
+          "--title",
+          "{title:text}",
+          {
+            "if": "model",
+            "args": ["--model", "{model:text}"]
+          },
+          {
+            "if": "agent",
+            "args": ["--agent", "{agent:text}"]
+          }
         ],
+        "cwd": "{folder:folder}",
+        "stdin": "text",
+        "mode": "detached"
+      },
+      {
+        "id": "opencode-session",
+        "executable": "opencode",
+        "args": ["api", "session.get", "--param", "{session:text}"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "opencode-messages",
+        "executable": "opencode",
+        "args": [
+          "api",
+          "session.message.list",
+          "--param",
+          "{session:text}",
+          "--param",
+          "limit=1"
+        ],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "opencode-sessions",
+        "executable": "opencode",
+        "args": ["session", "list", "--format", "json", "-n", "{limit:number}"],
+        "cwd": "{folder:folder}",
+        "mode": "capture",
+        "timeoutSeconds": 10
+      },
+      {
+        "id": "opencode-open",
+        "executable": "opencode",
+        "args": ["{folder:folder}", "-s", "{session:id}"],
         "mode": "terminal"
       },
       {

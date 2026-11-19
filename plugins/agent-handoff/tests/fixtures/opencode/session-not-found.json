@@ -1,1 +1,1 @@
-{"name":"NotFoundError","data":{"message":"Session not found: ses_doesnotexist000000000000"}}
+{"_tag":"SessionNotFoundError","sessionID":"ses_doesnotexist000000000000","message":"Session not found: ses_doesnotexist000000000000"}

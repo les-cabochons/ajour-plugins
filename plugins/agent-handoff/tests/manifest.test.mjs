@@ -42,7 +42,7 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
       ["t3", "T3 Code", undefined],
       ["claude", "Claude Code", undefined],
       ["copilot", "Copilot CLI", undefined],
-      ["opencode", "OpenCode", "required"],
+      ["opencode", "OpenCode", undefined],
       ["codex", "Codex", undefined],
       ["vscode", "VS Code", undefined],
     ],
@@ -94,44 +94,11 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
   assert.deepEqual(manifest.processes.openSchemes, ["codex", "t3code"]);
 });
 
-test("OpenCode's connection is its loopback server, reached on-premises through the broker", () => {
-  // packages/shared/plugin-api-4.ts: a tool that uses a connection needs
-  // connection fields and a network, and the base address field is a url
-  // that isn't secret. Ajour's form needs label and tenantLabel.
-  assert.deepEqual(
-    manifest.connectionFields.map((f) => [
-      f.id,
-      f.type,
-      f.required,
-      f.secret,
-      f.defaultValue,
-    ]),
-    [
-      ["label", "text", true, undefined, "OpenCode"],
-      ["tenantLabel", "text", true, undefined, "This computer"],
-      ["serverUrl", "url", true, undefined, "http://127.0.0.1:4096"],
-    ],
-  );
-  // No credential: the server runs without a password, on 127.0.0.1, so the
-  // connection must be on-premises to reach a private address over http.
-  assert.deepEqual(manifest.network, {
-    baseAddress: { field: "serverUrl", allowOnPremises: true },
-    endpoints: [
-      { method: "GET", path: "/global/health" },
-      // A listing asks the server its folder, then lists its sessions.
-      { method: "GET", path: "/path" },
-      { method: "GET", path: "/session" },
-      { method: "POST", path: "/session" },
-      { method: "GET", path: "/session/status" },
-      { method: "GET", path: "/session/*" },
-      { method: "DELETE", path: "/session/*" },
-      { method: "GET", path: "/session/*/message" },
-      { method: "POST", path: "/session/*/prompt_async" },
-      { method: "GET", path: "/permission" },
-      { method: "GET", path: "/question" },
-    ],
-    requestHeaders: ["Content-Type"],
-  });
+test("no tool uses a connection, so the manifest has no connection fields or network", () => {
+  // OpenCode 2's CLI finds its background service and signs in to it by
+  // itself, so OpenCode no longer goes through a connection (#836).
+  assert.equal(manifest.connectionFields, undefined);
+  assert.equal(manifest.network, undefined);
   assert.equal(manifest.connectionAccess, undefined);
 });
 
@@ -191,7 +158,7 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   );
 });
 
-test("the declared commands are four t3, seven claude, four copilot, two opencode, three codex and two code commands", () => {
+test("the declared commands are four t3, seven claude, four copilot, six opencode, three codex and two code commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -346,19 +313,57 @@ test("the declared commands are four t3, seven claude, four copilot, two opencod
       mode: "capture",
       timeoutSeconds: 10,
     },
-    // Ajour fills {server:connection-url} from the handoff's connection; the
-    // plugin passes only the session. A terminal opens in its first folder,
-    // and --dir names the same folder to OpenCode.
-    "opencode-attach": {
+    // `opencode run` creates the session under the id the plugin chose, in
+    // its working folder, reads the prompt from stdin, runs one turn and
+    // exits, so it starts detached.
+    "opencode-run": {
       executable: "opencode",
       args: [
-        "attach",
-        "{server:connection-url}",
+        "run",
         "-s",
         "{session:id}",
-        "--dir",
-        "{folder:folder}",
+        "--title",
+        "{title:text}",
+        { if: "model", args: ["--model", "{model:text}"] },
+        { if: "agent", args: ["--agent", "{agent:text}"] },
       ],
+      cwd: "{folder:folder}",
+      stdin: "text",
+      mode: "detached",
+    },
+    // `opencode api` signs in to the background service. A slot is a whole
+    // argument, so the plugin passes `sessionID=<id>` as one text value, to
+    // one fixed operation.
+    "opencode-session": {
+      executable: "opencode",
+      args: ["api", "session.get", "--param", "{session:text}"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    "opencode-messages": {
+      executable: "opencode",
+      args: [
+        "api",
+        "session.message.list",
+        "--param",
+        "{session:text}",
+        "--param",
+        "limit=1",
+      ],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    // `opencode session list` lists the project of the folder it runs in.
+    "opencode-sessions": {
+      executable: "opencode",
+      args: ["session", "list", "--format", "json", "-n", "{limit:number}"],
+      cwd: "{folder:folder}",
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    "opencode-open": {
+      executable: "opencode",
+      args: ["{folder:folder}", "-s", "{session:id}"],
       mode: "terminal",
     },
     "opencode-version": {

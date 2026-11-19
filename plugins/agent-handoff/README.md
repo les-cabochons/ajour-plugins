@@ -22,6 +22,8 @@ Every tool sets all three keys, even where the value is Ajour's default (`follow
 
 0.9.0 needs an Ajour that includes les-cabochons/ajour#764, which adds `followsState` and `hooks`. An older Ajour refuses this manifest.
 
+Since 0.11.0, each tool's `iconSvg` is its own logo, drawn as a tile in its own colours. Ajour draws a tool's icon as an image, where `currentColor` is black on both themes, so a logo that used it faded on the dark theme. The logos are their owners' trademarks, used here only to name each tool.
+
 ## Threads you started
 
 Ajour also offers to link a thread you started yourself when its title names a backlog item's key in brackets, such as `[PAY-12] Fix login redirect` (les-cabochons/ajour#724). For that, a tool that can list its threads in one repository folder, with their titles, answers `listThreads` and sets `listsThreads` in the manifest: T3 Code, Claude Code, OpenCode and Codex. Copilot CLI can't: 1.0.112 lists sessions only in its interactive picker (`copilot --resume`), and `copilot sessions` only imports one. So Copilot CLI leaves `listsThreads` off, and Ajour never asks it.

@@ -479,3 +479,15 @@ test("each command passes the broker's declaration rules", () => {
     );
   }
 });
+
+test("every tool ships its own logo, drawn in its own colours", () => {
+  const icons = manifest.capabilities.handoff.tools.map((tool) => tool.iconSvg);
+  // One logo per tool: Ajour tells the tools apart by them.
+  assert.equal(new Set(icons).size, icons.length);
+  for (const icon of icons) {
+    // Ajour draws a tool's icon as an image, where currentColor is black
+    // whatever the theme, so a logo names its own colours.
+    assert.doesNotMatch(icon, /currentColor/);
+    assert.match(icon, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" /);
+  }
+});

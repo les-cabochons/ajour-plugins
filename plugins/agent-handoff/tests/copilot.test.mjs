@@ -66,10 +66,13 @@ const handoff = (id, native = { state: "working" }) => ({
   native,
 });
 
+// Detection answers each tool once, in the manifest's order.
+const copilotOf = (tools) => tools.find((tool) => tool.id === "copilot");
+
 test("detection returns the recorded version", async () => {
   const calls = fakeCopilot(() => ok(version));
   const { tools } = await detectTools();
-  assert.deepEqual(tools[2], {
+  assert.deepEqual(copilotOf(tools), {
     id: "copilot",
     available: true,
     version: "1.0.112",
@@ -88,6 +91,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
     [
       ["t3", false],
       ["claude", false],
+      ["claude-desktop", false],
       ["copilot", false],
       ["opencode", false],
       ["codex", false],
@@ -95,7 +99,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
     ],
   );
   assert.equal(
-    tools[2].reason,
+    copilotOf(tools).reason,
     "Copilot CLI isn't installed, or its copilot command isn't on PATH.",
   );
 });
@@ -103,7 +107,7 @@ test("detection says Copilot CLI isn't installed when copilot is missing", async
 test("detection keeps an unexpected version line as it is", async () => {
   fakeCopilot(() => ok("1.1.0\n"));
   const { tools } = await detectTools();
-  assert.equal(tools[2].version, "1.1.0");
+  assert.equal(copilotOf(tools).version, "1.1.0");
 });
 
 test("a start chooses the session id and runs copilot detached in the folder, the prompt on stdin", async () => {

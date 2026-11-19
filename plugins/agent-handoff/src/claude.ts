@@ -1,6 +1,8 @@
 // Hands backlog items off to Claude Code as background sessions (`claude
 // --bg`), and reads their state back from `claude agents --json --all`. A
-// start's HTTP hooks tell Ajour when to read it again.
+// start's HTTP hooks tell Ajour when to read it again. Two tools share this
+// code: Claude Code opens a session in a terminal, and Claude Code desktop
+// opens it in the Claude desktop app.
 import type {
   DetectToolsResult,
   ListThreadsRequest,
@@ -42,6 +44,8 @@ import {
 } from "./shared.ts";
 
 export const CLAUDE_TOOL = "claude";
+/** The same sessions, opened in the Claude desktop app instead of a terminal. */
+export const CLAUDE_DESKTOP_TOOL = "claude-desktop";
 const LABELS: Record<State, string> = {
   working: "Working",
   "needs-you": "Waiting for you",
@@ -58,6 +62,8 @@ const UNTRUSTED_ROOT = /Run `?claude`? in (?:[A-Za-z]:\\?|\/) once\b/i;
 const SESSION_ID = /^[A-Za-z0-9._:][A-Za-z0-9:._-]{0,199}$/;
 // A background job's short id, which `claude attach` takes.
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+// The Claude desktop app's resume link takes only a UUID session id.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAYBE_STARTED =
   "Claude Code may have started the session. Check claude agents before handing off again.";
 const TRUST_FIRST =
@@ -65,9 +71,16 @@ const TRUST_FIRST =
 const TRUST_OPENED =
   "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.";
 // Open attaches to a listed job. Once `claude rm` removes the job, only its
-// transcript is left, which `claude --resume` reopens.
-const missing = (sessionId: string) =>
-  `Claude Code no longer lists this session, such as after claude rm, so Open can't attach to it. Run claude --resume ${sessionId} in the repository folder.`;
+// transcript is left, which `claude --resume` reopens, and which the Claude
+// app still imports.
+const missing = (sessionId: string, app: boolean) =>
+  app
+    ? "Claude Code no longer lists this session, such as after claude rm. Open still opens it in the Claude app."
+    : `Claude Code no longer lists this session, such as after claude rm, so Open can't attach to it. Run claude --resume ${sessionId} in the repository folder.`;
+const RELEASED =
+  "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.";
+const NOT_RELEASED =
+  "Ajour couldn't stop Claude Code's background session, so the Claude app can't open it yet. Ajour tries again at the next refresh.";
 
 const claude: Tool = {
   name: "Claude Code",
@@ -105,22 +118,28 @@ const claude: Tool = {
   },
 };
 
-export async function detectClaude(): Promise<
-  DetectToolsResult["tools"][number]
-> {
+/**
+ * Both Claude tools run the same claude, so one `claude --version` answers
+ * for both. Whether the Claude desktop app is installed isn't checked: Open
+ * fails without it.
+ */
+export async function detectClaude(): Promise<DetectToolsResult["tools"]> {
+  let found:
+    | { available: true; version: string }
+    | { available: false; reason: string };
   try {
     const output = firstLine(await capture(claude, "claude-version", {}));
     const version = /^v?(\S+)\s+\(Claude Code\)$/i.exec(output)?.[1] ?? output;
     if (!version || version.length > 200)
       throw new ToolError("claude returned no version.");
-    return { id: CLAUDE_TOOL, available: true, version };
+    found = { available: true, version };
   } catch (error) {
-    return {
-      id: CLAUDE_TOOL,
-      available: false,
-      reason: reasonOf(claude, error),
-    };
+    found = { available: false, reason: reasonOf(claude, error) };
   }
+  return [
+    { id: CLAUDE_TOOL, ...found },
+    { id: CLAUDE_DESKTOP_TOOL, ...found },
+  ];
 }
 
 /**
@@ -246,6 +265,8 @@ function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
     const value = text(previous[key]);
     if (value) kept[key] = value;
   }
+  // A session the plugin stopped for the Claude app still waits for you.
+  if (previous.released === true) kept.released = true;
   return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
@@ -289,9 +310,26 @@ function attach(job: string, folder: string) {
   return { command: "claude-attach", args: { job, folder } };
 }
 
+/**
+ * The Claude desktop app's link for a session: the app imports the CLI
+ * session, from its transcript, and opens it. It can't take a turn while a
+ * background job still runs the session; see `release`.
+ */
+function desktopLink(sessionId: string): string | undefined {
+  return UUID.test(sessionId)
+    ? `claude://resume?session=${sessionId}`
+    : undefined;
+}
+
+/** True for the tool that opens sessions in the Claude desktop app. */
+function opensInApp(request: { tool: string }): boolean {
+  return request.tool === CLAUDE_DESKTOP_TOOL;
+}
+
 export async function startClaude(
   request: StartHandoffRequest,
 ): Promise<StartHandoffResult> {
+  const app = opensInApp(request);
   const deadline = Date.now() + START_DEADLINE_MS;
   const args: Record<string, string> = {
     folder: request.folder.id,
@@ -351,8 +389,11 @@ export async function startClaude(
       }. Open it with claude attach ${job} instead of handing off again.`,
     );
   const resume = attach(job, request.folder.id);
+  const link = app ? desktopLink(sessionId) : undefined;
   let notes: Native = {};
-  if (request.settings.startMode === "terminal") {
+  // The desktop tool has no start mode: the app can't open the session
+  // until its turn ends.
+  if (!app && request.settings.startMode === "terminal") {
     // The prompt can't go through a terminal, so the session starts in the
     // background with it, and the terminal attaches to that session.
     try {
@@ -367,6 +408,8 @@ export async function startClaude(
   }
   return {
     threadId: sessionId,
+    // Ajour opens the link when there is one, else the resume command.
+    ...(link ? { link } : {}),
     resume,
     native: withNotes(nativeOf(session, "working"), notes),
   };
@@ -375,13 +418,14 @@ export async function startClaude(
 /**
  * The sessions Claude Code lists as started under the folder, newest first,
  * as a start would have answered for each. A background job opens by
- * attaching to it; an interactive session has no job, and is open in its
- * terminal already. Claude Code doesn't say when a session last changed, so
- * `since` lists them all.
+ * attaching to it, or in the Claude app for the desktop tool; an interactive
+ * session has no job, and is open in its terminal already. Claude Code
+ * doesn't say when a session last changed, so `since` lists them all.
  */
 export async function listClaude(
   request: ListThreadsRequest,
 ): Promise<ListThreadsResult> {
+  const app = opensInApp(request);
   let sessions: Json[];
   try {
     sessions = [
@@ -405,9 +449,11 @@ export async function listClaude(
     const title = listTitle(session.name);
     if (!threadId || !SESSION_ID.test(threadId) || !title) continue;
     const job = jobOf(session);
+    const link = app && job ? desktopLink(threadId) : undefined;
     threads.push({
       threadId,
       title,
+      ...(link ? { link } : {}),
       ...(job ? { resume: attach(job, request.folder.id) } : {}),
       native: nativeOf(session, stateOf(session)),
     });
@@ -415,15 +461,74 @@ export async function listClaude(
   return listed(threads, { limit: request.limit });
 }
 
+/**
+ * The desktop tool's update once the plugin read the session. The Claude app
+ * can't take a turn in a session a background job runs, even a job whose
+ * turn ended, so once the job is done or waits for the user, the plugin
+ * stops it with `claude stop`, and the app can open the session. A job
+ * that works is left alone. A session stopped while it waited for the user
+ * stays Waiting for you until a process runs it again, such as the app's.
+ */
+async function release(
+  handoff: Handoff,
+  session: Json,
+  update: Update,
+  deadline: number,
+): Promise<Update> {
+  const job = jobOf(session);
+  const waits = update.state === "needs-you";
+  if (
+    session.kind === "background" &&
+    live(session) &&
+    job &&
+    (waits || update.state === "ready")
+  ) {
+    try {
+      await before(claude, deadline, () =>
+        capture(claude, "claude-stop", { job }),
+      );
+    } catch (error) {
+      return {
+        ...update,
+        native: withNotes(update.native as Native, {
+          reason: `${NOT_RELEASED} ${reasonOf(claude, error)}`,
+        }),
+      };
+    }
+    return waits ? released(update, update.native as Native) : update;
+  }
+  // A stopped job's listing no longer says it waited for the user.
+  if (handoff.native.released === true && !live(session))
+    return released(update, {
+      ...(update.native as Native),
+      label: text(handoff.native.label) ?? LABELS["needs-you"],
+    });
+  return update;
+}
+
+/** Waiting for you, in a session the plugin stopped for the Claude app. */
+function released(update: Update, native: Native): Update {
+  return {
+    ...update,
+    state: "needs-you",
+    native: withNotes(
+      { ...native, state: "needs-you", released: true },
+      { reason: RELEASED },
+    ),
+  };
+}
+
 export async function readClaude(
   request: ReadHandoffStatesRequest,
 ): Promise<ReadHandoffStatesResult> {
   if (request.handoffs.length === 0) return [];
+  const app = opensInApp(request);
+  const deadline = Date.now() + READ_DEADLINE_MS;
   // One list per refresh covers every folder.
   let sessions: Map<string, Json>;
   try {
     sessions = bySessionId(
-      await before(claude, Date.now() + READ_DEADLINE_MS, () => listSessions()),
+      await before(claude, deadline, () => listSessions()),
     );
   } catch (error) {
     if (isLate(error))
@@ -440,14 +545,25 @@ export async function readClaude(
       }),
     );
   }
-  return request.handoffs.map((handoff) => {
+  const updates: Update[] = [];
+  for (const handoff of request.handoffs) {
     const session = sessions.get(handoff.threadId);
-    if (session) return updateOf(handoff.id, session);
-    // A missing session is no evidence it is gone: `claude rm` keeps the
-    // transcript, and an interactive session leaves the list when it closes.
-    return keptUpdate(handoff, previousState(handoff.native), {
-      missing: true,
-      reason: missing(handoff.threadId),
-    });
-  });
+    if (!session) {
+      // A missing session is no evidence it is gone: `claude rm` keeps the
+      // transcript, and an interactive session leaves the list when it
+      // closes.
+      updates.push(
+        keptUpdate(handoff, previousState(handoff.native), {
+          missing: true,
+          reason: missing(handoff.threadId, app),
+        }),
+      );
+      continue;
+    }
+    const update = updateOf(handoff.id, session);
+    updates.push(
+      app ? await release(handoff, session, update, deadline) : update,
+    );
+  }
+  return updates;
 }

@@ -31,7 +31,7 @@ const copilotStart = (extra) => [
   ...extra,
 ];
 
-test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, OpenCode, Codex and VS Code tools", () => {
+test("the manifest is a handoff plugin with T3 Code, Claude Code, Claude Code desktop, Copilot CLI, OpenCode, Codex and VS Code tools", () => {
   assert.equal(manifest.apiVersion, 4);
   assert.equal(manifest.entrypoint, "src/plugin.ts");
   assert.deepEqual(Object.keys(manifest.capabilities), ["handoff"]);
@@ -41,6 +41,7 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
     [
       ["t3", "T3 Code", undefined],
       ["claude", "Claude Code", undefined],
+      ["claude-desktop", "Claude Code desktop", undefined],
       ["copilot", "Copilot CLI", undefined],
       ["opencode", "OpenCode", undefined],
       ["codex", "Codex", undefined],
@@ -67,31 +68,39 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Copilot CLI, O
     tools[1].settings[0].options.map((option) => option.value),
     ["background", "terminal"],
   );
-  assert.deepEqual(settings(tools[2]), [
+  // The desktop tool has no start mode: the Claude app can't open a session
+  // until its turn ends.
+  assert.deepEqual(settings(tools[2]), [["model", "text", undefined]]);
+  assert.deepEqual(settings(tools[3]), [
     ["tools", "select", "ask"],
     ["model", "text", undefined],
   ]);
   assert.deepEqual(
-    tools[2].settings[0].options.map((option) => option.value),
+    tools[3].settings[0].options.map((option) => option.value),
     ["ask", "allow"],
   );
-  assert.deepEqual(settings(tools[3]), [
+  assert.deepEqual(settings(tools[4]), [
     ["model", "text", undefined],
     ["agent", "text", undefined],
   ]);
-  assert.deepEqual(settings(tools[4]), [
+  assert.deepEqual(settings(tools[5]), [
     ["open", "select", "app"],
     ["model", "text", undefined],
   ]);
   assert.deepEqual(
-    tools[4].settings[0].options.map((option) => option.value),
+    tools[5].settings[0].options.map((option) => option.value),
     ["app", "terminal"],
   );
   // code chat has no model option, and handoffs always run in agent mode.
-  assert.deepEqual(settings(tools[5]), []);
-  // The Codex app opens a thread from its codex://threads/<id> link, and the
-  // T3 Code app from t3code://threads/<environment>/<thread>.
-  assert.deepEqual(manifest.processes.openSchemes, ["codex", "t3code"]);
+  assert.deepEqual(settings(tools[6]), []);
+  // The Claude desktop app opens a session from claude://resume?session=<id>,
+  // the Codex app a thread from codex://threads/<id>, and the T3 Code app
+  // from t3code://threads/<environment>/<thread>.
+  assert.deepEqual(manifest.processes.openSchemes, [
+    "claude",
+    "codex",
+    "t3code",
+  ]);
 });
 
 test("no tool uses a connection, so the manifest has no connection fields or network", () => {
@@ -107,7 +116,8 @@ test("every tool declares the features it supports, explicitly", () => {
   // `hooks` (false when absent). Copilot CLI 1.0.112 has no command that
   // reports a session's state and lists sessions only in its interactive
   // picker, so it only starts sessions. VS Code 1.146's code command reports
-  // and lists no chat either. Only Claude Code's start posts hooks.
+  // and lists no chat either. Only Claude Code's start posts hooks, for both
+  // Claude tools.
   const tools = manifest.capabilities.handoff.tools;
   assert.deepEqual(
     tools.map((tool) => [
@@ -119,6 +129,7 @@ test("every tool declares the features it supports, explicitly", () => {
     [
       ["t3", true, true, false],
       ["claude", true, true, true],
+      ["claude-desktop", true, true, true],
       ["copilot", false, false, false],
       ["opencode", true, true, false],
       ["codex", true, true, false],
@@ -158,7 +169,7 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   );
 });
 
-test("the declared commands are four t3, seven claude, four copilot, six opencode, three codex and two code commands", () => {
+test("the declared commands are four t3, eight claude, four copilot, six opencode, three codex and two code commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -285,6 +296,14 @@ test("the declared commands are four t3, seven claude, four copilot, six opencod
       args: [],
       cwd: "{folder:folder}",
       mode: "terminal",
+    },
+    // The Claude desktop app can't take a turn in a session a background
+    // job still runs, so a refresh stops the job once its turn ends.
+    "claude-stop": {
+      executable: "claude",
+      args: ["stop", "{job:id}"],
+      mode: "capture",
+      timeoutSeconds: 10,
     },
     // Without a terminal, copilot reads the prompt from stdin, runs the task
     // and exits when done, so it starts detached with the prompt on stdin,

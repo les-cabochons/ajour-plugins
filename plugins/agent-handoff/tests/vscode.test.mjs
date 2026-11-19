@@ -57,10 +57,13 @@ const startRequest = (extra = {}) => ({
   ...extra,
 });
 
+// Detection answers each tool once, in the manifest's order.
+const vscodeOf = (tools) => tools.find((tool) => tool.id === "vscode");
+
 test("detection returns the recorded version", async () => {
   const calls = fakeCode(() => ok(version));
   const { tools } = await detectTools();
-  assert.deepEqual(tools[5], {
+  assert.deepEqual(vscodeOf(tools), {
     id: "vscode",
     available: true,
     version: "1.146.0",
@@ -79,6 +82,7 @@ test("detection says VS Code isn't installed when code is missing", async () => 
     [
       ["t3", false],
       ["claude", false],
+      ["claude-desktop", false],
       ["copilot", false],
       ["opencode", false],
       ["codex", false],
@@ -86,7 +90,7 @@ test("detection says VS Code isn't installed when code is missing", async () => 
     ],
   );
   assert.equal(
-    tools[5].reason,
+    vscodeOf(tools).reason,
     "VS Code isn't installed, or its code command isn't on PATH.",
   );
 });
@@ -94,7 +98,7 @@ test("detection says VS Code isn't installed when code is missing", async () => 
 test("detection refuses output that isn't a version", async () => {
   fakeCode(() => ok(""));
   const { tools } = await detectTools();
-  assert.deepEqual(tools[5], {
+  assert.deepEqual(vscodeOf(tools), {
     id: "vscode",
     available: false,
     reason: "code returned no version.",

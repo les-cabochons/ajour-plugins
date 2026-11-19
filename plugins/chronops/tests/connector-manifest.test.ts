@@ -63,7 +63,11 @@ describe("project source and time sync manifest packaging contract", () => {
       { method: "DELETE", path: "/integration/entries/*" },
       { method: "POST", path: "/integration/entries/timer/start" },
       { method: "POST", path: "/integration/entries/*/stop" },
+      { method: "GET", path: "/integration/change-marker" },
     ]);
+    // The change marker's HEAD goes to Azure Storage with ajour.publicFetch,
+    // which reaches exact hosts only: MineHunter's markers account.
+    expect(network.publicHosts).toEqual(["stchronopsmarkers.blob.core.windows.net"]);
   });
 
   it.each([

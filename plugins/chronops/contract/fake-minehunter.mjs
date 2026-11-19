@@ -140,7 +140,7 @@ function validateFields(fields) {
  * }} [options]
  * @returns {Promise<{ url: string, entries: () => FakeEntry[], close: () => Promise<void> }>}
  */
-export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt = null, entries: seed = [], rateLimit } = {}) {
+export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt = null, entries: seed = [], rateLimit, changeMarker = true } = {}) {
   if (!SCOPES.includes(scope)) {
     throw new Error(`scope must be one of ${SCOPES.join(", ")}, not ${JSON.stringify(scope)}.`);
   }
@@ -162,6 +162,21 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
       },
     ]),
   );
+
+  /**
+   * The owner's change marker (ChronOps ADR-0050): its version moves on
+   * every write, and the blob exists from the first one. `head` answers the
+   * HEAD Ajour sends to Azure Storage through publicFetch.
+   */
+  const marker = {
+    version: 0,
+    linkRequests: 0,
+    head(ifNoneMatch) {
+      if (marker.version === 0) return { status: 404 };
+      const etag = `"0x8DE${String(marker.version).padStart(4, "0")}"`;
+      return ifNoneMatch === etag ? { status: 304, headers: { etag } } : { status: 200, headers: { etag } };
+    },
+  };
 
   /** An entry as MineHunter answers it: minutes is the span rounded to the minute, null while it runs. */
   const answer = (entry) => ({
@@ -337,6 +352,17 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
     const method = request.method;
     const source = request.headers["x-chronops-source"];
     if (method === "GET" && path === "/integration/me") return [200, me];
+    if (method === "GET" && path === "/integration/change-marker") {
+      marker.linkRequests += 1;
+      if (!changeMarker) return [503, { error: "the change marker is off" }];
+      return [
+        200,
+        {
+          url: "https://stchronopsmarkers.blob.core.windows.net/markers/5f1e0c?sv=2023-11-03&sr=b&sp=r&sig=fake",
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        },
+      ];
+    }
     if (method === "GET" && path === "/integration/entries") return [200, listEntries(query)];
     if (method === "POST" && path === "/integration/entries") return addEntry(text, source);
     if (method === "POST" && path === "/integration/entries/timer/start") return startTimer(text, source);
@@ -390,6 +416,8 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
       request.on("end", () => {
         try {
           const [status, body] = route(request, path, url.searchParams, Buffer.concat(chunks).toString("utf8"));
+          // Every Time Entry write moves the owner's marker.
+          if (request.method !== "GET" && status < 300) marker.version += 1;
           if (body === undefined) {
             response.writeHead(status);
             response.end();
@@ -412,6 +440,7 @@ export async function startFakeMinehunter({ port = 0, scope = "read", expiresAt 
   return {
     url: `http://127.0.0.1:${boundPort}`,
     entries: () => [...stored.values()].map(answer),
+    marker,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

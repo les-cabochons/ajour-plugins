@@ -109,7 +109,7 @@ describe("syncTimeEntries creates", () => {
       taskName: "Billet #101 - Login",
       updatedAt: NOW,
     };
-    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry] });
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry], cursor: expect.any(String) });
     expect(ajour.requests).toEqual([
       {
         method: "POST",
@@ -250,6 +250,7 @@ describe("syncTimeEntries deletes", () => {
     );
 
     expect(result).toEqual({
+      cursor: expect.any(String),
       results: [
         { syncKey: "key-1", status: "synced" },
         { syncKey: "key-2", status: "synced" },
@@ -333,7 +334,7 @@ describe("syncTimeEntries runs the ChronOps timer", () => {
       taskName: "Billet #101 - Login",
       updatedAt: NOW,
     };
-    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry] });
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry], cursor: expect.any(String) });
     expect(ajour.requests.map((sent) => [sent.method, sent.path, sent.body])).toEqual([
       ["POST", startPath, { workdayProject: "ACME-SUP", task: "Billet #101 - Login", clientRef: "key-1", startedAt: countingSince }],
       ["GET", "/integration/entries", undefined],
@@ -444,7 +445,7 @@ describe("syncTimeEntries runs the ChronOps timer", () => {
       taskName: "Billet #101 - Login",
       updatedAt: NOW,
     };
-    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry] });
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced", entry }], entries: [entry], cursor: expect.any(String) });
     expect(fake.entries()[0]).toMatchObject({ startedAt: elevenOClock, endedAt: NOW });
   });
 
@@ -545,7 +546,7 @@ describe("syncTimeEntries runs the ChronOps timer", () => {
       request([{ kind: "delete", syncKey: "key-1", remoteId: running.id, agreed: runningValues(elevenOClock) }]),
     );
 
-    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [] });
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [], cursor: expect.any(String) });
     expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
       ["DELETE", `/integration/entries/${running.id}`],
       ["GET", "/integration/entries"],
@@ -560,7 +561,7 @@ describe("syncTimeEntries runs the ChronOps timer", () => {
     const { ajour, fake } = await withFake({ entries: [running] });
     const result = await syncTimeEntries(connection, request([{ kind: "delete", syncKey: "key-1", remoteId: MISSING_ID, agreed: savedValues(30) }]));
 
-    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [] });
+    expect(result).toEqual({ results: [{ syncKey: "key-1", status: "synced" }], entries: [], cursor: expect.any(String) });
     expect(ajour.requests.map((sent) => [sent.method, sent.path])).toEqual([
       ["DELETE", `/integration/entries/${MISSING_ID}`],
       ["GET", "/integration/entries"],
@@ -677,6 +678,7 @@ describe("syncTimeEntries lists the window", () => {
     const result = await syncTimeEntries(connection, request([]));
 
     expect(result).toEqual({
+      cursor: expect.any(String),
       results: [],
       entries: [
         {
@@ -793,6 +795,8 @@ describe("syncTimeEntries paces and reports", () => {
           failed: 0,
           listed: 3,
           skipped: 0,
+          // Ajour sent no cursor, so the round never asked for the change marker.
+          marker: "not_asked",
           requests: 5,
           durationMs: expect.any(Number),
         },

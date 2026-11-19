@@ -32,7 +32,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/agent-handoff",
       "files": [
         {
@@ -117,7 +117,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -230,20 +230,23 @@
     {
       "id": "chronops",
       "name": "ChronOps",
-      "description": "Bring your ChronOps projects, tasks and budgets into Ajour, read-only, through MineHunter's ChronOps Forwarder.",
-      "version": "0.3.0",
+      "description": "Bring your ChronOps projects, tasks and budgets into Ajour through MineHunter's ChronOps Forwarder, and keep your time entries in ChronOps with Time entries on.",
+      "version": "0.4.0",
       "pluginApiVersion": 4,
       "capabilities": [
-        "projectSource"
+        "projectSource",
+        "timeSync"
       ],
       "features": [
-        "project-source"
+        "project-source",
+        "time-sync"
       ],
       "tags": [
         "chronops",
         "minehunter",
         "projects",
-        "budgets"
+        "budgets",
+        "time-entries"
       ],
       "author": {
         "name": "Alex Trépanier",
@@ -255,7 +258,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/chronops",
       "files": [
         {
@@ -265,33 +268,53 @@
         },
         {
           "path": "package.json",
-          "sha256": "ac1708233307552d879802965d4dccd5e9a2bb19cfd551899338b243fb7e498c",
-          "size": 1302
+          "sha256": "7c77ba8b7a1a68ef719378976f56af66106dcfbc44a424533b04532eb86d9cfc",
+          "size": 1465
         },
         {
           "path": "plugin.json",
-          "sha256": "454b030b458b46da430b90238d4bfd8f5e76b83fbb75802f2c0c42f7a0a5e195",
-          "size": 6628
+          "sha256": "67a92e6710e9ba1eb47a8ffec42409c7489737637644fbea5f28f0664833a99a",
+          "size": 7077
         },
         {
           "path": "src/chronops.ts",
-          "sha256": "dc7718ff202d6777b59b2992d09025ef92fae0a55607c05379f8481a45cc8137",
-          "size": 9950
+          "sha256": "96e7d88d7c1bbf3d37ac2d742d4fccdbf4bdcc77995360e1032050161134f41e",
+          "size": 12536
         },
         {
           "path": "src/contract.ts",
-          "sha256": "f725e5d6c8b66b75269ec6e04ed4fab1f416ad8d9726adc7f88669056becf6a6",
-          "size": 6310
+          "sha256": "79182d40005f81ab47f48e872e4cb0b9a5f69938f1e07d1180b4a3df6d952ebb",
+          "size": 1602
+        },
+        {
+          "path": "src/forwarder.ts",
+          "sha256": "d255c98e81ba4b825d68c7ae594d444ca919c52952082c8388212c99eee1f0a1",
+          "size": 4814
+        },
+        {
+          "path": "src/local-time.ts",
+          "sha256": "132603dc89776e040a88c83d5f8c03f8a0eb4a1d824dd1cef746d57e464f78f8",
+          "size": 2861
+        },
+        {
+          "path": "src/pacer.ts",
+          "sha256": "3e231de4105a435ca2eba7a1498fda35e3a625b2ae553fbd74053dc76f450bca",
+          "size": 1293
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "06996a3f26f5cffecbd137905a9eec7befb3b9950cb407a1f3ffe2c81c363ed7",
-          "size": 6438
+          "sha256": "ff38a6f98bcb78af40df7710412d94d2678cd615804bb16c1a5341ebeb209648",
+          "size": 3805
         },
         {
           "path": "src/snapshot.ts",
-          "sha256": "007a0e4759f58de95fe3872ae8181bc51c636cf91c0830d648d5b881567cc02c",
-          "size": 7974
+          "sha256": "30a7d26adce51292b3a26d6edb9eeb6ef493a2901ccc84403b7823c341403381",
+          "size": 7976
+        },
+        {
+          "path": "src/time-sync.ts",
+          "sha256": "2142d2309904ee242e20b6b3fa7d0e0afaa88de4a978cc52fd2fd7960c946923",
+          "size": 24100
         }
       ]
     },
@@ -324,7 +347,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/github",
       "files": [
         {
@@ -407,7 +430,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/ics",
       "files": [
         {
@@ -495,7 +518,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/jira",
       "files": [
         {
@@ -615,7 +638,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "fde4cc579ed789c4a4fe462af8a0ff93d282ee24",
+      "commit": "2980a9e8f6edc855f189844e8b0b2dc2960e18a4",
       "path": "plugins/workday-agent",
       "files": [
         {

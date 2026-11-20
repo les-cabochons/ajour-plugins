@@ -141,6 +141,33 @@ test("every tool declares the features it supports, explicitly", () => {
       assert.equal(typeof tool[key], "boolean", `${tool.id}: ${key}`);
 });
 
+test("Claude Code, Claude Code desktop and Codex archive their threads, OpenCode deletes them, the others close none", () => {
+  // Ajour #850. T3 Code's t3 command can't close a thread yet
+  // (pingdotgg/t3code discussion #27428); Copilot CLI and VS Code have no
+  // command that does.
+  assert.deepEqual(
+    manifest.capabilities.handoff.tools.map((tool) => [
+      tool.id,
+      tool.closesThreads,
+    ]),
+    [
+      ["t3", undefined],
+      ["claude", "archive"],
+      ["claude-desktop", "archive"],
+      ["copilot", undefined],
+      ["opencode", "delete"],
+      ["codex", "archive"],
+      ["vscode", undefined],
+    ],
+  );
+  // No declared command can discard work or force a removal.
+  for (const command of commands)
+    for (const arg of command.args.flatMap((a) =>
+      typeof a === "string" ? [a] : (a.args ?? []),
+    ))
+      assert.doesNotMatch(arg, /discard|force/i, `${command.id}: ${arg}`);
+});
+
 test("a tool posts hooks only with a hook-url command and while it follows state", () => {
   // Ajour refuses the manifest otherwise (plugin-api-4.ts, #764).
   const usesHook = (command) =>
@@ -169,7 +196,7 @@ test("a tool posts hooks only with a hook-url command and while it follows state
   );
 });
 
-test("the declared commands are four t3, eight claude, four copilot, six opencode, three codex and two code commands", () => {
+test("the declared commands are four t3, nine claude, four copilot, eight opencode, three codex and two code commands", () => {
   assert.deepEqual(executables, {
     t3: { names: ["t3"] },
     claude: { names: ["claude"] },
@@ -305,6 +332,15 @@ test("the declared commands are four t3, eight claude, four copilot, six opencod
       mode: "capture",
       timeoutSeconds: 10,
     },
+    // A close removes the job from claude agents, keeping its conversation.
+    // Never with --discard-unpushed or --force-remove-worktree, which throw
+    // away work claude rm refuses to lose.
+    "claude-rm": {
+      executable: "claude",
+      args: ["rm", "{job:id}"],
+      mode: "capture",
+      timeoutSeconds: 15,
+    },
     // Without a terminal, copilot reads the prompt from stdin, runs the task
     // and exits when done, so it starts detached with the prompt on stdin,
     // never on the command line. -C runs copilot in the folder; the plugin
@@ -377,6 +413,20 @@ test("the declared commands are four t3, eight claude, four copilot, six opencod
       executable: "opencode",
       args: ["session", "list", "--format", "json", "-n", "{limit:number}"],
       cwd: "{folder:folder}",
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    // A close interrupts the session's run, a no-op on an idle session,
+    // then deletes the session and its child sessions.
+    "opencode-interrupt": {
+      executable: "opencode",
+      args: ["api", "session.interrupt", "--param", "{session:text}"],
+      mode: "capture",
+      timeoutSeconds: 10,
+    },
+    "opencode-delete": {
+      executable: "opencode",
+      args: ["session", "delete", "{session:id}"],
       mode: "capture",
       timeoutSeconds: 10,
     },

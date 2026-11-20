@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import {
+  closeThread,
   detectTools,
   listThreads,
   readHandoffStates,
@@ -397,4 +398,28 @@ test("Copilot CLI doesn't list its sessions, so a listing runs nothing", async (
     listThreads({ tool: "aider", folder: { id: "folder-1" }, limit: 50 }),
     /no handoff tool/,
   );
+});
+
+test("T3 Code, Copilot CLI and VS Code close no thread, so a close refuses and runs nothing", async () => {
+  // plugin.json gives them no closesThreads, so Ajour never asks (#850). A
+  // close that answered would make Ajour drop a handoff whose thread is
+  // still open.
+  const calls = fakeBroker(() => {
+    throw new Error("no command should run");
+  });
+  for (const [tool, reason] of [
+    ["t3", /t3 command can't close a thread yet/],
+    ["copilot", /no command that closes a session/],
+    ["vscode", /can't close a chat/],
+    ["aider", /no handoff tool/],
+  ])
+    await assert.rejects(
+      closeThread({
+        tool,
+        handoff: { id: "h1", threadId: "t1", folderId: "folder-1", native: {} },
+      }),
+      reason,
+      tool,
+    );
+  assert.deepEqual(calls, []);
 });

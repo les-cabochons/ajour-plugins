@@ -6,8 +6,9 @@
 // refresh reads each session with `opencode api session.get`: OpenCode
 // records the end of each run on the session, as `time.idle` and an
 // `outcome`. Open runs `opencode <folder> -s <id>` in a terminal, and a
-// listing runs `opencode session list` in the folder. OpenCode 1, whose
-// `opencode serve` had another API, isn't supported.
+// listing runs `opencode session list` in the folder. A close interrupts the
+// session's run, then deletes the session with `opencode session delete`.
+// OpenCode 1, whose `opencode serve` had another API, isn't supported.
 import type {
   DetectToolsResult,
   ListThreadsRequest,
@@ -18,12 +19,15 @@ import type {
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
+  CLOSE_DEADLINE_MS,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
   ToolError,
+  allLines,
   before,
   capture,
   captureJson,
+  closeFailure,
   each,
   firstLine,
   isLate,
@@ -40,6 +44,8 @@ import {
   text,
   timeOf,
   withNotes,
+  type CloseThreadRequest,
+  type CloseThreadResult,
   type Handoff,
   type Json,
   type Listed,
@@ -57,6 +63,9 @@ const MIN_TEXT = MIN_VERSION.join(".");
 export const PROMPT_LIMIT = 1024 * 1024;
 // A session id goes in a command's id slot, and in `sessionID=<id>`.
 const SESSION_ID = /^ses_[A-Za-z0-9]{1,100}$/;
+// The message of OpenCode's SessionNotFoundError, which `opencode session
+// delete` prints for a session it doesn't have.
+const NOT_FOUND = /\bSession not found\b/i;
 // Ajour runs at most 4 of a plugin's commands at once.
 const READ_CONCURRENCY = 4;
 // `opencode run` creates the session, then starts on the prompt, a moment
@@ -271,16 +280,16 @@ export async function listOpenCode(
 }
 
 /**
- * Runs one `opencode api` read for a session and returns the answer's
- * `data`, or undefined when OpenCode doesn't have the session. On an error
+ * Runs one `opencode api` operation on a session and returns the answer's
+ * body, or undefined when OpenCode doesn't have the session. On an error
  * answer, `opencode api` prints the body and exits 1 with `HTTP <status>` on
  * stderr.
  */
-async function apiRead(
-  command: "opencode-session" | "opencode-messages",
+async function api(
+  command: "opencode-session" | "opencode-messages" | "opencode-interrupt",
   session: string,
   deadline: number,
-): Promise<unknown> {
+): Promise<Json | undefined> {
   const result = await before(opencode, deadline, () =>
     run(opencode, { command, args: { session: `sessionID=${session}` } }),
   );
@@ -300,7 +309,20 @@ async function apiRead(
         `opencode exited with ${result.exitCode ?? "a signal"}.`,
     );
   }
-  if (!body || !("data" in body))
+  if (!body)
+    throw new ToolError("OpenCode returned an answer Ajour can't read.");
+  return body;
+}
+
+/** One `opencode api` read's `data`, or undefined for a session OpenCode doesn't have. */
+async function apiRead(
+  command: "opencode-session" | "opencode-messages",
+  session: string,
+  deadline: number,
+): Promise<unknown> {
+  const body = await api(command, session, deadline);
+  if (!body) return undefined;
+  if (!("data" in body))
     throw new ToolError("OpenCode returned an answer Ajour can't read.");
   return body.data;
 }
@@ -444,4 +466,51 @@ export async function readOpenCode(
     }
   });
   return request.handoffs.map((handoff) => updates.get(handoff.id) as Update);
+}
+
+/**
+ * Deletes the session for good, with its child sessions, through `opencode
+ * session delete`. A run going on it is interrupted first, through
+ * `opencode api session.interrupt`, which does nothing to an idle session.
+ * A session OpenCode doesn't have was deleted already, so it counts as
+ * closed. Ajour asks the user before it deletes.
+ */
+export async function closeOpenCode(
+  request: CloseThreadRequest,
+): Promise<CloseThreadResult> {
+  const { handoff } = request;
+  // The id goes in a command's argument, so only an OpenCode session id does.
+  if (!SESSION_ID.test(handoff.threadId)) throw new ToolError(BAD_SESSION_ID);
+  const deadline = Date.now() + CLOSE_DEADLINE_MS;
+  try {
+    try {
+      if (!(await api("opencode-interrupt", handoff.threadId, deadline)))
+        return {};
+    } catch (error) {
+      throw isLate(error)
+        ? error
+        : new ToolError(
+            `OpenCode didn't stop the session's run, so Ajour didn't delete it: ${reasonOf(opencode, error)}`,
+          );
+    }
+    const result = await before(opencode, deadline, () =>
+      run(opencode, {
+        command: "opencode-delete",
+        args: { session: handoff.threadId },
+      }),
+    );
+    if (result.started === true)
+      throw new ToolError("opencode started without returning its output.");
+    if (result.exitCode === 0) return {};
+    const said = allLines(result.stderr) || allLines(result.stdout);
+    // The session left OpenCode since the interrupt: deleted already.
+    if (NOT_FOUND.test(said)) return {};
+    throw new ToolError(
+      said
+        ? `OpenCode didn't delete the session: ${said}`
+        : `opencode exited with ${result.exitCode ?? "a signal"}.`,
+    );
+  } catch (error) {
+    throw closeFailure(opencode, error);
+  }
 }

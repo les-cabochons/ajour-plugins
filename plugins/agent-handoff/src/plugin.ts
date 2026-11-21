@@ -5,7 +5,9 @@
 // `opencode`, Codex threads through `codex app-server`, which Ajour keeps
 // running as a process session while a turn runs, and VS Code chats through
 // `code chat`. Every command runs through Ajour's process broker, as declared
-// in plugin.json's `processes` block. No tool uses a connection.
+// in plugin.json's `processes` block. No tool uses a connection. Claude Code,
+// Codex and OpenCode close their threads too: the first two archive them, the
+// last deletes them.
 import type {
   DetectToolsResult,
   HandoffArguments,
@@ -20,6 +22,7 @@ import type {
 import {
   CLAUDE_DESKTOP_TOOL,
   CLAUDE_TOOL,
+  closeClaude,
   detectClaude,
   listClaude,
   readClaude,
@@ -27,6 +30,7 @@ import {
 } from "./claude.ts";
 import {
   CODEX_TOOL,
+  closeCodex,
   detectCodex,
   listCodex,
   readCodex,
@@ -40,11 +44,13 @@ import {
 } from "./copilot.ts";
 import {
   OPENCODE_TOOL,
+  closeOpenCode,
   detectOpenCode,
   listOpenCode,
   readOpenCode,
   startOpenCode,
 } from "./opencode.ts";
+import type { CloseThreadRequest, CloseThreadResult } from "./shared.ts";
 import { T3_TOOL, detectT3, listT3, readT3, startT3 } from "./t3.ts";
 import {
   NO_LIST as VSCODE_NO_LIST,
@@ -138,10 +144,37 @@ export async function listThreads(
   return unknownTool(request.tool);
 }
 
-// Keep the exported operations checked against the host's contract.
+/**
+ * Closes one handoff's thread in its tool (ajour#850). Ajour asks only the
+ * tools plugin.json marks `closesThreads`: Claude Code and Codex archive the
+ * thread, OpenCode deletes it. Each stops the thread's work first. T3 Code,
+ * Copilot CLI and VS Code have no command that closes a thread.
+ */
+export async function closeThread(
+  ...args: HandoffArguments<CloseThreadRequest>
+): Promise<CloseThreadResult> {
+  const request = requestOf(args);
+  if (isClaude(request.tool)) return closeClaude(request);
+  if (request.tool === CODEX_TOOL) return closeCodex(request);
+  if (request.tool === OPENCODE_TOOL) return closeOpenCode(request);
+  if (request.tool === T3_TOOL)
+    throw new Error("T3 Code's t3 command can't close a thread yet.");
+  if (request.tool === COPILOT_TOOL)
+    throw new Error("Copilot CLI has no command that closes a session.");
+  if (request.tool === VSCODE_TOOL)
+    throw new Error("VS Code's code command can't close a chat.");
+  return unknownTool(request.tool);
+}
+
+// Keep the exported operations checked against the host's contract. The
+// vendored SDK 0.2.0 predates closeThread, so it is checked against the
+// plugin's own copy of Ajour's types in shared.ts instead.
 const _module = {
   detectTools,
   startHandoff,
   readHandoffStates,
   listThreads,
 } satisfies PluginModule;
+const _close: (
+  ...args: HandoffArguments<CloseThreadRequest>
+) => Promise<CloseThreadResult> = closeThread;

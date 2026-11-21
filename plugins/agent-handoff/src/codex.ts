@@ -6,7 +6,8 @@
 // thread there. Once the turn ends, or Codex waits for the user, the refresh
 // closes the session, which lets go of the thread so the Codex app can open
 // it. A thread no session of the plugin holds is read from the files Codex
-// keeps, through another app-server.
+// keeps, through another app-server. A close interrupts the turn its
+// session runs, then archives the thread, which Codex keeps.
 import type {
   DetectToolsResult,
   ListThreadsRequest,
@@ -17,11 +18,13 @@ import type {
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
+  CLOSE_DEADLINE_MS,
   LateError,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
   ToolError,
   capture,
+  closeFailure,
   each,
   firstLine,
   isLate,
@@ -38,6 +41,8 @@ import {
   text,
   timeOf,
   withNotes,
+  type CloseThreadRequest,
+  type CloseThreadResult,
   type Handoff,
   type Json,
   type Listed,
@@ -52,7 +57,7 @@ const SERVER = "codex-app-server";
 const RESUME = "codex-resume";
 // Codex refuses initialize without a client version, and Ajour gives a plugin
 // no way to read its own manifest: a test keeps this equal to plugin.json's.
-const CLIENT = { name: "ajour", title: "Ajour", version: "0.15.0" };
+const CLIENT = { name: "ajour", title: "Ajour", version: "0.16.0" };
 // Ajour sends a session one line of at most 1 MB, in UTF-8.
 export const LINE_LIMIT = 1024 * 1024;
 // One read takes at most 1000 lines, and waits at most 30 seconds.
@@ -117,6 +122,20 @@ const NO_READS =
   "This Codex version doesn't answer the reads Ajour follows a handoff with. Check for an update of this plugin.";
 const NO_LIST =
   "This Codex version can't list its threads the way Ajour asks. Check for an update of this plugin.";
+export const BUSY_CLOSING =
+  "Both of Ajour's Codex sessions are running handoffs, so Ajour can't close this thread until one is free.";
+const NO_CLOSE =
+  "This Codex version can't archive threads the way Ajour asks. Check for an update of this plugin.";
+export const UNKNOWN_TURN =
+  "Codex runs a turn on this thread, but Ajour doesn't know which turn to stop. Stop it in Codex, then close the thread again.";
+// How Codex answers an archive of a thread it has no file for.
+const NO_ROLLOUT = /^no rollout found for thread id\b/i;
+// How Codex answers an interrupt of a turn that ended already.
+const TURN_ENDED = /\b(?:no active turn|turn not found)\b/i;
+// After an interrupt, a close reads the thread this often until the turn
+// stopped, for at most this long, then archives it either way.
+const STOP_POLL_MS = 250;
+const STOP_WAIT_MS = 5000;
 // The threads a person started, in the CLI, an app or another app-server
 // client. A subagent's thread works for its parent.
 const LISTED_SOURCES = ["cli", "vscode", "exec", "appServer"];
@@ -1033,4 +1052,143 @@ export async function readCodex(
   return request.handoffs.map(
     (handoff) => updates.get(handoff.id) ?? lateUpdate(handoff),
   );
+}
+
+/** The thread's runtime status, from a thread/read answer. */
+function statusOf(read: Answer): string | undefined {
+  return text(record(record(read.result?.thread)?.status)?.type, 64);
+}
+
+/**
+ * The turn a close interrupts: the plugin's own, else the last turn, when
+ * Codex reports it in progress, such as after a start that ran out of time
+ * before turn/start answered.
+ */
+function runningTurn(handoff: Handoff, turns: Answer): string | undefined {
+  const own = text(handoff.native.turn, 100);
+  if (own) return own;
+  const list = turns.result?.data;
+  const last = Array.isArray(list) ? record(list[0]) : undefined;
+  return text(last?.status, 64) === "inProgress"
+    ? text(last?.id, 100)
+    : undefined;
+}
+
+/**
+ * Interrupts a turn, then waits a moment for Codex to end it: Codex answers
+ * the interrupt first, and ends the turn after. A turn that ended already
+ * needs no interrupt.
+ */
+async function interrupt(
+  rpc: Rpc,
+  threadId: string,
+  turnId: string,
+  deadline: number,
+): Promise<void> {
+  const [answer] = (await rpc.answered(
+    [await rpc.request("turn/interrupt", { threadId, turnId })],
+    deadline,
+  )) as [Answer];
+  if (missingMethod(answer)) throw new ToolError(NO_CLOSE);
+  const error = errorOf(answer);
+  if (error && !TURN_ENDED.test(error))
+    throw new ToolError(`Codex didn't stop the turn: ${firstLine(error)}`);
+  const until = Math.min(deadline, Date.now() + STOP_WAIT_MS);
+  for (;;) {
+    const [read] = (await rpc.answered(
+      [await rpc.request("thread/read", { threadId })],
+      deadline,
+    )) as [Answer];
+    if (statusOf(read) !== "active" || Date.now() >= until) return;
+    await pause(STOP_POLL_MS, until);
+  }
+}
+
+/**
+ * Stops the thread's turn when one runs where the plugin can reach it, then
+ * archives the thread. A thread Codex has no record of, or archived
+ * already, needs nothing.
+ */
+async function stopAndArchive(
+  rpc: Rpc,
+  handoff: Handoff,
+  read: Answer,
+  turns: Answer,
+  deadline: number,
+): Promise<void> {
+  if (missingMethod(read)) throw new ToolError(NO_CLOSE);
+  const readError = errorOf(read);
+  if (readError) {
+    if (NOT_FOUND.test(readError)) return;
+    throw new ToolError(
+      `Codex couldn't read the thread, so Ajour didn't archive it: ${firstLine(readError)}`,
+    );
+  }
+  const path = text(record(read.result?.thread)?.path, 4096);
+  if (path && ARCHIVED.test(path)) return;
+  if (statusOf(read) === "active") {
+    const turn = runningTurn(handoff, turns);
+    if (!turn) throw new ToolError(UNKNOWN_TURN);
+    await interrupt(rpc, handoff.threadId, turn, deadline);
+  }
+  const [answer] = (await rpc.answered(
+    [await rpc.request("thread/archive", { threadId: handoff.threadId })],
+    deadline,
+  )) as [Answer];
+  if (missingMethod(answer)) throw new ToolError(NO_CLOSE);
+  const error = errorOf(answer);
+  if (error && !NOT_FOUND.test(error) && !NO_ROLLOUT.test(error))
+    throw new ToolError(`Codex didn't archive the thread: ${firstLine(error)}`);
+}
+
+/**
+ * Archives the thread, as `codex archive` does: Codex keeps it, and `codex
+ * unarchive` brings it back. A turn the handoff's own session runs is
+ * interrupted first, through that session, which then ends. Another thread
+ * is archived through a new app-server in the folder, which the close ends.
+ * A turn another Codex window runs, such as the Codex app's, can't be seen
+ * from here, so the close doesn't stop it.
+ */
+export async function closeCodex(
+  request: CloseThreadRequest,
+): Promise<CloseThreadResult> {
+  const { handoff } = request;
+  const deadline = Date.now() + CLOSE_DEADLINE_MS;
+  const session = text(handoff.native.session, 100);
+  let rpc: Rpc | undefined;
+  let answers: Answer[] | undefined;
+  let opened = false;
+  let closed = false;
+  try {
+    if (session) {
+      const own = new Rpc(session);
+      try {
+        answers = await own.answered(
+          await ask(own, handoff.threadId),
+          deadline,
+        );
+        rpc = own;
+      } catch (error) {
+        // The session ended: the thread is read from Codex's files instead.
+        if (!(error instanceof SessionGone)) throw error;
+      }
+    }
+    if (!rpc || !answers) {
+      rpc = await connect(handoff.folderId, deadline);
+      opened = true;
+      answers = await rpc.answered(await ask(rpc, handoff.threadId), deadline);
+    }
+    const [read, turns] = answers as [Answer, Answer];
+    await stopAndArchive(rpc, handoff, read, turns, deadline);
+    closed = true;
+    return {};
+  } catch (error) {
+    if (isBusy(error)) throw new ToolError(BUSY_CLOSING, "session_limit");
+    throw closeFailure(codex, error);
+  } finally {
+    // The handoff's own session has nothing left to run once its thread is
+    // closed. After a failure it stays, and a refresh decides, since its
+    // turn may still run.
+    if (rpc && (opened || closed)) await closeServer(rpc.session);
+  }
 }

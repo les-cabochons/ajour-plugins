@@ -38,30 +38,47 @@ async function manifestErrors(manifest, name) {
     );
 }
 
+/**
+ * plugin.json without the keys the vendored SDK 0.2.0 predates: each tool's
+ * `closesThreads` (ajour#850), whose values manifest.test.mjs pins. Drop
+ * this once the vendored SDK has it.
+ */
+function withoutNewerKeys(manifest) {
+  for (const tool of manifest.capabilities.handoff.tools)
+    delete tool.closesThreads;
+  return manifest;
+}
+
 test("plugin.json is a valid API 4 manifest for the SDK", async () => {
-  assert.deepEqual(await manifestErrors(JSON.parse(manifestText), "valid"), []);
+  assert.deepEqual(
+    await manifestErrors(withoutNewerKeys(JSON.parse(manifestText)), "valid"),
+    [],
+  );
 });
 
 test("the check refuses a bad field type, a bad mode, a misspelt key and another API version", async () => {
-  const textarea = JSON.parse(manifestText);
+  const textarea = withoutNewerKeys(JSON.parse(manifestText));
   textarea.capabilities.handoff.tools[0].settings[0].type = "textarea";
   assert.notDeepEqual(await manifestErrors(textarea, "bad-field"), []);
 
-  const mode = JSON.parse(manifestText);
+  const mode = withoutNewerKeys(JSON.parse(manifestText));
   mode.processes.commands[0].mode = "shell";
   assert.notDeepEqual(await manifestErrors(mode, "bad-mode"), []);
 
-  const misspelt = JSON.parse(manifestText);
+  const misspelt = withoutNewerKeys(JSON.parse(manifestText));
   misspelt.capabilities.handoff.tool = [];
   assert.notDeepEqual(await manifestErrors(misspelt, "bad-key"), []);
 
-  const apiThree = { ...JSON.parse(manifestText), apiVersion: 3 };
+  const apiThree = {
+    ...withoutNewerKeys(JSON.parse(manifestText)),
+    apiVersion: 3,
+  };
   assert.notDeepEqual(await manifestErrors(apiThree, "bad-api"), []);
 });
 
 test("the SDK knows each tool's features, and refuses one that isn't a boolean", async () => {
   for (const key of ["followsState", "listsThreads", "hooks"]) {
-    const manifest = JSON.parse(manifestText);
+    const manifest = withoutNewerKeys(JSON.parse(manifestText));
     manifest.capabilities.handoff.tools[0][key] = "yes";
     assert.notDeepEqual(await manifestErrors(manifest, `bad-${key}`), [], key);
   }

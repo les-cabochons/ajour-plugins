@@ -6,12 +6,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import {
+  closeThread,
   detectTools,
   listThreads,
   readHandoffStates,
   startHandoff,
 } from "../src/plugin.ts";
 import {
+  BAD_SESSION_ID,
   NO_ANSWER,
   STARTING_MS,
   newSessionId,
@@ -486,4 +488,101 @@ test("a listing keeps the sessions changed after since", async () => {
     threads.map((t) => t.threadId),
     [sessions[0].id],
   );
+});
+
+// Closing a session (ajour#850): `opencode api session.interrupt`, then
+// `opencode session delete`. Read from OpenCode 2.3.2's help and its API
+// schema (session.interrupt answers { interrupted }, false on an idle
+// session); no real session was interrupted or deleted. The not-found body
+// is recorded from session.get, which shares the error; the other answers
+// aren't recorded.
+const closing = (session) =>
+  closeThread({ tool: "opencode", handoff: handoff(session) });
+const interrupted = (value) =>
+  ok(`${JSON.stringify({ interrupted: value })}\n`);
+
+/** Answers the interrupt and the delete. */
+function closingOpenCode({
+  interrupt = () => interrupted(true),
+  remove = () => ok(""),
+} = {}) {
+  return fakeOpenCode({
+    run(argv) {
+      if (argv[2] === "session.interrupt") return interrupt(argv);
+      if (argv[1] === "session" && argv[2] === "delete") return remove(argv);
+      return undefined;
+    },
+  });
+}
+
+test("a close interrupts the session's run, then deletes the session, whether a run went on or not", async () => {
+  for (const running of [true, false]) {
+    const calls = closingOpenCode({ interrupt: () => interrupted(running) });
+    assert.deepEqual(await closing(SUCCEEDED), {});
+    assert.deepEqual(
+      calls.map((c) => c.argv),
+      [
+        [
+          "opencode",
+          "api",
+          "session.interrupt",
+          "--param",
+          `sessionID=${SUCCEEDED.id}`,
+        ],
+        ["opencode", "session", "delete", SUCCEEDED.id],
+      ],
+    );
+  }
+});
+
+test("a session OpenCode doesn't have was deleted already", async () => {
+  const calls = closingOpenCode({ interrupt: () => notFound });
+  assert.deepEqual(await closing(SUCCEEDED), {});
+  assert.equal(calls.length, 1);
+  // Deleted between the interrupt and the delete.
+  closingOpenCode({
+    remove: () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: `Error: Session not found: ${SUCCEEDED.id}\n`,
+    }),
+  });
+  assert.deepEqual(await closing(SUCCEEDED), {});
+});
+
+test("a run OpenCode can't stop keeps the session, with OpenCode's reason", async () => {
+  const calls = closingOpenCode({
+    interrupt: () => ({
+      exitCode: 1,
+      stdout: '{"_tag":"UnknownError","message":"The service is restarting"}\n',
+      stderr: "HTTP 500 Internal Server Error\n",
+    }),
+  });
+  await assert.rejects(closing(SUCCEEDED), {
+    message:
+      "OpenCode didn't stop the session's run, so Ajour didn't delete it: The service is restarting",
+  });
+  assert.equal(
+    calls.some((c) => c.argv[2] === "delete"),
+    false,
+  );
+});
+
+test("OpenCode refusing the delete says why", async () => {
+  closingOpenCode({
+    remove: () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "Error: database is locked\n",
+    }),
+  });
+  await assert.rejects(closing(SUCCEEDED), {
+    message: "OpenCode didn't delete the session: Error: database is locked",
+  });
+});
+
+test("a handoff whose session id isn't OpenCode's is never closed", async () => {
+  const calls = closingOpenCode();
+  await assert.rejects(closing("not-a-session"), { message: BAD_SESSION_ID });
+  assert.deepEqual(calls, []);
 });

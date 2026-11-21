@@ -6,11 +6,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import {
+  closeThread,
   detectTools,
   listThreads,
   readHandoffStates,
   startHandoff,
 } from "../src/plugin.ts";
+import { NOT_BACKGROUND } from "../src/claude.ts";
 import {
   argvOf,
   fail,
@@ -1085,4 +1087,152 @@ test("a desktop listing links each background job to the Claude app", async () =
   }
   assert.ok(threads.some((t) => t.link));
   assert.ok(threads.some((t) => !t.link));
+});
+
+// Closing a session (ajour#850): `claude stop` for a job that runs, then
+// `claude rm`, which removes the job from claude agents and keeps its
+// conversation for claude --resume. Read from `claude rm --help` and
+// `claude stop --help` in Claude Code 2.1.328; no real session was removed.
+// claude rm's refusal below is worded after the strings in that version,
+// not recorded.
+const RM_REFUSAL =
+  "The worktree has unpushed commits on no remote, so deleting the worktree would lose them.\nPush them first, then run 'claude rm e2cf2a01' again, or run 'claude rm e2cf2a01 --discard-unpushed 1a2b3c4@wt-9'.\n";
+
+/** Answers claude agents with `sessions`, claude stop as recorded, and claude rm. */
+const closingClaude =
+  (sessions, { stop = () => ok(stopOutput), rm = () => ok("") } = {}) =>
+  (argv) => {
+    if (argv[1] === "agents") return out(sessions);
+    if (argv[1] === "stop") return stop(argv);
+    if (argv[1] === "rm") return rm(argv);
+    return undefined;
+  };
+const close = (session, tool = "claude") =>
+  closeThread({
+    tool,
+    handoff: handoff("h1", session.sessionId ?? session),
+  });
+const commandsOf = (calls) => calls.map((c) => c.argv.slice(1));
+
+test("a close stops a job that runs, then removes it with claude rm, for both Claude tools", async () => {
+  for (const tool of ["claude", DESKTOP])
+    for (const session of [done, permission, dispatched]) {
+      const calls = fakeClaude(closingClaude([session]));
+      assert.deepEqual(await close(session, tool), {});
+      assert.deepEqual(
+        commandsOf(calls),
+        [
+          ["agents", "--json", "--all"],
+          ["stop", session.id],
+          ["rm", session.id],
+        ],
+        `${tool}: ${session.name}`,
+      );
+    }
+});
+
+test("a stopped job is removed without a stop", async () => {
+  const calls = fakeClaude(closingClaude(recorded));
+  assert.deepEqual(await close(stopped), {});
+  assert.deepEqual(commandsOf(calls), [
+    ["agents", "--json", "--all"],
+    ["rm", stopped.id],
+  ]);
+});
+
+test("a session Claude Code no longer lists is closed already", async () => {
+  const calls = fakeClaude(closingClaude(recorded));
+  assert.deepEqual(await close("11111111-2222-4333-8444-555555555555"), {});
+  assert.deepEqual(commandsOf(calls), [["agents", "--json", "--all"]]);
+});
+
+test("claude rm's refusal reaches the user whole, and the plugin never discards work or forces a removal", async () => {
+  const calls = fakeClaude(
+    closingClaude([done], { rm: () => fail(RM_REFUSAL) }),
+  );
+  await assert.rejects(close(done), {
+    message:
+      "Claude Code kept the session: The worktree has unpushed commits on no remote, so deleting the worktree would lose them. Push them first, then run 'claude rm e2cf2a01' again, or run 'claude rm e2cf2a01 --discard-unpushed 1a2b3c4@wt-9'.",
+  });
+  assert.deepEqual(commandsOf(calls).at(-1), ["rm", done.id]);
+  for (const call of calls)
+    assert.ok(
+      !call.argv.some((arg) =>
+        /^--(discard-unpushed|force-remove-worktree)/.test(arg),
+      ),
+      call.argv.join(" "),
+    );
+});
+
+test("a session a terminal or the Claude app runs is the user's to exit first", async () => {
+  // An interactive session has no job; a stopped job resumed in a terminal
+  // has one, but a terminal runs it.
+  const resumed = {
+    ...interactive,
+    sessionId: stopped.sessionId,
+    status: "busy",
+  };
+  for (const sessions of [[interactive], [stopped, resumed]]) {
+    const calls = fakeClaude(closingClaude(sessions));
+    await assert.rejects(close(sessions.at(-1)), { message: NOT_BACKGROUND });
+    assert.deepEqual(commandsOf(calls), [["agents", "--json", "--all"]]);
+  }
+});
+
+test("a job claude can't stop is kept, with why", async () => {
+  const calls = fakeClaude(
+    closingClaude([done], {
+      stop: () => fail("error: the daemon isn't answering\n"),
+    }),
+  );
+  await assert.rejects(close(done), {
+    message:
+      "Ajour couldn't stop Claude Code's background session, so it didn't close it. error: the daemon isn't answering",
+  });
+  assert.deepEqual(stops(calls), [["claude", "stop", done.id]]);
+  assert.equal(
+    calls.some((c) => c.argv[1] === "rm"),
+    false,
+  );
+});
+
+test("a job that leaves the list during the close counts as closed", async () => {
+  // Gone before the stop: claude stop doesn't know it, and neither does rm,
+  // after the progress line claude prints first.
+  const calls = fakeClaude(
+    closingClaude([done], {
+      stop: () => fail(stopMissing),
+      rm: () => fail(startStderr + stopMissing),
+    }),
+  );
+  assert.deepEqual(await close(done), {});
+  assert.deepEqual(commandsOf(calls), [
+    ["agents", "--json", "--all"],
+    ["stop", done.id],
+    ["rm", done.id],
+  ]);
+});
+
+test("a close claude can't list for says why, and one past 27 seconds says to try again", async (t) => {
+  fakeClaude(refuse("executable_missing"));
+  await assert.rejects(close(done), {
+    message:
+      "Claude Code isn't installed, or its claude command isn't on PATH.",
+  });
+
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeClaude((argv) =>
+    argv[1] === "agents" ? out([done]) : new Promise(() => {}),
+  );
+  const pending = close(done);
+  const outcome = pending.then(
+    () => "closed",
+    (error) => error.message,
+  );
+  await flush();
+  t.mock.timers.tick(27_000);
+  assert.equal(
+    await outcome,
+    "Claude Code didn't answer in time, so the thread may still be open. Try again.",
+  );
 });

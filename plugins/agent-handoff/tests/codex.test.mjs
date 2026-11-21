@@ -6,12 +6,14 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import {
+  closeThread,
   detectTools,
   listThreads,
   readHandoffStates,
   startHandoff,
 } from "../src/plugin.ts";
 import {
+  BUSY_CLOSING,
   BUSY_LISTING,
   BUSY_READING,
   BUSY_STARTING,
@@ -20,6 +22,7 @@ import {
   NOT_RECORDED,
   RELEASED,
   STOPPED,
+  UNKNOWN_TURN,
 } from "../src/codex.ts";
 import { find, recorded, replay } from "./codex-replay.mjs";
 import {
@@ -1381,4 +1384,229 @@ test("a Codex that can't say its folder or list threads throws why, and closes i
   ]);
   await assert.rejects(listThreads(listRequest()), /can't list its threads/);
   assert.equal(sessionsOf()[0].state, "closed");
+});
+
+// Closing a thread (ajour#850): turn/interrupt for a turn the handoff's own
+// session runs, then thread/archive. The reads are recorded; the answers to
+// turn/interrupt and thread/archive aren't (codex-cli 0.170.0 has both
+// methods, which answer {} as Codex's app-server documentation says), and no
+// real thread was archived.
+const closeCodex = (threadId, native) =>
+  closeThread({ tool: "codex", handoff: handoff("h1", threadId, native) });
+const methodsOf = (log) =>
+  messages(log)
+    .filter((m) => m.method && m.id !== undefined)
+    .map((m) => m.method);
+
+test("a close archives a thread no session holds through a new app-server, which it ends", async () => {
+  // The second handoff's session ended, as when Ajour quits.
+  for (const session of [undefined, "fake-session-99"]) {
+    const reader = program("read-ok", {
+      unrecorded: (m) => (m.method === "thread/archive" ? {} : undefined),
+    });
+    const { calls } = fakeCodex([reader]);
+    assert.deepEqual(
+      await closeCodex(ok1.thread, {
+        state: "ready",
+        turn: ok1.turn,
+        ...(session ? { session } : {}),
+      }),
+      {},
+    );
+    assert.deepEqual(methodsOf(reader.log), [
+      "initialize",
+      "thread/read",
+      "thread/turns/list",
+      "thread/archive",
+    ]);
+    const archive = messages(reader.log).find(
+      (m) => m.method === "thread/archive",
+    );
+    assert.deepEqual(archive.params, { threadId: ok1.thread });
+    assert.equal(calls[0].cwd, PATH);
+    assert.equal(sessionsOf()[0].state, "closed");
+  }
+});
+
+/**
+ * A program whose thread is active with the plugin's turn until Codex gets
+ * turn/interrupt, then idle. `answers` overrides an answer by method.
+ */
+function runningThread(answers = {}) {
+  let stopped = false;
+  const log = [];
+  const handler = answering((m) => {
+    log.push(m);
+    if (Object.hasOwn(answers, m.method)) return answers[m.method](m);
+    if (m.method === "thread/read")
+      return idleThread(
+        stopped ? { type: "idle" } : { type: "active", activeFlags: [] },
+      );
+    if (m.method === "thread/turns/list")
+      return {
+        data: [
+          { id: ok1.turn, status: stopped ? "interrupted" : "inProgress" },
+        ],
+      };
+    if (m.method === "turn/interrupt") {
+      stopped = true;
+      return {};
+    }
+    if (m.method === "thread/archive") return {};
+    return { error: { code: -32601, message: `unexpected ${m.method}` } };
+  });
+  return { log, handler };
+}
+
+test("a turn the handoff's own session runs is interrupted first, then the thread archived, and the session ends", async () => {
+  const thread = runningThread();
+  fakeCodex([thread.handler]);
+  const session = await openSession();
+  assert.deepEqual(
+    await closeCodex(ok1.thread, {
+      state: "working",
+      session,
+      turn: ok1.turn,
+    }),
+    {},
+  );
+  assert.deepEqual(
+    thread.log.map((m) => m.method),
+    [
+      "thread/read",
+      "thread/turns/list",
+      "turn/interrupt",
+      "thread/read",
+      "thread/archive",
+    ],
+  );
+  assert.deepEqual(thread.log[2].params, {
+    threadId: ok1.thread,
+    turnId: ok1.turn,
+  });
+  assert.equal(sessionsOf().length, 1);
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("a running turn the plugin didn't record is the last turn in progress, and one it can't name stays running", async () => {
+  // A start that ran out of time before turn/start answered kept no turn.
+  const thread = runningThread();
+  fakeCodex([thread.handler]);
+  const session = await openSession();
+  assert.deepEqual(
+    await closeCodex(ok1.thread, { state: "working", session }),
+    {},
+  );
+  assert.equal(thread.log[2].params.turnId, ok1.turn);
+
+  const unnamed = runningThread({
+    "thread/turns/list": () => ({
+      error: { code: -32603, message: "turns unavailable" },
+    }),
+  });
+  fakeCodex([unnamed.handler]);
+  const own = await openSession();
+  await assert.rejects(
+    closeCodex(ok1.thread, { state: "working", session: own }),
+    {
+      message: UNKNOWN_TURN,
+    },
+  );
+  assert.ok(!unnamed.log.some((m) => m.method === "thread/archive"));
+  // The turn still runs, so its session stays for the next refresh.
+  assert.equal(sessionsOf()[0].state, "open");
+});
+
+test("a turn that ended before the interrupt, or still reads active 5 seconds after it, is archived all the same", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const thread = runningThread({
+    "turn/interrupt": () => ({
+      error: { code: -32600, message: "no active turn" },
+    }),
+  });
+  fakeCodex([thread.handler]);
+  const session = await openSession();
+  const { value } = await settle(
+    t,
+    closeCodex(ok1.thread, { state: "working", session, turn: ok1.turn }),
+  );
+  assert.deepEqual(value, {});
+  const reads = thread.log.filter((m) => m.method === "thread/read");
+  // One read before the interrupt, then one every 250 ms for 5 seconds.
+  assert.ok(reads.length >= 18 && reads.length <= 22, String(reads.length));
+  assert.equal(thread.log.at(-1).method, "thread/archive");
+});
+
+test("Codex refusing to stop the turn keeps the thread and its session, with Codex's reason", async () => {
+  const thread = runningThread({
+    "turn/interrupt": () => ({
+      error: { code: -32603, message: "interrupt failed: busy" },
+    }),
+  });
+  fakeCodex([thread.handler]);
+  const session = await openSession();
+  await assert.rejects(
+    closeCodex(ok1.thread, { state: "working", session, turn: ok1.turn }),
+    { message: "Codex didn't stop the turn: interrupt failed: busy" },
+  );
+  assert.ok(!thread.log.some((m) => m.method === "thread/archive"));
+  assert.equal(sessionsOf()[0].state, "open");
+});
+
+test("Codex refusing the archive throws its reason", async () => {
+  const reader = program("read-ok", {
+    unrecorded: (m) =>
+      m.method === "thread/archive"
+        ? {
+            error: {
+              code: -32603,
+              message: "failed to archive thread: disk full",
+            },
+          }
+        : undefined,
+  });
+  fakeCodex([reader]);
+  await assert.rejects(closeCodex(ok1.thread, { state: "ready" }), {
+    message:
+      "Codex didn't archive the thread: failed to archive thread: disk full",
+  });
+  assert.equal(sessionsOf()[0].state, "closed");
+});
+
+test("a thread Codex deleted or archived already, or has no file for, counts as closed", async () => {
+  for (const threadId of [gone, archived]) {
+    const reader = program("read-gone-archived");
+    fakeCodex([reader]);
+    assert.deepEqual(await closeCodex(threadId, { state: "ready" }), {});
+    assert.ok(!methodsOf(reader.log).includes("thread/archive"), threadId);
+  }
+  const reader = program("read-ok", {
+    unrecorded: (m) =>
+      m.method === "thread/archive"
+        ? {
+            error: {
+              code: -32600,
+              message: `no rollout found for thread id ${ok1.thread}`,
+            },
+          }
+        : undefined,
+  });
+  fakeCodex([reader]);
+  assert.deepEqual(await closeCodex(ok1.thread, { state: "ready" }), {});
+});
+
+test("a close while both sessions run handoffs says so", async () => {
+  fakeCodex([refuse("session_limit")]);
+  await assert.rejects(closeCodex(ok1.thread, { state: "ready" }), {
+    message: BUSY_CLOSING,
+  });
+});
+
+test("a Codex without thread/archive says to update the plugin", async () => {
+  const reader = program("read-ok");
+  fakeCodex([reader]);
+  await assert.rejects(closeCodex(ok1.thread, { state: "ready" }), {
+    message:
+      "This Codex version can't archive threads the way Ajour asks. Check for an update of this plugin.",
+  });
 });

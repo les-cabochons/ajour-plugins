@@ -1,8 +1,9 @@
 // Hands backlog items off to Claude Code as background sessions (`claude
 // --bg`), and reads their state back from `claude agents --json --all`. A
-// start's HTTP hooks tell Ajour when to read it again. Two tools share this
-// code: Claude Code opens a session in a terminal, and Claude Code desktop
-// opens it in the Claude desktop app.
+// start's HTTP hooks tell Ajour when to read it again. A close stops a job
+// that still runs, then removes it with `claude rm`, which keeps its
+// conversation. Two tools share this code: Claude Code opens a session in a
+// terminal, and Claude Code desktop opens it in the Claude desktop app.
 import type {
   DetectToolsResult,
   ListThreadsRequest,
@@ -13,12 +14,15 @@ import type {
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
+  CLOSE_DEADLINE_MS,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
   ToolError,
+  allLines,
   before,
   capture,
   captureJson,
+  closeFailure,
   firstLine,
   isLate,
   isUncertainStart,
@@ -31,9 +35,12 @@ import {
   reasonOf,
   record,
   refusalsFor,
+  run,
   settingText,
   text,
   withNotes,
+  type CloseThreadRequest,
+  type CloseThreadResult,
   type Handoff,
   type Json,
   type Listed,
@@ -56,6 +63,8 @@ const LABELS: Record<State, string> = {
   unknown: "Unknown",
 };
 const UNTRUSTED = /Workspace not trusted\b/i;
+// claude prints progress and warnings on stderr even when it works.
+const NOT_A_FAILURE = /^(?:Starting background service|warning:)/i;
 // The folder Claude Code names when it refuses one, such as C:\ or /.
 const UNTRUSTED_ROOT = /Run `?claude`? in (?:[A-Za-z]:\\?|\/) once\b/i;
 // A session id the plugin keeps as the thread id: a bounded, flag-free token.
@@ -81,6 +90,13 @@ const RELEASED =
   "Claude Code waits for you. Ajour stopped its background session so the Claude app can take it over: open it there and answer, or tell it to go on.";
 const NOT_RELEASED =
   "Ajour couldn't stop Claude Code's background session, so the Claude app can't go on with it yet. Ajour tries again at the next refresh.";
+// `claude stop` and `claude attach` find no job with this id. `claude stop`
+// says so for a job that no longer runs, too.
+const NO_SESSION = /^No session matching\b/i;
+export const NOT_BACKGROUND =
+  "Claude Code runs this session in a terminal or the Claude app, where Ajour can't stop it. Exit it there, then close it again.";
+const NOT_STOPPED =
+  "Ajour couldn't stop Claude Code's background session, so it didn't close it.";
 
 const claude: Tool = {
   name: "Claude Code",
@@ -95,16 +111,10 @@ const claude: Tool = {
   }),
   late: "Claude Code took too long; refreshing again later.",
   failureLine(value) {
-    // `claude --bg` prints progress and warnings on stderr even when it works.
     const lines = (value ?? "")
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter(
-        (line) =>
-          line &&
-          !/^Starting background service/i.test(line) &&
-          !/^warning:/i.test(line),
-      );
+      .filter((line) => line && !NOT_A_FAILURE.test(line));
     return (lines.find((line) => UNTRUSTED.test(line)) ?? lines[0] ?? "").slice(
       0,
       500,
@@ -527,6 +537,73 @@ function released(update: Update, native: Native): Update {
       { reason: RELEASED },
     ),
   };
+}
+
+/**
+ * Runs `claude rm <job>`. Claude Code's refusal, such as for a worktree that
+ * holds commits on no remote, goes to the user whole. The plugin never
+ * passes `--discard-unpushed` or `--force-remove-worktree`: both throw work
+ * away, so only the user runs them, after reading the refusal.
+ */
+async function remove(job: string): Promise<void> {
+  const result = await run(claude, { command: "claude-rm", args: { job } });
+  if (result.started === true)
+    throw new ToolError("claude started without returning its output.");
+  if (result.exitCode === 0) return;
+  const said =
+    allLines(result.stderr, NOT_A_FAILURE) ||
+    allLines(result.stdout, NOT_A_FAILURE);
+  // The job left the list since the plugin read it: removed already.
+  if (NO_SESSION.test(said)) return;
+  throw new ToolError(
+    said
+      ? `Claude Code kept the session: ${said}`
+      : `claude rm exited with ${result.exitCode ?? "a signal"}.`,
+  );
+}
+
+/**
+ * Closes a session as `claude rm` does: Claude Code stops listing it in
+ * `claude agents`, deletes its worktree when that is safe, and keeps its
+ * conversation, which `claude --resume` lists. A background job that still
+ * runs is stopped first. A session Claude Code no longer lists was removed
+ * already, so it counts as closed. Only a background job can be removed: a
+ * session a terminal or the Claude app runs, even one that started as a
+ * job, is the user's to exit first.
+ */
+export async function closeClaude(
+  request: CloseThreadRequest,
+): Promise<CloseThreadResult> {
+  const deadline = Date.now() + CLOSE_DEADLINE_MS;
+  try {
+    // The job id comes from the list, as for `claude stop` in a refresh.
+    const session = bySessionId(
+      await before(claude, deadline, () => listSessions()),
+    ).get(request.handoff.threadId);
+    if (!session) return {};
+    const job = jobOf(session);
+    if (session.kind !== "background" || !job)
+      throw new ToolError(NOT_BACKGROUND);
+    // A job just dispatched is working before a process reports its status.
+    const state = text(session.state, 64);
+    if (live(session) || state === "working" || state === "blocked") {
+      try {
+        await before(claude, deadline, () =>
+          capture(claude, "claude-stop", { job }),
+        );
+      } catch (error) {
+        // `claude stop` finds no running job: it ended since the list.
+        if (!(error instanceof ToolError && NO_SESSION.test(error.message)))
+          throw isLate(error)
+            ? error
+            : new ToolError(`${NOT_STOPPED} ${reasonOf(claude, error)}`);
+      }
+    }
+    await before(claude, deadline, () => remove(job));
+    return {};
+  } catch (error) {
+    throw closeFailure(claude, error);
+  }
 }
 
 export async function readClaude(

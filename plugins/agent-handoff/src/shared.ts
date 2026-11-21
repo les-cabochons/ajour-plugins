@@ -16,6 +16,20 @@ export type Native = Record<string, string | number | boolean | null>;
 export type Handoff = ReadHandoffStatesRequest["handoffs"][number];
 export type Listed = ListThreadsResult["threads"][number];
 
+/**
+ * A close of one handoff's thread in its tool (ajour#850), for a tool whose
+ * manifest declares `closesThreads`: the handoff as a state read sends it.
+ * Matches Ajour's `CloseThreadRequest`, which the vendored SDK 0.2.0 doesn't
+ * have yet. Replace it with the SDK's type once the SDK is refreshed.
+ */
+export type CloseThreadRequest = { tool: string; handoff: Handoff };
+/**
+ * Matches Ajour's `CloseThreadResult`: nothing. The plugin answers it once
+ * the thread is closed, or when the tool no longer has it; Ajour then
+ * removes the handoff. A refusal is thrown instead.
+ */
+export type CloseThreadResult = Record<string, never>;
+
 export const STATES: readonly State[] = [
   "working",
   "needs-you",
@@ -32,6 +46,9 @@ const NATIVE_LIMIT = 4096;
 // to spawn.
 export const READ_DEADLINE_MS = 20_000;
 export const START_DEADLINE_MS = 27_000;
+// A close stops the thread's work, then closes it: two or three commands,
+// which stop waiting at 27 seconds too.
+export const CLOSE_DEADLINE_MS = 27_000;
 // Ajour stopped the tool before its output was whole. A refresh treats these
 // like its own deadline, and a start can't tell whether the work exists.
 const CUT_SHORT = new Set(["timeout", "capture_incomplete"]);
@@ -313,6 +330,37 @@ export function reasonOf(tool: Tool, error: unknown): string {
   const message =
     error instanceof Error ? firstLine(error.message) : `${tool.name} failed.`;
   return tool.explain(message) || `${tool.name} failed.`;
+}
+
+/**
+ * Why a close failed, in words the user reads. A command that outlived the
+ * deadline may still close the thread, so the user tries again: the next
+ * close finds the thread closed, which counts.
+ */
+export function closeFailure(tool: Tool, error: unknown): ToolError {
+  if (isLate(error))
+    return new ToolError(
+      `${tool.name} didn't answer in time, so the thread may still be open. Try again.`,
+      error instanceof ToolError ? error.code : undefined,
+    );
+  return new ToolError(
+    reasonOf(tool, error),
+    error instanceof ToolError ? error.code : undefined,
+  );
+}
+
+/**
+ * Every line a tool printed about a failure, joined into one line of at most
+ * 500 characters, for a refusal whose reason runs over several lines. Lines
+ * that `skip` matches, such as progress, are left out.
+ */
+export function allLines(value: string | undefined, skip?: RegExp): string {
+  return (value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !skip?.test(line))
+    .join(" ")
+    .slice(0, 500);
 }
 
 export function record(value: unknown): Json | undefined {

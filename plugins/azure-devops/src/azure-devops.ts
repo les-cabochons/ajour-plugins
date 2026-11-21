@@ -788,13 +788,14 @@ async function fetchWorkItems(
 export async function updateAzureWorkItemFields(
   config: AzureDevOpsConnectionInput,
   workItemId: string,
-  fields: Record<string, number | string>,
+  // `null` clears the field.
+  fields: Record<string, number | string | null>,
 ): Promise<AzureWorkItem | undefined> {
-  const operations = Object.entries(fields).map(([fieldName, value]) => ({
-    op: "add",
-    path: `/fields/${fieldName}`,
-    value,
-  }));
+  const operations = Object.entries(fields).map(([fieldName, value]) =>
+    value === null
+      ? { op: "remove", path: `/fields/${fieldName}` }
+      : { op: "add", path: `/fields/${fieldName}`, value },
+  );
   if (operations.length === 0) {
     return undefined;
   }
@@ -1438,18 +1439,18 @@ async function buildAzureWorkItemUpdates(
       const mappedFieldName = mappedFieldNames[fieldKey];
       const fieldUpdate = fieldUpdates[fieldKey];
       const localValue = workItem[fieldKey];
+      // A blank local value was cleared in Ajour: it clears the field too.
       if (
         !mappedFieldName ||
         fieldUpdate?.status !== "pushed" ||
-        typeof localValue !== "number" ||
-        !Number.isFinite(localValue)
+        (localValue !== undefined && !Number.isFinite(localValue))
       ) {
         continue;
       }
 
       try {
         await updateAzureWorkItemFields(config, remoteItem.externalId, {
-          [mappedFieldName]: localValue,
+          [mappedFieldName]: localValue ?? null,
         });
       } catch (error) {
         const message =

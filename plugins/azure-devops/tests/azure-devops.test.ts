@@ -336,6 +336,78 @@ describe("Azure DevOps connector priority field resolution", () => {
     });
   });
 
+  it("clears the Azure field when the local estimate was cleared", async () => {
+    const fieldListResponse = jsonResponse({
+      value: [
+        {
+          name: "Remaining Work",
+          referenceName: "Custom.RemainingWork",
+        },
+      ],
+    });
+    const patches: unknown[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fieldListResponse.clone())
+      .mockResolvedValueOnce(jsonResponse({ workItems: [{ id: 123 }] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          value: [
+            {
+              id: 123,
+              fields: {
+                "System.Title": "Investigate incident",
+                "System.State": "Active",
+                "System.TeamProject": "Maintenance and Support",
+                "System.WorkItemType": "Task",
+                "Custom.RemainingWork": 8,
+              },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ value: [{ id: 123, relations: [] }] }),
+      )
+      .mockImplementationOnce(async (_input, init) => {
+        patches.push(JSON.parse(String(init?.body)));
+        return jsonResponse({});
+      });
+
+    stubAzureFetch(withWorkItemTypeStates(fetchMock));
+
+    // Both sides agreed on 8; the remaining estimate is now blank in Ajour.
+    await expect(
+      syncAzureDevOpsConnection(
+        buildConnection({ remainingEstimateFieldName: "Remaining Work" }),
+        [
+          {
+            localWorkItemId: "local-1",
+            sourceId:
+              "https://dev.azure.com/contoso/Maintenance%20and%20Support/_workitems/edit/123",
+            estimateSync: {
+              remainingEstimateHours: { baselineValue: 8, remoteValue: 8 },
+            },
+          },
+        ],
+      ),
+    ).resolves.toMatchObject({
+      workItemUpdates: [
+        {
+          localWorkItemId: "local-1",
+          fields: {
+            remainingEstimateHours: expect.objectContaining({
+              status: "pushed",
+            }),
+          },
+        },
+      ],
+    });
+    expect(patches).toEqual([
+      [{ op: "remove", path: "/fields/Custom.RemainingWork" }],
+    ]);
+  });
+
   it("pushes local completed work when the Azure field is initially blank", async () => {
     const fieldListResponse = jsonResponse({
       value: [

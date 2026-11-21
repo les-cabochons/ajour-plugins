@@ -64,6 +64,52 @@ const FIELDS = [
   { name: "Priority", referenceName: "Microsoft.VSTS.Common.Priority", type: "integer", isQueryable: true },
 ];
 
+/** The one-path SVG Azure DevOps answers for an icon. */
+export const TASK_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#F2CB1D" d="M2 2h12v12H2z"/></svg>';
+
+const typeField = (name: string, referenceName: string) => ({ name, referenceName });
+const TITLE = typeField("Title", "System.Title");
+
+/** The project's work item types, as `GET {project}/_apis/wit/workitemtypes` lists them. */
+const WORK_ITEM_TYPES = [
+  {
+    name: "Task",
+    color: "F2CB1D",
+    icon: { id: "icon_clipboard", url: "https://tfsprodcus3.visualstudio.com/_apis/wit/workItemIcons/icon_clipboard" },
+    isDisabled: false,
+    fields: [
+      TITLE,
+      typeField("Original Estimate", ORIGINAL_ESTIMATE),
+      typeField("Remaining Work", "Microsoft.VSTS.Scheduling.RemainingWork"),
+      typeField("Completed Work", "Microsoft.VSTS.Scheduling.CompletedWork"),
+    ],
+  },
+  {
+    name: "Bug",
+    color: "CC293D",
+    icon: { id: "icon_insect" },
+    isDisabled: false,
+    fields: [TITLE, typeField("Priority", "Microsoft.VSTS.Common.Priority")],
+  },
+  {
+    name: "User Story",
+    color: "009CCC",
+    icon: { id: "icon_book" },
+    isDisabled: false,
+    fields: [TITLE, typeField("Story Points", "Microsoft.VSTS.Scheduling.StoryPoints")],
+  },
+  {
+    name: "Epic",
+    color: "FF7B00",
+    icon: { id: "icon_crown" },
+    isDisabled: false,
+    fields: [TITLE, typeField("Size", "Microsoft.VSTS.Scheduling.Size"), typeField("Effort", EFFORT)],
+  },
+  { name: "Test Case", color: "004B50", icon: { id: "icon_test_case" }, isDisabled: false, fields: [TITLE] },
+  { name: "Old Request", color: "773B93", icon: { id: "icon_list" }, isDisabled: true, fields: [TITLE] },
+];
+
 const viewer = { id: VIEWER, displayName: "Ada Lovelace", uniqueName: "ada@contoso.com" };
 const alba = { id: ALBA, displayName: "Alba Reyes", uniqueName: "alba@contoso.com" };
 
@@ -252,6 +298,17 @@ export function createAzureFixture(organizationUrl: string) {
       if (!item) return json({ message: "Not found" }, 404);
       if (method === "PATCH") return patch(item, request.body ?? "[]");
       if (method === "GET") return json(workItemJson(item, query.get("fields")?.split(",")));
+    }
+
+    if (method === "GET" && path === `/${PROJECT}/_apis/wit/workitemtypes`) {
+      return json({ count: WORK_ITEM_TYPES.length, value: WORK_ITEM_TYPES });
+    }
+    const icon = /^\/_apis\/wit\/workitemicons\/([^/]+)$/.exec(path);
+    if (icon && method === "GET") {
+      // As the real service: the SVG, a sign-in page for an icon it won't draw, or an error.
+      if (icon[1] === "icon_crown") return json({ message: "Icon service unavailable" }, 500);
+      if (icon[1] === "icon_insect") return { status: 200, headers: { "content-type": "text/html" }, body: "<html><body>Sign in</body></html>" };
+      return { status: 200, headers: { "content-type": "image/svg+xml" }, body: TASK_ICON_SVG };
     }
 
     const typeInfo = new RegExp(`^/${PROJECT}/_apis/wit/workitemtypes/([^/]+)/(states|fields)$`).exec(path);

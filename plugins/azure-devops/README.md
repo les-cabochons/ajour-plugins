@@ -123,6 +123,7 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | POST          | `/_apis/wit/workitemsbatch`                                                                                    | Read the backlog                      |
 | GET           | `/_apis/wit/fields`, `/_apis/wit/workitems/*`                                                                  | Read the backlog                      |
 | GET           | `/*/_apis/wit/workitemtypes/*/states`, `/*/_apis/wit/workitemtypes/*/fields`                                   | Read the backlog                      |
+| GET           | `/*/_apis/wit/workitemtypes`, `/_apis/wit/workitemicons/*` (as `image/svg+xml`)                                | Read the backlog                      |
 | GET           | `/*/_apis/wit/workItems/*/comments`, `/*/_apis/wit/workItems/*/comments/*`                                     | Read the backlog                      |
 | PATCH         | `/_apis/wit/workitems/*` (as `application/json-patch+json`)                                                    | Edit work items                       |
 | POST          | `/*/_apis/wit/workItems/*/comments`                                                                            | Edit work items                       |
@@ -386,6 +387,25 @@ every field a type names against the organization's field list, as it does
 the connection's own, and refuses one it can't find with a message that
 starts with the type's name. A connection saved before 2.1.0 has no fields by
 type and syncs as before.
+
+Since 2.2.0, the form also asks the plugin about the types when it opens on a
+saved connection (`describeItemTypes`, behind
+`capabilities.connector.itemTypes`). The plugin
+finds the projects of the sample items Ajour sends, in one batch request, and
+reads each project's types once with `GET {project}/_apis/wit/workitemtypes`.
+It keeps the answer for its lifetime. For each type it answers:
+
+- its icon, from `GET /_apis/wit/workitemicons/{icon}?color={color}&v=2` on
+  the organization address, one request per icon and colour. The answer must
+  be one SVG holding one path, at most 20,000 characters, or the type has no
+  icon. A failed icon request never fails the lookup.
+- its fields, by display name and reference name.
+- the fields to propose, among those the type has: Original Estimate, Effort,
+  Story Points, then Size for the original estimate, Remaining Work for
+  remaining, and Completed Work for completed.
+
+It also answers the project's other types, for Add a type, leaving out
+disabled types and those for test management and code or feedback requests.
 
 ## License
 

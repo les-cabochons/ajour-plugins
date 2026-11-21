@@ -154,6 +154,27 @@ export interface ConnectorSettleStatesResult {
   states: ConnectorSettleState[];
 }
 
+/**
+ * The item types Ajour's connection form asks about: those of the
+ * connection's synced items, each with one of its items, then the types the
+ * saved fields by type name, without one.
+ */
+export interface ConnectorItemTypesRequest {
+  types: { name: string; sourceId?: string }[];
+}
+
+/** One work item type: its icon, its fields, and the fields to propose for each estimate field, best first. */
+export interface ConnectorItemType {
+  name: string;
+  iconSvg?: string;
+  fields?: { name: string; id?: string }[];
+  suggestions?: Record<string, string[]>;
+}
+
+export interface ConnectorItemTypesResult {
+  types: ConnectorItemType[];
+}
+
 /** Only the fields the settle changed. */
 export interface ConnectorSettleWriteRequest {
   sourceId: string;

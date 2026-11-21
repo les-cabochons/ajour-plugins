@@ -70,16 +70,25 @@ function assertNativeFits(native) {
   assert.ok(new TextEncoder().encode(JSON.stringify(native)).length <= 4096);
 }
 
+/**
+ * A start as Ajour sends it with Start in on New worktree (ajour#863): the
+ * branch to create, and the source it starts from.
+ */
 const startRequest = (settings = {}, extra = {}) => ({
   tool: "t3",
   folder: { id: FOLDER, name: "ajour" },
   prompt: "Work on AJ-38: hand off to T3 Code\n\nLine two.",
   title: "AJ-38 Hand off to T3 Code",
   branch: "aj-38-hand-off",
+  source: "origin/main",
   item: { key: "AJ-38", url: "https://example.com/AJ-38" },
   settings,
   ...extra,
 });
+// Start in on Main folder: Ajour sends neither a branch nor a source.
+const inFolder = { branch: undefined, source: undefined };
+// An Ajour that predates `source` sends the branch alone.
+const noSource = { source: undefined };
 
 const handoff = (id, native = { state: "working" }, folderId = FOLDER) => ({
   id,
@@ -189,11 +198,11 @@ test("detection says T3 Code isn't installed when t3 is missing", async () => {
   assert.match(tool.reason, /isn't installed/);
 });
 
-test("a start runs thread start in a worktree with the prompt on stdin", async () => {
+test("a start with a branch runs thread start in a worktree from the request's source, with the prompt on stdin", async () => {
   const calls = fakeT3((argv) =>
     argv[2] === "start" ? out(started) : out({ thread: shown }),
   );
-  const request = startRequest({ worktree: true, base: "develop" });
+  const request = startRequest();
   const result = await startHandoff(request);
   assert.deepEqual(calls[0], {
     argv: [
@@ -206,7 +215,7 @@ test("a start runs thread start in a worktree with the prompt on stdin", async (
       "AJ-38 Hand off to T3 Code",
       "--json",
       "--worktree",
-      "develop",
+      "origin/main",
       "--branch",
       "aj-38-hand-off",
     ],
@@ -229,17 +238,41 @@ test("a start runs thread start in a worktree with the prompt on stdin", async (
   assertNativeFits(result.native);
 });
 
-test("a start uses a worktree from main by default", async () => {
+test("a start without a branch runs in the project folder, with no worktree", async () => {
   const calls = fakeT3((argv) =>
     argv[2] === "start" ? out(started) : out({ thread: shown }),
   );
-  await startHandoff(startRequest());
-  assert.deepEqual(calls[0].argv.slice(-4), [
+  const result = await startHandoff(startRequest({}, inFolder));
+  assert.deepEqual(calls[0].argv, [
+    "t3",
+    "thread",
+    "start",
+    FOLDER,
+    "-",
+    "--title",
+    "AJ-38 Hand off to T3 Code",
+    "--json",
+  ]);
+  assert.equal(result.threadId, threadId);
+});
+
+test("a saved Create a worktree or Worktree base setting changes nothing", async () => {
+  // 0.17.0 had both settings, so a project can still hold their values.
+  const calls = fakeT3((argv) =>
+    argv[2] === "start" ? out(started) : out({ thread: shown }),
+  );
+  await startHandoff(startRequest({ worktree: false, base: "develop" }));
+  await startHandoff(
+    startRequest({ worktree: true, base: "develop" }, inFolder),
+  );
+  const starts = calls.filter((c) => c.argv[2] === "start");
+  assert.deepEqual(starts[0].argv.slice(8), [
     "--worktree",
-    "main",
+    "origin/main",
     "--branch",
     "aj-38-hand-off",
   ]);
+  assert.deepEqual(starts[1].argv.slice(8), []);
 });
 
 // T3 refuses these before it creates a thread (fixtures from t3 v0.1.5,
@@ -248,14 +281,14 @@ const baseMissing = (base) =>
   fail(read("base-missing.txt").replace('"main"', `"${base}"`));
 const worktreeBase = (argv) => argv[argv.indexOf("--worktree") + 1];
 
-test("a start without a base tries main, then master", async () => {
+test("a start with a branch and no source tries main, then master", async () => {
   const calls = fakeT3((argv) => {
     if (argv[2] !== "start") return out({ thread: shown });
     return worktreeBase(argv) === "master"
       ? out(started)
       : baseMissing(worktreeBase(argv));
   });
-  const result = await startHandoff(startRequest());
+  const result = await startHandoff(startRequest({}, noSource));
   assert.equal(result.threadId, threadId);
   assert.deepEqual(
     calls.filter((c) => c.argv[2] === "start").map((c) => worktreeBase(c.argv)),
@@ -275,7 +308,7 @@ test("a slow refusal of main leaves master the rest of the start's deadline, and
   );
   let settled = false;
   const pending = assert
-    .rejects(startHandoff(startRequest()), {
+    .rejects(startHandoff(startRequest({}, noSource)), {
       message:
         "T3 Code may have started the thread. Check T3 Code before handing off again.",
     })
@@ -292,21 +325,33 @@ test("a slow refusal of main leaves master the rest of the start's deadline, and
   await pending;
 });
 
-test("a start Ajour can't base asks for the base: neither main nor master, or the one given", async () => {
-  fakeT3((argv) => baseMissing(worktreeBase(argv)));
-  await assert.rejects(startHandoff(startRequest()), {
-    message:
-      'Neither "main" nor "master" exists in ajour, so T3 Code can\'t start the worktree. Name the branch it starts from.',
-    setting: "base",
-  });
+test("a source T3 Code can't resolve is refused in plain words, with no setting for Ajour to ask", async () => {
+  /** The refusal has this message and no `setting` hint. */
+  const plain = (message) => (error) => {
+    assert.equal(error.message, message);
+    assert.equal(error.setting, undefined);
+    assert.equal(error.branchExists, undefined);
+    return true;
+  };
   const calls = fakeT3((argv) => baseMissing(worktreeBase(argv)));
-  await assert.rejects(startHandoff(startRequest({ base: "develop" })), {
-    message:
-      "\"develop\" doesn't exist in ajour, so T3 Code can't start the worktree. Name the branch it starts from.",
-    setting: "base",
-  });
-  // A base the user gave is the only one tried.
-  assert.equal(calls.length, 1);
+  await assert.rejects(
+    startHandoff(startRequest({}, { source: "origin/develop" })),
+    plain(
+      "\"origin/develop\" doesn't exist in ajour, so T3 Code can't start the worktree. Pick another source branch in Ajour.",
+    ),
+  );
+  // The request's source is the only one tried.
+  assert.deepEqual(
+    calls.map((c) => worktreeBase(c.argv)),
+    ["origin/develop"],
+  );
+  fakeT3((argv) => baseMissing(worktreeBase(argv)));
+  await assert.rejects(
+    startHandoff(startRequest({}, noSource)),
+    plain(
+      'Neither "main" nor "master" exists in ajour, so T3 Code can\'t start the worktree. Update Ajour to pick the source branch.',
+    ),
+  );
 });
 
 test("a start on a branch that exists says so, for Ajour to offer the item's thread", async () => {
@@ -322,16 +367,15 @@ test("a start on a branch that exists says so, for Ajour to offer the item's thr
   assert.equal(calls.length, 1);
 });
 
-test("a start without a worktree passes the provider and model", async () => {
+test("a start in the project folder passes the provider and model", async () => {
   const calls = fakeT3((argv) =>
     argv[2] === "start" ? out(started) : out({ thread: shown }),
   );
   await startHandoff(
-    startRequest({
-      worktree: false,
-      provider: "claudeAgent",
-      model: "claude-opus-5-5",
-    }),
+    startRequest(
+      { provider: "claudeAgent", model: "claude-opus-5-5" },
+      inFolder,
+    ),
   );
   assert.deepEqual(calls[0].argv, [
     "t3",
@@ -354,14 +398,13 @@ test("a start passes a model without a provider, and slugs with slashes stay one
     argv[2] === "start" ? out(started) : out({ thread: shown }),
   );
   await startHandoff(
-    startRequest({ worktree: false, model: "anthropic/claude-opus-5-5" }),
+    startRequest({ model: "anthropic/claude-opus-5-5" }, inFolder),
   );
   await startHandoff(
-    startRequest({
-      worktree: false,
-      provider: "openrouter/main",
-      model: "anthropic/claude-opus-5-5",
-    }),
+    startRequest(
+      { provider: "openrouter/main", model: "anthropic/claude-opus-5-5" },
+      inFolder,
+    ),
   );
   const starts = calls.filter((c) => c.argv[2] === "start");
   assert.deepEqual(starts[0].argv.slice(8), [
@@ -386,15 +429,11 @@ test("a start sends the title on one line", async () => {
   assert.equal(calls[0].argv[6], "AJ-38 Hand off to T3 Code");
 });
 
-test("a start refuses a provider without a model, or a worktree without a branch", async () => {
+test("a start refuses a provider without a model", async () => {
   const calls = fakeT3(() => out(started));
   await assert.rejects(
     startHandoff(startRequest({ provider: "claudeAgent" })),
     /Set a model for the provider/,
-  );
-  await assert.rejects(
-    startHandoff(startRequest({}, { branch: undefined })),
-    /Name a branch/,
   );
   assert.deepEqual(calls, []);
 });
@@ -948,7 +987,7 @@ test("each broker refusal reads as what to do next", async (t) => {
       "Ajour couldn't start t3 safely (an unusual launcher, an argument it can't pass, or a command line that's too long). Check the T3 Code install and this handoff's title.",
     output_limit: /more output than Ajour accepts/,
     timeout: /didn't answer in time/,
-    invalid_request: /Check the branch, base ref, provider and model/,
+    invalid_request: /Check the branch, source branch, provider and model/,
     plugin_off: /Turn this plugin on/,
     something_new: "Ajour couldn't run t3 (something_new).",
   };

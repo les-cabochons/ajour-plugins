@@ -6,6 +6,7 @@ import type {
   ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
+  StartHandoffRequest,
 } from "@ajour/plugin-sdk";
 import type {} from "@ajour/plugin-sdk/globals";
 
@@ -29,6 +30,17 @@ export type CloseThreadRequest = { tool: string; handoff: Handoff };
  * removes the handoff. A refusal is thrown instead.
  */
 export type CloseThreadResult = Record<string, never>;
+/**
+ * A start request with `source` (ajour#863): what the new branch starts
+ * from, as git names it, such as `origin/main`. Ajour sends it only with
+ * `branch`, and only to a tool whose manifest declares `ownWorktree`.
+ * Matches Ajour's `StartHandoffRequest`, whose `source` the vendored SDK
+ * 0.2.0 doesn't have yet. Replace it with the SDK's type once the SDK is
+ * refreshed.
+ */
+export type StartWithSource = StartHandoffRequest & {
+  source?: string | undefined;
+};
 
 export const STATES: readonly State[] = [
   "working",

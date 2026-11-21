@@ -6,7 +6,6 @@ import type {
   ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
-  StartHandoffRequest,
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
@@ -37,6 +36,7 @@ import {
   type Json,
   type Listed,
   type Native,
+  type StartWithSource,
   type State,
   type Tool,
   type Update,
@@ -68,12 +68,15 @@ const LABELS: Record<State, string> = {
 const NOT_RUNNING = /No running T3 Code server\b/i;
 const NOT_FOUND =
   /Thread \S+ (?:is no longer available|was not found|does not exist)/i;
-// A start's two refusals Ajour can help with (Ajour #819). T3 creates no
+// A worktree start's two refusals the plugin words itself. T3 creates no
 // thread for either, so trying again is safe.
 const BRANCH_EXISTS = /Branch "[^"]*" already exists\b/i;
 const BASE_MISSING = /Base ref "[^"]*" does not resolve\b/i;
-/** The bases a start tries, in order, when the user gave none. */
-const DEFAULT_BASES = ["main", "master"];
+/**
+ * The sources a worktree start tries, in order, when the request has none:
+ * an Ajour that predates `source` (ajour#863) sends the branch alone.
+ */
+const DEFAULT_SOURCES = ["main", "master"];
 const SHOW_CONCURRENCY = 3;
 const MAYBE_STARTED =
   "T3 Code may have started the thread. Check T3 Code before handing off again.";
@@ -83,7 +86,7 @@ const t3: Tool = {
   exe: "t3",
   refusals: refusalsFor("T3 Code", "t3", {
     invalid_request:
-      "Ajour refused a value for t3. Check the branch, base ref, provider and model.",
+      "Ajour refused a value for t3. Check the branch, source branch, provider and model.",
     output_limit:
       "T3 Code returned more output than Ajour accepts. Archive old threads in this project, then try again.",
   }),
@@ -262,22 +265,21 @@ function keptUpdate(
   return { id, state, native: withNotes(kept, notes) };
 }
 
+/**
+ * Starts the thread where the request says (ajour#863): with a branch, in a
+ * worktree T3 Code makes on it, and without one, in the project folder.
+ * Ajour's Start in decides, so no setting of the tool does.
+ */
 export async function startT3(
-  request: StartHandoffRequest,
+  request: StartWithSource,
 ): Promise<StartHandoffResult> {
   const began = Date.now();
   const args: Record<string, string> = {
     folder: request.folder.id,
     title: oneLineTitle(request.title),
   };
-  if (request.settings.worktree !== false) {
-    const branch = settingText(request.branch);
-    if (!branch)
-      throw new Error(
-        "Name a branch for the T3 worktree, or turn off Create a worktree.",
-      );
-    args.branch = branch;
-  }
+  const branch = settingText(request.branch);
+  if (branch) args.branch = branch;
   const provider = settingText(request.settings.provider);
   const model = settingText(request.settings.model);
   // t3 takes --model alone, but --provider only with --model.
@@ -290,7 +292,7 @@ export async function startT3(
   let output: unknown;
   try {
     output = args.branch
-      ? await startOnBase(request, args, began + START_DEADLINE_MS)
+      ? await startInWorktree(request, args, began + START_DEADLINE_MS)
       : await captureJson(t3, "thread-start", args, request.prompt);
   } catch (error) {
     // Ajour stopped t3 or dropped its output, t3 exited 0 with output Ajour
@@ -338,57 +340,57 @@ export async function startT3(
 }
 
 /**
- * A refusal Ajour can act on (Ajour #819): it asks for the tool's `setting`,
- * or offers the item's thread when `branchExists`. Older Ajour shows the
- * message alone.
- */
-function refusedFor(
-  message: string,
-  hint: { setting: string } | { branchExists: true },
-): ToolError {
-  return Object.assign(new ToolError(message), hint);
-}
-
-/**
- * Starts the thread in a worktree. The base the user gave is tried alone.
- * Without one, `main`, then `master`: T3 refuses a base the repository and
- * its remotes don't have before it creates anything. A missing base is
- * refused as the `base` setting, so Ajour asks for it, and a branch that
- * exists as `branchExists`, so Ajour offers the item's thread.
+ * Starts the thread in a worktree on the request's branch, from the
+ * request's source, which is tried alone. A request without a source comes
+ * from an Ajour that predates the field, so `main` is tried, then `master`:
+ * T3 refuses a source the repository and its remotes don't have before it
+ * creates anything.
+ *
+ * A missing source is refused in the plugin's words: the user picks another
+ * one in Ajour, and no setting of the tool holds it. A branch that exists is
+ * refused as `branchExists` (Ajour #819), so Ajour offers the item's thread.
+ * An older Ajour shows that message alone.
  *
  * The attempts share the start's `deadline`: each command may take 20
  * seconds, so a slow refusal of `main` leaves `master` only the rest, and
  * Ajour gets the answer before it ends the operation at 30.
  */
-async function startOnBase(
-  request: StartHandoffRequest,
+async function startInWorktree(
+  request: StartWithSource,
   args: Record<string, string>,
   deadline: number,
 ): Promise<unknown> {
-  const given = settingText(request.settings.base);
-  const bases = given ? [given] : DEFAULT_BASES;
+  const given = settingText(request.source);
+  const sources = given ? [given] : DEFAULT_SOURCES;
   const folder = request.folder.name;
-  for (const base of bases) {
+  for (const source of sources) {
     try {
+      // The command's `base` argument is t3's --worktree value.
       return await before(t3, deadline, () =>
-        captureJson(t3, "thread-start", { ...args, base }, request.prompt),
+        captureJson(
+          t3,
+          "thread-start",
+          { ...args, base: source },
+          request.prompt,
+        ),
       );
     } catch (error) {
       if (!(error instanceof ToolError) || error.code !== undefined)
         throw error;
       if (BRANCH_EXISTS.test(error.message))
-        throw refusedFor(
-          `The branch "${args.branch}" already exists in ${folder}, so T3 Code started no thread. Hand off with another branch from Review prompt.`,
+        throw Object.assign(
+          new ToolError(
+            `The branch "${args.branch}" already exists in ${folder}, so T3 Code started no thread. Hand off with another branch from Review prompt.`,
+          ),
           { branchExists: true },
         );
       if (!BASE_MISSING.test(error.message)) throw error;
     }
   }
-  throw refusedFor(
+  throw new ToolError(
     given
-      ? `"${given}" doesn't exist in ${folder}, so T3 Code can't start the worktree. Name the branch it starts from.`
-      : `Neither "main" nor "master" exists in ${folder}, so T3 Code can't start the worktree. Name the branch it starts from.`,
-    { setting: "base" },
+      ? `"${given}" doesn't exist in ${folder}, so T3 Code can't start the worktree. Pick another source branch in Ajour.`
+      : `Neither "main" nor "master" exists in ${folder}, so T3 Code can't start the worktree. Update Ajour to pick the source branch.`,
   );
 }
 

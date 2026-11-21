@@ -54,9 +54,8 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Claude Code de
   }
   const settings = (tool) =>
     tool.settings.map((s) => [s.id, s.type, s.defaultValue]);
+  // T3 Code has no worktree setting: Ajour's Start in decides (ajour#863).
   assert.deepEqual(settings(tools[0]), [
-    ["worktree", "checkbox", true],
-    ["base", "text", "main"],
     ["provider", "text", undefined],
     ["model", "text", undefined],
   ]);

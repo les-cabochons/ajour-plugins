@@ -22,7 +22,9 @@ Each tool declares its features in `plugin.json`, and Ajour uses only those (les
 
 Every tool sets the first three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's or VS Code's commands takes one. Only a tool that closes threads sets `closesThreads`: absent, Ajour only forgets its own record of a handoff.
 
-T3 Code also sets `ownWorktree` (les-cabochons/ajour#859): with "Create a worktree" on, it makes its own git worktree on the branch Ajour sends, starting from "Worktree base", see [Settings](#settings). T3 Code can't start a thread in a folder outside its registered projects, so it can't run in a worktree Ajour makes. No other tool sets it. Ajour lists it on the plugin's page as "Makes its own worktree".
+T3 Code also sets `ownWorktree` (les-cabochons/ajour#859): when Ajour's Start in is New worktree, it makes its own git worktree on the branch Ajour sends, starting from the source branch Ajour sends with it. With Main folder, Ajour sends neither and the thread runs in the project folder (les-cabochons/ajour#863). T3 Code can't start a thread in a folder outside its registered projects, so it can't run in a worktree Ajour makes. No other tool sets it. Ajour lists it on the plugin's page as "Makes its own worktree".
+
+0.18.0 needs an Ajour that includes les-cabochons/ajour#863, which sends the source branch and lets Start in decide. With an older Ajour that has #859, T3 Code makes a worktree whenever Ajour sends a branch, from main or master.
 
 0.17.0 needs an Ajour that includes les-cabochons/ajour#859, which adds `ownWorktree`. An older Ajour refuses this manifest.
 
@@ -80,12 +82,12 @@ How the tools close was read from `claude rm --help` and `claude stop --help` in
 
 ### Commands it runs
 
-| Command                                             | What for                                                                                                                                                                                                                                                                |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `t3 thread start <folder> - --title <title> --json` | Starts the thread. The prompt goes on stdin, and the title on one line. With a worktree, adds `--worktree <base> --branch <branch>`; with a provider, adds `--provider <provider>`; with a model, adds `--model <model>`. Times out after 20 seconds.                   |
-| `t3 thread list --project <folder> --json`          | Reads every thread of a repository folder, once per folder on each refresh, and lists them for [linking](#threads-you-started). Times out after 10 seconds.                                                                                                             |
-| `t3 thread show <thread> --json --messages 0`       | Reads a live thread's pending requests, a new thread's link, and the state of a thread missing from the list. Runs in the repository folder, which it doesn't take as an argument. `--messages 0` keeps the conversation out of the plugin. Times out after 10 seconds. |
-| `t3 --version`                                      | Detects T3 Code: it is available once this answers. Times out after 10 seconds.                                                                                                                                                                                         |
+| Command                                             | What for                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `t3 thread start <folder> - --title <title> --json` | Starts the thread. The prompt goes on stdin, and the title on one line. With a branch from Ajour, adds `--worktree <source> --branch <branch>`, where the source is the one Ajour sends; with a provider, adds `--provider <provider>`; with a model, adds `--model <model>`. Times out after 20 seconds. |
+| `t3 thread list --project <folder> --json`          | Reads every thread of a repository folder, once per folder on each refresh, and lists them for [linking](#threads-you-started). Times out after 10 seconds.                                                                                                                                               |
+| `t3 thread show <thread> --json --messages 0`       | Reads a live thread's pending requests, a new thread's link, and the state of a thread missing from the list. Runs in the repository folder, which it doesn't take as an argument. `--messages 0` keeps the conversation out of the plugin. Times out after 10 seconds.                                   |
+| `t3 --version`                                      | Detects T3 Code: it is available once this answers. Times out after 10 seconds.                                                                                                                                                                                                                           |
 
 `<folder>` is one of the project's repository folders, which Ajour resolves. The folder must already be a T3 Code project. A start stops waiting for the new thread's link 27 seconds in and keeps the thread.
 
@@ -113,14 +115,14 @@ The native state keeps T3's `status`, `settled`, `snoozed`, `snoozedUntil`, `arc
 
 ### Settings
 
-| Setting           | Default | What it does                                                                                                                  |
-| ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Create a worktree | On      | Runs the thread in a new git worktree on the handoff branch. Off runs it in the project folder.                               |
-| Worktree base     | `main`  | The branch, tag or commit the worktree starts from.                                                                           |
-| Provider          | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. A provider needs a model. Leave both empty for the project's defaults. |
-| Model             | Empty   | A model slug, such as `claude-opus-5-5` or one with slashes. It can be set without a provider.                                |
+| Setting  | Default | What it does                                                                                                                  |
+| -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Provider | Empty   | A T3 Code provider instance ID, such as `claudeAgent`. A provider needs a model. Leave both empty for the project's defaults. |
+| Model    | Empty   | A model slug, such as `claude-opus-5-5` or one with slashes. It can be set without a provider.                                |
 
-Ajour doesn't show these settings yet, so a start gets none and the worktree base is unset. A start without a base tries `main`, then `master`. T3 Code refuses a base that the repository and its remotes don't have before it creates anything, so trying again is safe. When neither exists, or the base Ajour sent doesn't, the start is refused with `setting: "base"`. Ajour then asks for the base, starts again with the answer in `settings.base`, and sends it with later starts from that repository folder (les-cabochons/ajour#819).
+The tool has no worktree setting. Ajour's Start in decides (les-cabochons/ajour#863). A start with a branch runs in a new T3 Code worktree on that branch, from the source Ajour sends, such as `origin/main`. A start without a branch runs in the project folder. 0.17.0 had the settings "Create a worktree" and "Worktree base"; a value saved for either is ignored.
+
+Ajour checks that a source you picked exists before it calls the plugin. T3 Code still refuses a source that the repository and its remotes don't have before it creates anything, so trying again is safe. The start is then refused with `"<source>" doesn't exist in <folder>, so T3 Code can't start the worktree. Pick another source branch in Ajour.` The refusal names no `setting`, so Ajour shows the message and asks for nothing. A start with a branch and no source comes from an Ajour without #863. It tries `main`, then `master`. When neither exists, it is refused with a message that says to update Ajour.
 
 When the hand-off branch already exists, T3 Code starts nothing and the start is refused with `branchExists: true`. Ajour then offers to link the item's thread, the one whose title names the item's key. An Ajour without #819 shows the reason alone.
 

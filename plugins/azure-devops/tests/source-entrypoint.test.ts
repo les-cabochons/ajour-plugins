@@ -5,6 +5,8 @@ import { deriveAddress } from "./support/azure-ajour.ts";
 import { withoutCommentsAndStrings } from "./support/code-only.ts";
 import {
   createAzureFixture,
+  EFFORT,
+  ORIGINAL_ESTIMATE,
   PROJECT,
   VIEWER,
   type AzureFixture,
@@ -481,6 +483,81 @@ describe.each(scenarios)(
       expect(patch[0]!.headers["content-type"]).toBe(
         "application/json-patch+json",
       );
+    });
+
+    it("reads and writes each estimate in the field its item type uses", async () => {
+      reset();
+      const story = fixture.items.get(40)!;
+      story.fields[EFFORT] = 8;
+      // Assigned like the Task, so the sync query returns the story too.
+      story.fields["System.AssignedTo"] =
+        fixture.items.get(42)!.fields["System.AssignedTo"];
+      const byType = connection({
+        originalEstimateFieldName: "Effort",
+        estimateFieldsByType: JSON.stringify({
+          " task ": { originalEstimateFieldName: "Original Estimate" },
+        }),
+      });
+
+      const result = await moduleExports.syncConnection!(byType, [
+        {
+          localWorkItemId: "local-42",
+          sourceId: sourceId(42),
+          originalEstimateHours: 6,
+          estimateSync: {
+            originalEstimateHours: { baselineValue: 4, remoteValue: 4 },
+          },
+        },
+        {
+          localWorkItemId: "local-40",
+          sourceId: sourceId(40),
+          originalEstimateHours: 10,
+          estimateSync: {
+            originalEstimateHours: { baselineValue: 8, remoteValue: 8 },
+          },
+        },
+      ]);
+
+      expect(
+        Object.fromEntries(
+          result.items.map((item: any) => [
+            `${item.workItemType} ${item.externalId}`,
+            item.originalEstimateHours,
+          ]),
+        ),
+      ).toEqual({ "Task 42": 4, "User Story 40": 8 });
+      expect(fixture.items.get(42)!.fields).toMatchObject({
+        [ORIGINAL_ESTIMATE]: 6,
+      });
+      expect(fixture.items.get(42)!.fields[EFFORT]).toBeUndefined();
+      expect(story.fields).toMatchObject({ [EFFORT]: 10 });
+      expect(story.fields[ORIGINAL_ESTIMATE]).toBeUndefined();
+    });
+
+    it("keeps the estimate fields by type it validated, and refuses a field the organization lacks, naming the type", async () => {
+      reset();
+
+      const result = await moduleExports.validateConnection!(
+        connection({
+          estimateFieldsByType:
+            '{" Task ":{"originalEstimateFieldName":" Effort ","remainingEstimateFieldName":""}}',
+        }),
+        { capabilities: ["connector"] },
+      );
+      expect(result.normalizedConfig.estimateFieldsByType).toBe(
+        '{"Task":{"originalEstimateFieldName":"Effort"}}',
+      );
+
+      await expect(
+        moduleExports.validateConnection!(
+          connection({
+            estimateFieldsByType: JSON.stringify({
+              Bug: { remainingEstimateFieldName: "Remaining Work" },
+            }),
+          }),
+          { capabilities: ["connector"] },
+        ),
+      ).rejects.toThrow(/Bug.*"Remaining Work" was not found/);
     });
 
     it("settles a work item, and reads and writes its description", async () => {

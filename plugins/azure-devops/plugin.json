@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -165,6 +165,18 @@
       "label": "Completed field",
       "type": "text",
       "placeholder": "Completed estimate field name"
+    },
+    {
+      "id": "estimateFieldsByType",
+      "capability": "connector",
+      "label": "By work item type",
+      "type": "typeOverrides",
+      "helpText": "The work item types in this connection's synced items. A type uses the fields above unless you name another field, such as Original Estimate for Task.",
+      "overrides": [
+        "originalEstimateFieldName",
+        "remainingEstimateFieldName",
+        "completedEstimateFieldName"
+      ]
     },
     {
       "id": "autoSync",

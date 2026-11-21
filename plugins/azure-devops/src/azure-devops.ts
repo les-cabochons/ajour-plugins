@@ -12,6 +12,7 @@ import type {
 import { resolveEstimateSyncAction } from "./estimate-sync.ts";
 import { htmlToMarkdown } from "./html-markdown.ts";
 import { describeWorkItem } from "./description.ts";
+import type { TypeOverrides } from "./type-overrides.ts";
 import {
   priorityLevelForValue,
   type PriorityLevelRanges,
@@ -42,6 +43,12 @@ export interface AzureDevOpsConnectionInput {
   originalEstimateFieldName?: string;
   remainingEstimateFieldName?: string;
   completedEstimateFieldName?: string;
+  /**
+   * The estimate fields a work item type uses instead of the three above, by
+   * type name, then by the id of the field it replaces, such as
+   * `{ "Task": { "originalEstimateFieldName": "Original Estimate" } }`.
+   */
+  estimateFieldsByType?: TypeOverrides;
   autoSync?: boolean;
   autoSyncIntervalMinutes?: number;
 }
@@ -107,12 +114,24 @@ interface AzureDevOpsSyncContext {
   allItems: Map<number, AzureWorkItem>;
   stateInfo: Map<number, AzureStateInfo>;
   resolver: ReturnType<typeof createStateCategoryResolver>;
-  fields: {
-    priorityField?: AzureResolvedFieldMetadata;
-    originalEstimateField?: AzureResolvedFieldMetadata;
-    remainingEstimateField?: AzureResolvedFieldMetadata;
-    completedEstimateField?: AzureResolvedFieldMetadata;
-  };
+  fields: AzureMappedFields;
+}
+
+/** The three estimate fields, resolved against the organization's field list. */
+interface AzureEstimateFields {
+  originalEstimateField?: AzureResolvedFieldMetadata;
+  remainingEstimateField?: AzureResolvedFieldMetadata;
+  completedEstimateField?: AzureResolvedFieldMetadata;
+}
+
+/** The connection's priority and estimate fields, and the estimate fields of each type that has its own. */
+interface AzureMappedFields extends AzureEstimateFields {
+  priorityField?: AzureResolvedFieldMetadata;
+  /**
+   * By work item type name, trimmed and lower case. Each entry holds all
+   * three fields: the type's own, or the connection's where it has none.
+   */
+  estimateFieldsByType: ReadonlyMap<string, AzureEstimateFields>;
 }
 
 export interface AzureResolvedFieldMetadata {
@@ -611,28 +630,66 @@ export async function resolveAzureFieldMetadata(
   );
 }
 
+/** Each estimate field, and the id of the connection field that names it. */
+const ESTIMATE_FIELD_IDS = [
+  ["originalEstimateField", "originalEstimateFieldName"],
+  ["remainingEstimateField", "remainingEstimateFieldName"],
+  ["completedEstimateField", "completedEstimateFieldName"],
+] as const;
+
+/** The key a work item type's fields are kept under: `System.WorkItemType` matches trimmed, in any case. */
+function workItemTypeKey(workItemType: string) {
+  return workItemType.trim().toLowerCase();
+}
+
 /**
- * The connection's priority and estimate fields, resolved in that order
- * against one read of the field list.
+ * The connection's priority and estimate fields, then each type's own
+ * estimate fields, resolved against one read of the field list. A field the
+ * organization lacks throws; for a type's field, the message starts with the
+ * type's name.
  */
-async function resolveMappedFields(config: AzureDevOpsConnectionInput) {
+async function resolveMappedFields(
+  config: AzureDevOpsConnectionInput,
+): Promise<AzureMappedFields> {
   const fieldList = azureFieldList(config);
   const resolve = (name: string | undefined) =>
     resolveAzureFieldMetadata(config, name, fieldList);
   const priorityField = await resolve(config.priorityFieldName);
-  const originalEstimateField = await resolve(config.originalEstimateFieldName);
-  const remainingEstimateField = await resolve(
-    config.remainingEstimateFieldName,
-  );
-  const completedEstimateField = await resolve(
-    config.completedEstimateFieldName,
-  );
-  return {
-    priorityField,
-    originalEstimateField,
-    remainingEstimateField,
-    completedEstimateField,
+  const connectionFields: AzureEstimateFields = {
+    originalEstimateField: await resolve(config.originalEstimateFieldName),
+    remainingEstimateField: await resolve(config.remainingEstimateFieldName),
+    completedEstimateField: await resolve(config.completedEstimateFieldName),
   };
+  const estimateFieldsByType = new Map<string, AzureEstimateFields>();
+  for (const [typeName, names] of Object.entries(
+    config.estimateFieldsByType ?? {},
+  )) {
+    const typeFields = { ...connectionFields };
+    for (const [key, fieldId] of ESTIMATE_FIELD_IDS) {
+      if (!names[fieldId]) continue;
+      try {
+        typeFields[key] = await resolve(names[fieldId]);
+      } catch (error) {
+        throw new Error(
+          `${typeName.trim()}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    estimateFieldsByType.set(workItemTypeKey(typeName), typeFields);
+  }
+  return { priorityField, ...connectionFields, estimateFieldsByType };
+}
+
+/** The estimate fields an item of this type uses: its type's own, or the connection's. */
+function estimateFieldsFor(
+  fields: AzureMappedFields,
+  workItemType: string | undefined,
+): AzureEstimateFields {
+  return (
+    (workItemType &&
+      fields.estimateFieldsByType.get(workItemTypeKey(workItemType))) ||
+    fields
+  );
 }
 
 function mergeWorkItemBatchResponses(
@@ -1032,12 +1089,7 @@ async function fetchAzureDevOpsSyncContext(
   sourceIds?: string[],
 ): Promise<AzureDevOpsSyncContext> {
   const resolver = createStateCategoryResolver(config, requestAzureDevOps);
-  const {
-    priorityField,
-    originalEstimateField,
-    remainingEstimateField,
-    completedEstimateField,
-  } = await resolveMappedFields(config);
+  const fields = await resolveMappedFields(config);
   const baseIds = sourceIds
     ? sourceIds.map((sourceId) => {
         const id = parseAzureWorkItemId(sourceId, config.organizationUrl);
@@ -1055,20 +1107,21 @@ async function fetchAzureDevOpsSyncContext(
       allItems: new Map(),
       stateInfo: new Map(),
       resolver,
-      fields: {
-        priorityField,
-        originalEstimateField,
-        remainingEstimateField,
-        completedEstimateField,
-      },
+      fields,
     };
   }
 
+  // Every estimate field any type reads, so one batch request brings them all.
   const additionalFields = [
-    priorityField?.resolvedReferenceName,
-    originalEstimateField?.resolvedReferenceName,
-    remainingEstimateField?.resolvedReferenceName,
-    completedEstimateField?.resolvedReferenceName,
+    ...new Set(
+      [fields, ...fields.estimateFieldsByType.values()]
+        .flatMap((estimateFields) =>
+          ESTIMATE_FIELD_IDS.map(
+            ([key]) => estimateFields[key]?.resolvedReferenceName,
+          ),
+        )
+        .concat(fields.priorityField?.resolvedReferenceName),
+    ),
   ].filter((value): value is string => Boolean(value));
   const baseItems = await fetchWorkItems(config, baseIds, additionalFields);
   const baseCandidateIds = new Set(baseItems.map((item) => item.id));
@@ -1102,6 +1155,10 @@ async function fetchAzureDevOpsSyncContext(
   const stateInfo = await describeWorkItemStates(resolver, allItems.values());
   const candidatesBySourceId = new Map<string, ConnectorImportCandidateInput>();
   for (const workItem of allItems.values()) {
+    const estimateFields = estimateFieldsFor(
+      fields,
+      normalizeDisplayValue(workItem.fields?.["System.WorkItemType"]),
+    );
     const candidate = mapWorkItemToCandidate(
       config,
       workItem,
@@ -1110,13 +1167,13 @@ async function fetchAzureDevOpsSyncContext(
       stateInfo,
       localSourceIds,
       {
-        priorityFieldReferenceName: priorityField?.resolvedReferenceName,
+        priorityFieldReferenceName: fields.priorityField?.resolvedReferenceName,
         originalEstimateFieldReferenceName:
-          originalEstimateField?.resolvedReferenceName,
+          estimateFields.originalEstimateField?.resolvedReferenceName,
         remainingEstimateFieldReferenceName:
-          remainingEstimateField?.resolvedReferenceName,
+          estimateFields.remainingEstimateField?.resolvedReferenceName,
         completedEstimateFieldReferenceName:
-          completedEstimateField?.resolvedReferenceName,
+          estimateFields.completedEstimateField?.resolvedReferenceName,
       },
     );
     if (!candidate) {
@@ -1154,12 +1211,7 @@ async function fetchAzureDevOpsSyncContext(
     allItems,
     stateInfo,
     resolver,
-    fields: {
-      priorityField,
-      originalEstimateField,
-      remainingEstimateField,
-      completedEstimateField,
-    },
+    fields,
   };
 }
 
@@ -1231,14 +1283,21 @@ async function buildAzureWorkItemUpdates(
   workItems: ConnectorSyncWorkItem[],
 ): Promise<ConnectorSyncWorkItemUpdate[]> {
   const updates: ConnectorSyncWorkItemUpdate[] = [];
-  const mappedFieldNames = {
-    originalEstimateHours:
-      syncContext.fields.originalEstimateField?.resolvedReferenceName,
-    remainingEstimateHours:
-      syncContext.fields.remainingEstimateField?.resolvedReferenceName,
-    completedEstimateHours:
-      syncContext.fields.completedEstimateField?.resolvedReferenceName,
-  } as const;
+  /** The reference name of each estimate field, as the item's type maps it. */
+  const mappedFieldNamesFor = (remoteItem: ConnectorImportCandidateInput) => {
+    const fields = estimateFieldsFor(
+      syncContext.fields,
+      remoteItem.workItemType,
+    );
+    return {
+      originalEstimateHours:
+        fields.originalEstimateField?.resolvedReferenceName,
+      remainingEstimateHours:
+        fields.remainingEstimateField?.resolvedReferenceName,
+      completedEstimateHours:
+        fields.completedEstimateField?.resolvedReferenceName,
+    } as const;
+  };
 
   const fieldSupportRequests = new Map<
     string,
@@ -1249,6 +1308,7 @@ async function buildAzureWorkItemUpdates(
     if (!remoteItem) {
       continue;
     }
+    const mappedFieldNames = mappedFieldNamesFor(remoteItem);
 
     for (const fieldKey of Object.keys(mappedFieldNames) as Array<
       keyof typeof mappedFieldNames
@@ -1305,6 +1365,7 @@ async function buildAzureWorkItemUpdates(
     if (!remoteItem) {
       continue;
     }
+    const mappedFieldNames = mappedFieldNamesFor(remoteItem);
 
     const fieldUpdates: ConnectorSyncWorkItemUpdate["fields"] = {};
 

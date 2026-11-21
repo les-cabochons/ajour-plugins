@@ -80,6 +80,36 @@ describe("connector manifest packaging contract", () => {
     expect(capabilityOf("pullRequestAutoSync")).toBe("codeHost");
   });
 
+  it("lets each work item type replace the three estimate fields, right after them, and rejects overrides of a field it lacks", () => {
+    const ids = validManifest.connectionFields.map(
+      (field: { id: string }) => field.id,
+    );
+    const byType = validManifest.connectionFields.find(
+      (field: { id: string }) => field.id === "estimateFieldsByType",
+    );
+    expect(byType).toMatchObject({
+      label: "By work item type",
+      type: "typeOverrides",
+      capability: "connector",
+      overrides: [
+        "originalEstimateFieldName",
+        "remainingEstimateFieldName",
+        "completedEstimateFieldName",
+      ],
+    });
+    expect(ids.indexOf("estimateFieldsByType")).toBe(
+      ids.indexOf("completedEstimateFieldName") + 1,
+    );
+
+    const manifest = cloneManifest();
+    manifest.connectionFields.find(
+      (field: { id: string }) => field.id === "estimateFieldsByType",
+    ).overrides = ["personalAccessToken"];
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(
+      /overrides/,
+    );
+  });
+
   it("rejects a field tagged with a capability the plugin does not declare", () => {
     const manifest = cloneManifest();
     delete manifest.capabilities.codeHost;

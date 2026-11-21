@@ -376,6 +376,8 @@ export interface AzureRequestInit {
   body?: string;
   /** The body's type: `application/json` unless set, such as `application/json-patch+json`. */
   contentType?: string;
+  /** The answer's type: `application/json` unless set, such as `image/svg+xml`. */
+  accept?: string;
   signal?: AbortSignal;
 }
 
@@ -434,7 +436,7 @@ export async function sendAzureDevOps(
       path,
       ...(init.query !== undefined ? { query: init.query } : {}),
       headers: {
-        Accept: "application/json",
+        Accept: init.accept ?? "application/json",
         ...(hasBody
           ? { "Content-Type": init.contentType ?? "application/json" }
           : {}),

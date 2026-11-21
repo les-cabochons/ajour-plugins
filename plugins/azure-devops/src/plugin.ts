@@ -2,6 +2,8 @@ import type {} from "@ajour/plugin-sdk/globals";
 import type { PluginConnection, PluginModule } from "@ajour/plugin-sdk";
 import type {
   ConnectorFieldValues,
+  ConnectorItemTypesRequest,
+  ConnectorItemTypesResult,
   ConnectorPriorityLevel,
 } from "./contract.ts";
 import { parseConnectorFieldValues } from "./contract.ts";
@@ -12,6 +14,7 @@ import {
   validateAzureDevOpsConnection,
 } from "./azure-devops.ts";
 import { listAzureSettleStates, writeAzureSettle } from "./settle.ts";
+import { describeAzureItemTypes } from "./item-types.ts";
 import { readAzureDescription } from "./description-source.ts";
 import { writeAzureDescription } from "./description-write.ts";
 import {
@@ -319,6 +322,14 @@ export const listSettleStates: NonNullable<
   PluginModule["listSettleStates"]
 > = async (connection, request) =>
   await listAzureSettleStates(buildAzureConfig(connection), request.sourceId);
+
+/** The connection form's item types: icons, fields and proposals. A read, so no access choice gates it. */
+export async function describeItemTypes(
+  connection: PluginConnection,
+  request: ConnectorItemTypesRequest,
+): Promise<ConnectorItemTypesResult> {
+  return await describeAzureItemTypes(buildAzureConfig(connection), request);
+}
 
 export const writeSettle: NonNullable<PluginModule["writeSettle"]> = async (
   connection,

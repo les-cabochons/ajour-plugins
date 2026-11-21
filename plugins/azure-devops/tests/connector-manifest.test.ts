@@ -128,6 +128,13 @@ describe("connector manifest packaging contract", () => {
     expect(() => assertConnectorPluginManifest(manifest)).toThrow(/settle/);
   });
 
+  it("declares that it describes item types, and rejects a non-boolean one", () => {
+    expect(validManifest.capabilities.connector.itemTypes).toBe(true);
+    const manifest = cloneManifest();
+    manifest.capabilities.connector.itemTypes = "yes";
+    expect(() => assertConnectorPluginManifest(manifest)).toThrow(/itemTypes/);
+  });
+
   it("declares the assign capability and rejects a non-boolean one", () => {
     expect(validManifest.capabilities.connector.assign).toBe(true);
 
@@ -208,6 +215,8 @@ describe("network declaration", () => {
       "PATCH /_apis/wit/workitems/* [editWorkItems]",
       "GET /*/_apis/wit/workitemtypes/*/states [readBacklog]",
       "GET /*/_apis/wit/workitemtypes/*/fields [readBacklog]",
+      "GET /*/_apis/wit/workitemtypes [readBacklog]",
+      "GET /_apis/wit/workitemicons/* [readBacklog]",
       "GET /*/_apis/wit/workItems/*/comments [readBacklog]",
       "POST /*/_apis/wit/workItems/*/comments [editWorkItems]",
       "GET /*/_apis/wit/workItems/*/comments/* [readBacklog]",

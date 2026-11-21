@@ -8,6 +8,7 @@ import {
   EFFORT,
   ORIGINAL_ESTIMATE,
   PROJECT,
+  TASK_ICON_SVG,
   VIEWER,
   type AzureFixture,
   type FixtureAnswer,
@@ -345,6 +346,7 @@ describe("the source entrypoint", () => {
   it("exports one function per operation the worker may call", () => {
     expect(Object.keys(moduleExports).sort()).toEqual([
       "deleteItemComment",
+      "describeItemTypes",
       "editItemComment",
       "listItemComments",
       "listSettleStates",
@@ -558,6 +560,78 @@ describe.each(scenarios)(
           { capabilities: ["connector"] },
         ),
       ).rejects.toThrow(/Bug.*"Remaining Work" was not found/);
+    });
+
+    it("describes item types: icon, fields and proposals, then the project's other types, read once", async () => {
+      reset();
+      const request = {
+        types: [
+          { name: "task", sourceId: sourceId(42) },
+          { name: "User Story", sourceId: sourceId(40) },
+          { name: "Defect" },
+        ],
+      };
+
+      const result = await moduleExports.describeItemTypes!(
+        connection({ originalEstimateFieldName: "Effort" }),
+        request,
+      );
+
+      const byName = Object.fromEntries(
+        result.types.map((type: any) => [type.name, type]),
+      );
+      // The asked types it knows, then the others, without hidden, test or disabled types.
+      expect(Object.keys(byName)).toEqual(["Task", "User Story", "Bug", "Epic"]);
+      expect(byName.Task.iconSvg).toBe(TASK_ICON_SVG);
+      expect(byName.Task.fields).toContainEqual({
+        name: "Original Estimate",
+        id: ORIGINAL_ESTIMATE,
+      });
+      expect(byName.Task.suggestions).toEqual({
+        originalEstimateFieldName: ["Original Estimate"],
+        remainingEstimateFieldName: ["Remaining Work"],
+        completedEstimateFieldName: ["Completed Work"],
+      });
+      expect(byName["User Story"].suggestions).toEqual({
+        originalEstimateFieldName: ["Story Points"],
+      });
+      expect(byName.Epic.suggestions).toEqual({
+        originalEstimateFieldName: ["Effort", "Size"],
+      });
+      // A type without any estimate field gets no proposal.
+      expect(byName.Bug.suggestions).toBeUndefined();
+      // A sign-in page and a failed request leave the type without an icon.
+      expect(byName.Bug.iconSvg).toBeUndefined();
+      expect(byName.Epic.iconSvg).toBeUndefined();
+
+      const lookups = urls();
+      expect(lookups.filter((url) => url.includes("/workitemtypes"))).toEqual([
+        `GET ${current.organizationUrl}/${PROJECT}/_apis/wit/workitemtypes?api-version=7.1`,
+      ]);
+      expect(
+        lookups.filter((url) => url.includes("/workitemicons/")).sort(),
+      ).toEqual(
+        [
+          "icon_book?color=009CCC",
+          "icon_clipboard?color=F2CB1D",
+          "icon_crown?color=FF7B00",
+          "icon_insect?color=CC293D",
+        ].map(
+          (icon) =>
+            `GET ${current.organizationUrl}/_apis/wit/workitemicons/${icon}&v=2`,
+        ),
+      );
+      expect(
+        received.find((seen) => seen.url.includes("icon_clipboard"))!.headers
+          .accept,
+      ).toBe("image/svg+xml");
+
+      // The answer is kept for the plugin's lifetime.
+      received = [];
+      await moduleExports.describeItemTypes!(connection(), request);
+      expect(urls().filter((url) => !url.includes("workitemsbatch"))).toEqual(
+        [],
+      );
     });
 
     it("settles a work item, and reads and writes its description", async () => {

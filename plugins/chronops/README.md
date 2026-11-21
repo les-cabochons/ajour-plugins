@@ -72,6 +72,38 @@ Time entries starts off. While it is on, each round Ajour runs calls
 user's time zone. The plugin applies the changes in order, then lists the
 window.
 
+### Check rounds and the change marker
+
+Ajour asks every 5 seconds while its window shows (les-cabochons/ajour#843).
+Listing the window each time would keep MineHunter's Forwarder awake, so the
+plugin uses MineHunter's change marker (ChronOps ADR-0050): an empty blob per
+person in Azure Storage that every Time Entry write overwrites, whichever
+tool made it, so its ETag changes.
+
+- Every answer carries a cursor, which Ajour keeps in memory and sends back.
+  It holds the read-only link to the person's marker from
+  `GET /integration/change-marker`, the marker's ETag read just before the
+  last listing, the window and when the plugin listed.
+- A check round, a cursor and no changes, sends `HEAD` to the link with
+  `If-None-Match` through `ajour.publicFetch`. A 304 answers
+  `{ unchanged: true, cursor }`: no Forwarder call, no line in Ajour's log.
+  Anything else lists as usual.
+- A round with changes reads the marker after sending them and before
+  listing, so the plugin's own writes need no second listing, and a write
+  during the listing shows at the next check.
+- The plugin lists anyway once an hour, when the window moves, and when the
+  link has under an hour left, which also fetches a new one.
+- Without a marker, when MineHunter answers the route with 503, storage can't
+  be read, or the link isn't on `stchronopsmarkers.blob.core.windows.net`,
+  the plugin lists at most once a minute, as Ajour's poll did, and asks for a
+  link again after 15 minutes. A marker problem never fails a round.
+- An Ajour that sends no cursor gets a full answer every round, and the
+  plugin never asks for the marker.
+
+The marker's host is in `network.publicHosts` and the route in
+`network.endpoints`, so updating to 0.5.0 asks each user to allow the plugin
+again.
+
 ChronOps keeps an entry as a start and an end. Ajour keeps a day and whole
 minutes, and no start. So:
 
@@ -209,6 +241,9 @@ change, under `/integration`:
   10 minutes of ChronOps' clock. It answers 409 when the entry no longer
   runs and 404 when it is gone.
 - `DELETE /entries/{id}` deletes for good and frees the client reference.
+- `GET /change-marker` answers `{ url, expiresAt }`: a read-only link to the
+  person's marker, valid 24 hours, or 503 while MineHunter has the markers
+  off. Every write above moves the marker's ETag.
 - Every entry carries `clientRef`, null when none, and `updatedAt`. A
   refusal is 400 with `{ "error": "..." }`. `workdayProject` is the code the
   snapshot gives the project.

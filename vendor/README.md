@@ -24,6 +24,13 @@ the time sync capability (`timeSync` and `syncTimeEntries`, from #691 to
 #815). The SDK's version is still 0.2.0, so the filename stays the same and
 the lockfile integrity changes. `agent-handoff` and `chronops` use it.
 
+`ajour-plugin-sdk-0.3.0.tgz` is `@ajour/plugin-sdk` 0.3.0, packed the same
+way from the head of les-cabochons/ajour#845 (`1d945e19`, the time sync
+check rounds of #843): an optional `cursor` on `syncTimeEntries` requests
+and answers, and the `{ unchanged: true, cursor }` answer to a check round
+(`TimeSyncAnswer`). `chronops` uses it. Repack it from main once #845
+merges, if the contract changed.
+
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.
 

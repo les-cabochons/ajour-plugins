@@ -144,7 +144,7 @@ test("every tool declares the features it supports, explicitly", () => {
 test("only T3 Code makes its own worktree", () => {
   // Ajour #859. T3 Code can't start a thread in a folder outside its
   // registered projects, so it can't run in a worktree Ajour makes: it makes
-  // one itself, from the branch Ajour sends. Every other tool starts in the
+  // one itself, on the branch Ajour sends. Every other tool starts in the
   // folder it is given.
   assert.deepEqual(
     manifest.capabilities.handoff.tools

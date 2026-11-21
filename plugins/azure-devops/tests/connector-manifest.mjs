@@ -7,6 +7,7 @@ const connectorFieldTypes = new Set([
   "select",
   "number",
   "checkbox",
+  "typeOverrides",
 ]);
 
 function assertRecord(value, label) {
@@ -95,6 +96,13 @@ function assertConnectionField(field, index, capabilities) {
       assertString(option.value, optionLabel + ".value", { min: 1, max: 120 });
       assertString(option.label, optionLabel + ".label", { min: 1, max: 120 });
     });
+  }
+
+  if (field.type === "typeOverrides" && (field.secret || field.required)) {
+    throw new Error(label + " can't be secret or required.");
+  }
+  if ((field.type === "typeOverrides") !== (field.overrides !== undefined)) {
+    throw new Error(label + ".overrides belongs to a typeOverrides field, which needs it.");
   }
 
   assertOptionalFiniteNumber(field.min, label + ".min");
@@ -365,6 +373,24 @@ export function assertConnectorPluginManifest(manifest) {
   manifest.connectionFields.forEach((field, index) =>
     assertConnectionField(field, index, manifest.capabilities),
   );
+  // A typeOverrides field names 1 to 4 text fields of the form that aren't secret.
+  manifest.connectionFields.forEach((field, index) => {
+    if (field.type !== "typeOverrides") return;
+    const valid =
+      Array.isArray(field.overrides) &&
+      field.overrides.length >= 1 &&
+      field.overrides.length <= 4 &&
+      field.overrides.every((id) =>
+        manifest.connectionFields.some(
+          (target) => target.id === id && target.type === "text" && !target.secret,
+        ),
+      );
+    if (!valid) {
+      throw new Error(
+        "connectionFields[" + index + "].overrides must name 1 to 4 text fields that aren't secret.",
+      );
+    }
+  });
   const choiceIds = assertConnectionAccess(manifest);
   assertNetwork(manifest, choiceIds);
   assertRuntime(manifest);

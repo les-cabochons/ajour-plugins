@@ -12,6 +12,7 @@ export const PROJECT = "Mercury";
 export const PROJECT_ID = "99999999-9999-9999-9999-999999999999";
 
 export const ORIGINAL_ESTIMATE = "Microsoft.VSTS.Scheduling.OriginalEstimate";
+export const EFFORT = "Microsoft.VSTS.Scheduling.Effort";
 
 export interface FixtureWorkItem {
   id: number;
@@ -59,6 +60,7 @@ const AGILE_STATES = [
 
 const FIELDS = [
   { name: "Original Estimate", referenceName: ORIGINAL_ESTIMATE, type: "double", isQueryable: true },
+  { name: "Effort", referenceName: EFFORT, type: "double", isQueryable: true },
   { name: "Priority", referenceName: "Microsoft.VSTS.Common.Priority", type: "integer", isQueryable: true },
 ];
 

@@ -5,6 +5,7 @@ import type {
   ConnectorPriorityLevel,
 } from "./contract.ts";
 import { parseConnectorFieldValues } from "./contract.ts";
+import { formatTypeOverrides, parseTypeOverrides } from "./type-overrides.ts";
 import {
   syncAzureDevOpsConnection,
   type AzureDevOpsConnectionInput,
@@ -130,6 +131,8 @@ function buildAzureConfig(
       parsed.completedEstimateFieldName.trim()
         ? parsed.completedEstimateFieldName.trim()
         : undefined,
+    // A connection saved before this field existed has no value: no overrides.
+    estimateFieldsByType: parseTypeOverrides(parsed.estimateFieldsByType),
   };
 }
 
@@ -250,6 +253,10 @@ async function validateWorkItems(connection: PluginConnection) {
     normalizedConfig.completedEstimateFieldName =
       azureConfig.completedEstimateFieldName;
   }
+  // Ajour keeps only the values this returns.
+  normalizedConfig.estimateFieldsByType = formatTypeOverrides(
+    azureConfig.estimateFieldsByType ?? {},
+  );
 
   const connectionSummary: Record<string, string | boolean> = {
     organizationUrl: azureConfig.organizationUrl.replace(/\/+$/, ""),

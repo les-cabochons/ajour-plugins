@@ -49,9 +49,11 @@ The tests use `createFakeAjour` from `@ajour/plugin-sdk`, which refuses what
 Ajour's broker would: an endpoint, derived host, method or header that
 `plugin.json` does not declare, and an endpoint whose access choice the
 connection left off. The SDK is not on npm yet, so the packed package is
-vendored in the repository's `vendor/ajour-plugin-sdk-0.1.0.tgz`, shared by
+vendored in the repository's `vendor/ajour-plugin-sdk-0.3.0.tgz`, shared by
 every plugin, and installed as a `file:../../vendor/...` dev dependency, for
-types and tests only. See `vendor/README.md` for the Ajour commit it was built
+types and tests only. Code the plugin runs, such as the reader of the
+estimate fields by type, is copied into `src/` instead: `src/type-overrides.ts`
+copies the SDK's `parseTypeOverrides`, and a test checks the copy against it. See `vendor/README.md` for the Ajour commit it was built
 from and how to refresh it. Once the SDK is published, swap the `file:`
 dependency for a version range and delete the root `vendor/`.
 
@@ -367,6 +369,23 @@ range. Leave a level empty to give it no values. Ajour cannot write that level.
 
 Saving the connection rejects a level that is not a whole number or a range, a
 range whose start is above its end, and two levels whose ranges overlap.
+
+## Estimate fields by work item type
+
+The connection names one Original estimate, Remaining and Completed field.
+Some processes keep estimates in different fields by type: on Scrum, Product
+Backlog Items and Bugs use Effort, and Tasks use Original Estimate. Under By
+work item type, Ajour lists the types of the connection's synced items, and
+each can name its own field for any of the three. An empty one uses the
+connection's field.
+
+The sync reads each estimate from the field the item's type uses, and an
+estimate edited in Ajour is written back to that field. Type names match
+`System.WorkItemType` trimmed, in any case. Saving the connection resolves
+every field a type names against the organization's field list, as it does
+the connection's own, and refuses one it can't find with a message that
+starts with the type's name. A connection saved before 2.1.0 has no fields by
+type and syncs as before.
 
 ## License
 

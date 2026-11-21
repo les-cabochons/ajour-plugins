@@ -380,7 +380,8 @@ each can name its own field for any of the three. An empty one uses the
 connection's field.
 
 The sync reads each estimate from the field the item's type uses, and an
-estimate edited in Ajour is written back to that field. Type names match
+estimate edited in Ajour is written back to that field. One cleared in Ajour
+clears the field, since 2.1.1. Type names match
 `System.WorkItemType` trimmed, in any case. Saving the connection resolves
 every field a type names against the organization's field list, as it does
 the connection's own, and refuses one it can't find with a message that

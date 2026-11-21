@@ -141,6 +141,19 @@ test("every tool declares the features it supports, explicitly", () => {
       assert.equal(typeof tool[key], "boolean", `${tool.id}: ${key}`);
 });
 
+test("only T3 Code makes its own worktree", () => {
+  // Ajour #859. T3 Code can't start a thread in a folder outside its
+  // registered projects, so it can't run in a worktree Ajour makes: it makes
+  // one itself, from the branch Ajour sends. Every other tool starts in the
+  // folder it is given.
+  assert.deepEqual(
+    manifest.capabilities.handoff.tools
+      .filter((tool) => tool.ownWorktree !== undefined)
+      .map((tool) => [tool.id, tool.ownWorktree]),
+    [["t3", true]],
+  );
+});
+
 test("Claude Code, Claude Code desktop and Codex archive their threads, OpenCode deletes them, the others close none", () => {
   // Ajour #850. T3 Code's t3 command can't close a thread yet
   // (pingdotgg/t3code discussion #27428); Copilot CLI and VS Code have no

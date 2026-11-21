@@ -22,6 +22,10 @@ Each tool declares its features in `plugin.json`, and Ajour uses only those (les
 
 Every tool sets the first three keys, even where the value is Ajour's default (`followsState` is true and `hooks` false when absent). Ajour refuses `hooks: true` unless the plugin declares a command with a `hook-url` argument and the tool follows state. A tool that doesn't follow state gets no hook, so none of Copilot CLI's or VS Code's commands takes one. Only a tool that closes threads sets `closesThreads`: absent, Ajour only forgets its own record of a handoff.
 
+T3 Code also sets `ownWorktree` (les-cabochons/ajour#859): it makes its own git worktree from the branch Ajour sends, see [Settings](#settings). T3 Code can't start a thread in a folder outside its registered projects, so it can't run in a worktree Ajour makes. No other tool sets it. Ajour lists it on the plugin's page as "Makes its own worktree".
+
+0.17.0 needs an Ajour that includes les-cabochons/ajour#859, which adds `ownWorktree`. An older Ajour refuses this manifest.
+
 0.16.0 needs an Ajour that includes les-cabochons/ajour#850, which adds `closesThreads` and `closeThread`. An older Ajour refuses this manifest. It also adds the `claude rm`, `opencode api session.interrupt` and `opencode session delete` commands, so Ajour asks to allow the plugin's new access once.
 
 0.9.0 needs an Ajour that includes les-cabochons/ajour#764, which adds `followsState` and `hooks`. An older Ajour refuses this manifest.

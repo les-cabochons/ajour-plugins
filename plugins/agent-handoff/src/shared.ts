@@ -41,6 +41,17 @@ export type CloseThreadResult = Record<string, never>;
 export type StartWithSource = StartHandoffRequest & {
   source?: string | undefined;
 };
+/**
+ * A start request with `repositoryFolder` (ajour#857): the repository folder
+ * a worktree belongs to, sent when `folder` is a worktree Ajour made for the
+ * start. Absent when `folder` is the repository folder itself, and from an
+ * older Ajour. Matches Ajour's `StartHandoffRequest`, whose
+ * `repositoryFolder` the vendored SDK 0.2.0 doesn't have yet. Replace it
+ * with the SDK's type once the SDK is refreshed.
+ */
+export type StartWithRepositoryFolder = StartHandoffRequest & {
+  repositoryFolder?: { id: string; name: string } | undefined;
+};
 
 export const STATES: readonly State[] = [
   "working",

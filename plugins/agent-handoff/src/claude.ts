@@ -10,7 +10,6 @@ import type {
   ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
-  StartHandoffRequest,
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
@@ -45,6 +44,7 @@ import {
   type Json,
   type Listed,
   type Native,
+  type StartWithRepositoryFolder,
   type State,
   type Tool,
   type Update,
@@ -79,6 +79,12 @@ const TRUST_FIRST =
   "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again.";
 const TRUST_OPENED =
   "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.";
+// The same two, for a start in a worktree: they name the repository folder
+// the user trusts, since the start's own folder is the worktree.
+const trustRepositoryFirst = (name: string) =>
+  `Trust the repository folder "${name}" in Claude Code first: run claude in it once and accept the trust prompt, then hand off again.`;
+const trustRepositoryOpened = (name: string) =>
+  `Claude Code doesn't trust the repository folder "${name}" yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.`;
 // Open attaches to a listed job. Once `claude rm` removes the job, only its
 // transcript is left, which `claude --resume` reopens, and which the Claude
 // app still imports.
@@ -279,7 +285,7 @@ function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
   return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
-/** True when claude refused the repository folder because it doesn't trust it. */
+/** True when claude refused the start's folder because it doesn't trust it. */
 function untrusted(error: unknown): boolean {
   return (
     error instanceof ToolError &&
@@ -292,20 +298,31 @@ function untrusted(error: unknown): boolean {
 /**
  * Claude Code asks whether to trust a folder only in an interactive session,
  * and `--bg` refuses a folder it doesn't trust yet. So the plugin opens
- * claude in a terminal in the folder, where the user accepts the prompt and
- * hands off again. Returns what to tell the user.
+ * claude in a terminal, where the user accepts the prompt and hands off
+ * again. Returns what to tell the user.
+ *
+ * The terminal opens in the start's folder, unless that folder is a worktree
+ * Ajour made (ajour#857). Ajour deletes the worktree of a start that failed
+ * before the terminal gets there, and Claude Code's trust of a repository
+ * folder covers every worktree under it. So the terminal then opens in
+ * `repositoryFolder`, and the message names it.
  */
 async function openTrustPrompt(
-  folder: string,
+  request: StartWithRepositoryFolder,
   deadline: number,
 ): Promise<string> {
+  const repository = request.repositoryFolder;
+  const folder = (repository ?? request.folder).id;
   try {
     await before(claude, deadline, () =>
       launch(claude, "claude-trust", { folder }),
     );
-    return TRUST_OPENED;
+    return repository ? trustRepositoryOpened(repository.name) : TRUST_OPENED;
   } catch (error) {
-    return `${TRUST_FIRST} Ajour couldn't open a terminal: ${reasonOf(claude, error)}`;
+    const first = repository
+      ? trustRepositoryFirst(repository.name)
+      : TRUST_FIRST;
+    return `${first} Ajour couldn't open a terminal: ${reasonOf(claude, error)}`;
   }
 }
 
@@ -336,7 +353,7 @@ function opensInApp(request: { tool: string }): boolean {
 }
 
 export async function startClaude(
-  request: StartHandoffRequest,
+  request: StartWithRepositoryFolder,
 ): Promise<StartHandoffResult> {
   const app = opensInApp(request);
   const deadline = Date.now() + START_DEADLINE_MS;
@@ -360,7 +377,7 @@ export async function startClaude(
     if (isUncertainStart(error))
       throw new ToolError(MAYBE_STARTED, (error as ToolError).code);
     if (untrusted(error))
-      throw new ToolError(await openTrustPrompt(request.folder.id, deadline));
+      throw new ToolError(await openTrustPrompt(request, deadline));
     throw new ToolError(
       reasonOf(claude, error),
       error instanceof ToolError ? error.code : undefined,

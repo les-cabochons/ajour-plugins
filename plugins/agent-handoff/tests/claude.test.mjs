@@ -330,6 +330,7 @@ test("a hook Ajour refuses is a start failure that names Claude Code", async () 
 });
 
 test("an untrusted folder opens claude in a terminal there, for the user to trust it", async () => {
+  // The request names no repository folder, so the start's folder is it.
   const calls = fakeClaude((argv) =>
     argv[1] === "--bg" ? fail(read("untrusted.txt")) : undefined,
   );
@@ -353,6 +354,46 @@ test("an untrusted folder Ajour can't open a terminal in says to run claude ther
   await assert.rejects(startHandoff(startRequest()), {
     message:
       "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again. Ajour couldn't open a terminal: Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.",
+  });
+});
+
+// Ajour starts the session in a worktree it made, and names the repository
+// folder the worktree belongs to (ajour#857).
+const WORKTREE = "folder-worktree";
+const inWorktree = {
+  folder: { id: WORKTREE, name: "aj-39" },
+  repositoryFolder: { id: FOLDER, name: "ajour" },
+};
+
+test("an untrusted worktree opens claude in a terminal in its repository folder, which the message names", async () => {
+  // Ajour deletes the worktree of a failed start, and trusting the
+  // repository folder covers its worktrees.
+  const calls = fakeClaude((argv) =>
+    argv[1] === "--bg" ? fail(read("untrusted.txt")) : undefined,
+  );
+  await assert.rejects(startHandoff(startRequest({}, inWorktree)), {
+    message:
+      'Claude Code doesn\'t trust the repository folder "ajour" yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.',
+  });
+  // The session still starts in the worktree.
+  assert.equal(calls[0].cwd, WORKTREE);
+  assert.deepEqual(calls[0].argv.slice(-2), ["--add-dir", WORKTREE]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], {
+    argv: ["claude"],
+    mode: "terminal",
+    cwd: FOLDER,
+    stdin: undefined,
+  });
+});
+
+test("an untrusted worktree whose repository folder Ajour can't open a terminal in says to run claude in that folder", async () => {
+  // Windows Terminal takes no & in the folder path.
+  folders[FOLDER] = "C:\\Users\\me\\R&D\\ajour";
+  fakeClaude(() => fail(read("untrusted.txt")));
+  await assert.rejects(startHandoff(startRequest({}, inWorktree)), {
+    message:
+      'Trust the repository folder "ajour" in Claude Code first: run claude in it once and accept the trust prompt, then hand off again. Ajour couldn\'t open a terminal: Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.',
   });
 });
 

@@ -106,8 +106,22 @@ const WORK_ITEM_TYPES = [
     isDisabled: false,
     fields: [TITLE, typeField("Size", "Microsoft.VSTS.Scheduling.Size"), typeField("Effort", EFFORT)],
   },
+  // Listed without its fields, as an answer that leaves them out would be.
+  { name: "Issue", color: "B4009E", icon: { id: "icon_list" }, isDisabled: false },
   { name: "Test Case", color: "004B50", icon: { id: "icon_test_case" }, isDisabled: false, fields: [TITLE] },
   { name: "Old Request", color: "773B93", icon: { id: "icon_list" }, isDisabled: true, fields: [TITLE] },
+];
+
+/** A second project on another process, whose Task keeps only remaining work. */
+export const OTHER_PROJECT = "Venus";
+const OTHER_PROJECT_TYPES = [
+  {
+    name: "Task",
+    color: "F2CB1D",
+    icon: { id: "icon_clipboard" },
+    isDisabled: false,
+    fields: [TITLE, typeField("Remaining Work", "Microsoft.VSTS.Scheduling.RemainingWork")],
+  },
 ];
 
 const viewer = { id: VIEWER, displayName: "Ada Lovelace", uniqueName: "ada@contoso.com" };
@@ -302,6 +316,9 @@ export function createAzureFixture(organizationUrl: string) {
 
     if (method === "GET" && path === `/${PROJECT}/_apis/wit/workitemtypes`) {
       return json({ count: WORK_ITEM_TYPES.length, value: WORK_ITEM_TYPES });
+    }
+    if (method === "GET" && path === `/${OTHER_PROJECT}/_apis/wit/workitemtypes`) {
+      return json({ count: OTHER_PROJECT_TYPES.length, value: OTHER_PROJECT_TYPES });
     }
     const icon = /^\/_apis\/wit\/workitemicons\/([^/]+)$/.exec(path);
     if (icon && method === "GET") {

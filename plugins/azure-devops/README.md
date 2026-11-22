@@ -393,14 +393,18 @@ Since 2.2.0, the form also asks the plugin about the types when it opens on a
 saved connection (`describeItemTypes`, behind
 `capabilities.connector.itemTypes`). The plugin
 finds the projects of the sample items Ajour sends, in one batch request, and
-reads each project's types once with `GET {project}/_apis/wit/workitemtypes`.
-It keeps the answer for its lifetime. For each type it answers:
+reads each project's types with `GET {project}/_apis/wit/workitemtypes`. A
+type comes from the project of its own sample item, since projects on other
+processes can give the same type other fields. Ajour runs each call in a
+worker of its own, so the plugin keeps nothing between calls. For each type
+it answers:
 
 - its icon, from `GET /_apis/wit/workitemicons/{icon}?color={color}&v=2` on
   the organization address, one request per icon and colour. The answer must
   be one SVG holding one path, at most 20,000 characters, or the type has no
   icon. A failed icon request never fails the lookup.
-- its fields, by display name and reference name.
+- its fields, by display name and reference name, or none when Azure DevOps
+  leaves the list out, so Ajour doesn't claim the type lacks a field.
 - the fields to propose, among those the type has: Original Estimate, Effort,
   Story Points, then Size for the original estimate, Remaining Work for
   remaining, and Completed Work for completed.

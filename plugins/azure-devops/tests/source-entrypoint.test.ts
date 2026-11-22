@@ -7,6 +7,7 @@ import {
   createAzureFixture,
   EFFORT,
   ORIGINAL_ESTIMATE,
+  OTHER_PROJECT,
   PROJECT,
   TASK_ICON_SVG,
   VIEWER,
@@ -562,7 +563,7 @@ describe.each(scenarios)(
       ).rejects.toThrow(/Bug.*"Remaining Work" was not found/);
     });
 
-    it("describes item types: icon, fields and proposals, then the project's other types, read once", async () => {
+    it("describes item types: icon, fields and proposals, then the project's other types", async () => {
       reset();
       const request = {
         types: [
@@ -581,7 +582,13 @@ describe.each(scenarios)(
         result.types.map((type: any) => [type.name, type]),
       );
       // The asked types it knows, then the others, without hidden, test or disabled types.
-      expect(Object.keys(byName)).toEqual(["Task", "User Story", "Bug", "Epic"]);
+      expect(Object.keys(byName)).toEqual([
+        "Task",
+        "User Story",
+        "Bug",
+        "Epic",
+        "Issue",
+      ]);
       expect(byName.Task.iconSvg).toBe(TASK_ICON_SVG);
       expect(byName.Task.fields).toContainEqual({
         name: "Original Estimate",
@@ -600,6 +607,8 @@ describe.each(scenarios)(
       });
       // A type without any estimate field gets no proposal.
       expect(byName.Bug.suggestions).toBeUndefined();
+      // Without a field list, Ajour can't tell what the type lacks: no fields.
+      expect(byName.Issue).not.toHaveProperty("fields");
       // A sign-in page and a failed request leave the type without an icon.
       expect(byName.Bug.iconSvg).toBeUndefined();
       expect(byName.Epic.iconSvg).toBeUndefined();
@@ -616,6 +625,7 @@ describe.each(scenarios)(
           "icon_clipboard?color=F2CB1D",
           "icon_crown?color=FF7B00",
           "icon_insect?color=CC293D",
+          "icon_list?color=B4009E",
         ].map(
           (icon) =>
             `GET ${current.organizationUrl}/_apis/wit/workitemicons/${icon}&v=2`,
@@ -625,13 +635,37 @@ describe.each(scenarios)(
         received.find((seen) => seen.url.includes("icon_clipboard"))!.headers
           .accept,
       ).toBe("image/svg+xml");
+    });
 
-      // The answer is kept for the plugin's lifetime.
-      received = [];
-      await moduleExports.describeItemTypes!(connection(), request);
-      expect(urls().filter((url) => !url.includes("workitemsbatch"))).toEqual(
-        [],
-      );
+    it("answers each asked type from the project of its own sample item", async () => {
+      reset();
+      fixture.items.set(50, {
+        id: 50,
+        rev: 1,
+        fields: {
+          "System.Title": "Deploy",
+          "System.State": "Active",
+          "System.TeamProject": OTHER_PROJECT,
+          "System.WorkItemType": "Task",
+        },
+      });
+
+      // The story's project comes first, and has a Task of its own.
+      const result = await moduleExports.describeItemTypes!(connection(), {
+        types: [
+          { name: "User Story", sourceId: sourceId(40) },
+          { name: "Task", sourceId: sourceId(50) },
+        ],
+      });
+
+      const task = result.types.find((type: any) => type.name === "Task");
+      expect(task.fields.map((field: any) => field.name)).toEqual([
+        "Title",
+        "Remaining Work",
+      ]);
+      expect(task.suggestions).toEqual({
+        remainingEstimateFieldName: ["Remaining Work"],
+      });
     });
 
     it("settles a work item, and reads and writes its description", async () => {

@@ -33,7 +33,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/agent-handoff",
       "files": [
         {
@@ -97,7 +97,7 @@
       "id": "azure_devops",
       "name": "Azure DevOps",
       "description": "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
-      "version": "2.2.0",
+      "version": "2.2.1",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector",
@@ -123,7 +123,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -133,12 +133,12 @@
         },
         {
           "path": "package.json",
-          "sha256": "138246d2dfa3d28950a189e75dffcf3ce62ea6d723d892609b06cfbf64beb9f2",
+          "sha256": "d0e2b4eb43fb4f9ee47f3f43459989cbf4e4dd38eb953497bde4ac4cca7bab95",
           "size": 1248
         },
         {
           "path": "plugin.json",
-          "sha256": "14bda57959f49d087c269960980f17953695562f4ae5cfda2e755e446f44703d",
+          "sha256": "856d2b25b61fcce7cc2ffb3626486465fda49310c149588ed6e1bf5047027d7b",
           "size": 22939
         },
         {
@@ -193,8 +193,8 @@
         },
         {
           "path": "src/item-types.ts",
-          "sha256": "b579ba27ef27e9cf0372a553925c9e72ef5033ea682c259f028bd734a7118052",
-          "size": 7959
+          "sha256": "1f948a8ddca9dfbe239797556bd9e75d8c4014c06f622ea2210d300083f1fba5",
+          "size": 8565
         },
         {
           "path": "src/markdown-code.ts",
@@ -274,7 +274,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/chronops",
       "files": [
         {
@@ -363,7 +363,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/github",
       "files": [
         {
@@ -446,7 +446,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/ics",
       "files": [
         {
@@ -534,7 +534,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/jira",
       "files": [
         {
@@ -654,7 +654,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "29034ccc26926a9d35d5950cc893de65179885cb",
+      "commit": "78789c195a277fdd2bbf5ff6bb48b5373b1ed704",
       "path": "plugins/workday-agent",
       "files": [
         {

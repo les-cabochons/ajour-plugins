@@ -16,7 +16,8 @@ import type {
  * What Ajour's connection form shows for each work item type: its icon, its
  * fields, and which field to propose for each estimate field. One read of
  * the project's types gives the names, colours, icon ids and fields; each
- * icon is one more request, on the organization address.
+ * icon is one more request, on the organization address. Ajour runs each
+ * call in a worker of its own, so nothing is kept between calls.
  */
 
 /** Types nobody files by hand: hidden in every process, or for test management. */
@@ -62,13 +63,6 @@ interface AzureWorkItemTypeList {
     fields?: Array<{ name?: string; referenceName?: string }>;
   }>;
 }
-
-/**
- * Each project's types, kept for the plugin's lifetime, by connection,
- * organization and project. A failed read is dropped, so the next one tries
- * again.
- */
-const projectTypes = new Map<string, Promise<ConnectorItemType[]>>();
 
 function typeKey(name: string) {
   return name.trim().toLowerCase();
@@ -141,50 +135,46 @@ async function readProjectTypes(
   };
   return await Promise.all(
     visible.map(async (type) => {
-      const fields = (type.fields ?? [])
-        .flatMap((field) => {
-          const name = field.name?.trim();
-          const id = field.referenceName?.trim();
-          return name ? [{ name, ...(id ? { id } : {}) }] : [];
-        })
-        .slice(0, MAX_FIELDS);
+      // Without a field list, Ajour can't tell what the type lacks: send none.
+      const fields = Array.isArray(type.fields)
+        ? type.fields
+            .flatMap((field) => {
+              const name = field.name?.trim();
+              const id = field.referenceName?.trim();
+              return name ? [{ name, ...(id ? { id } : {}) }] : [];
+            })
+            .slice(0, MAX_FIELDS)
+        : undefined;
       const iconSvg = type.icon?.id
         ? await iconOf(type.icon.id, type.color?.trim() || undefined)
         : undefined;
-      const suggestions = suggestionsFor(fields);
+      const suggestions = fields ? suggestionsFor(fields) : undefined;
       return {
         name: type.name!.trim(),
         ...(iconSvg ? { iconSvg } : {}),
-        fields,
+        ...(fields ? { fields } : {}),
         ...(suggestions ? { suggestions } : {}),
       };
     }),
   );
 }
 
-function loadProjectTypes(config: AzureDevOpsConnectionInput, project: string) {
-  const key = [config.id, config.organizationUrl, typeKey(project)].join("\n");
-  let types = projectTypes.get(key);
-  if (!types) {
-    types = readProjectTypes(config, project);
-    projectTypes.set(key, types);
-    types.catch(() => projectTypes.delete(key));
-  }
-  return types;
-}
-
-/** The projects of the request's sample items, in the order the types come, read in one batch. */
+/**
+ * The project of each asked type's sample item, by type key, in the order
+ * the types come, read in one batch.
+ */
 async function sampleProjects(
   config: AzureDevOpsConnectionInput,
   types: ConnectorItemTypesRequest["types"],
-): Promise<string[]> {
-  const ids = types.flatMap((type) => {
+): Promise<Map<string, string>> {
+  const samples = types.flatMap((type) => {
     const id = type.sourceId
       ? parseAzureWorkItemId(type.sourceId, config.organizationUrl)
       : null;
-    return id === null ? [] : [id];
+    return id === null ? [] : [[typeKey(type.name), id] as const];
   });
-  if (ids.length === 0) return [];
+  const ids = samples.map(([, id]) => id);
+  if (ids.length === 0) return new Map();
   const response = await requestAzureDevOps<{ value?: AzureWorkItem[] }>(
     config,
     "/_apis/wit/workitemsbatch",
@@ -201,43 +191,66 @@ async function sampleProjects(
   const projectOf = new Map(
     (response.value ?? []).map((item) => [item.id, getProjectName(item)]),
   );
-  return [
-    ...new Set(
-      ids.flatMap((id) => {
-        const project = projectOf.get(id);
-        return project ? [project] : [];
-      }),
-    ),
-  ];
+  const projectOfType = new Map<string, string>();
+  for (const [key, id] of samples) {
+    const project = projectOf.get(id);
+    if (project && !projectOfType.has(key)) projectOfType.set(key, project);
+  }
+  return projectOfType;
 }
 
 /**
  * Answers Ajour's `describeItemTypes`: the asked types the sample items'
  * projects have, in the order asked, then those projects' other types for
- * Add a type, leaving out hidden, test and disabled ones. A name two
- * projects share takes the first project's answer. A type no project has
- * is left out.
+ * Add a type, leaving out hidden, test and disabled ones. Projects on
+ * different processes can share a type name with other fields, so an asked
+ * type comes from the project of its own sample item, and a type without
+ * one from the first project that has it. A type no project has is left out.
  */
 export async function describeAzureItemTypes(
   config: AzureDevOpsConnectionInput,
   request: ConnectorItemTypesRequest,
 ): Promise<ConnectorItemTypesResult> {
-  const projects = await sampleProjects(config, request.types);
-  const known = new Map<string, ConnectorItemType>();
-  for (const types of await Promise.all(
-    projects.map((project) => loadProjectTypes(config, project)),
-  )) {
-    for (const type of types) {
-      if (!known.has(typeKey(type.name))) known.set(typeKey(type.name), type);
-    }
-  }
+  const projectOfType = await sampleProjects(config, request.types);
+  const projects = [...new Set(projectOfType.values())];
+  const typesByProject = new Map(
+    await Promise.all(
+      projects.map(
+        async (project) =>
+          [
+            project,
+            new Map(
+              (await readProjectTypes(config, project)).map((type) => [
+                typeKey(type.name),
+                type,
+              ]),
+            ),
+          ] as const,
+      ),
+    ),
+  );
+  const firstWith = (key: string) =>
+    projects
+      .map((project) => typesByProject.get(project)?.get(key))
+      .find((type) => type !== undefined);
+
   const asked = new Map<string, ConnectorItemType>();
   for (const { name } of request.types) {
-    const type = known.get(typeKey(name));
-    if (type) asked.set(typeKey(name), type);
+    const key = typeKey(name);
+    if (asked.has(key)) continue;
+    const ownProject = projectOfType.get(key);
+    const type =
+      (ownProject && typesByProject.get(ownProject)?.get(key)) ||
+      firstWith(key);
+    if (type) asked.set(key, type);
   }
-  const others = [...known.entries()]
-    .filter(([key]) => !asked.has(key))
-    .map(([, type]) => type);
-  return { types: [...asked.values(), ...others].slice(0, MAX_TYPES) };
+  const others = new Map<string, ConnectorItemType>();
+  for (const project of projects) {
+    for (const [key, type] of typesByProject.get(project) ?? []) {
+      if (!asked.has(key) && !others.has(key)) others.set(key, type);
+    }
+  }
+  return {
+    types: [...asked.values(), ...others.values()].slice(0, MAX_TYPES),
+  };
 }

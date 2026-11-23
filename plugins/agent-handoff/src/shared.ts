@@ -152,6 +152,16 @@ export class ToolError extends Error {
   }
 }
 
+/**
+ * A start that failed after the tool may have started its thread, such as
+ * one Ajour cut short or whose answer names no thread. `mayHaveStarted` is
+ * Ajour's refusal hint (ajour#857): Ajour then keeps the worktree it made
+ * for the start, since the tool may be working in it.
+ */
+export class MaybeStartedError extends ToolError {
+  readonly mayHaveStarted = true;
+}
+
 /** The operation's deadline passed before the tool answered. */
 export class LateError extends ToolError {
   constructor(message: string) {

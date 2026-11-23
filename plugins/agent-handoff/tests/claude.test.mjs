@@ -403,9 +403,14 @@ test("a start Ajour runs at the system root says Ajour needs an update", async (
   fakeClaude(() =>
     fail(`Starting background service…\n${read("root-untrusted.txt")}`),
   );
-  await assert.rejects(startHandoff(startRequest()), {
-    message:
+  await assert.rejects(startHandoff(startRequest()), (error) => {
+    assert.equal(
+      error.message,
       "Ajour started Claude Code at the system root instead of the repository folder, so Claude Code refused it. This needs an Ajour update.",
+    );
+    // Claude Code refused it: nothing runs, and the worktree can go.
+    assert.equal(error.mayHaveStarted, undefined);
+    return true;
   });
 });
 
@@ -415,6 +420,8 @@ test("a start Ajour ends before claude answers says the session may exist", asyn
     await assert.rejects(startHandoff(startRequest()), {
       message:
         "Claude Code may have started the session. Check claude agents before handing off again.",
+      // Ajour keeps the worktree the session may run in (ajour#857).
+      mayHaveStarted: true,
     });
   }
 });
@@ -424,6 +431,7 @@ test("a start whose output has no job id says to check claude agents", async () 
   await assert.rejects(startHandoff(startRequest()), {
     message:
       "Claude Code printed no session id. Check claude agents before handing off again.",
+    mayHaveStarted: true,
   });
 });
 
@@ -461,6 +469,7 @@ test("a start that never finds its job names the job to attach to", async (t) =>
     error.message,
     "Claude Code started background session e2cf2a01, but Ajour couldn't read its session ID. Open it with claude attach e2cf2a01 instead of handing off again.",
   );
+  assert.equal(error.mayHaveStarted, true);
   assert.equal(calls.filter((c) => c.argv[1] === "agents").length, 3);
 });
 

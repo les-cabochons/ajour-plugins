@@ -11,6 +11,7 @@ import type {
 import {
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
+  MaybeStartedError,
   ToolError,
   UNREADABLE_OUTPUT,
   before,
@@ -301,7 +302,7 @@ export async function startT3(
     // user and the log see why.
     if (isUncertainStart(error) || isLate(error)) {
       const { code, message } = error as ToolError;
-      throw new ToolError(
+      throw new MaybeStartedError(
         code === UNREADABLE_OUTPUT
           ? `${MAYBE_STARTED} ${message}`
           : MAYBE_STARTED,
@@ -312,8 +313,9 @@ export async function startT3(
   }
   const started = record(output);
   const threadId = text(started?.threadId);
+  // t3 exited 0, so a thread may exist even when its answer names none.
   if (!started || !threadId)
-    throw new Error(
+    throw new MaybeStartedError(
       "T3 Code returned no thread ID. Check T3 Code before handing off again.",
     );
   // The thread exists now. Keep it even if reading its link fails.

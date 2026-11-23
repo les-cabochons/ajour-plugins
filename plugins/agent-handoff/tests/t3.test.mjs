@@ -311,6 +311,7 @@ test("a slow refusal of main leaves master the rest of the start's deadline, and
     .rejects(startHandoff(startRequest({}, noSource)), {
       message:
         "T3 Code may have started the thread. Check T3 Code before handing off again.",
+      mayHaveStarted: true,
     })
     .finally(() => {
       settled = true;
@@ -331,6 +332,7 @@ test("a source T3 Code can't resolve is refused in plain words, with no setting 
     assert.equal(error.message, message);
     assert.equal(error.setting, undefined);
     assert.equal(error.branchExists, undefined);
+    assert.equal(error.mayHaveStarted, undefined);
     return true;
   };
   const calls = fakeT3((argv) => baseMissing(worktreeBase(argv)));
@@ -481,8 +483,19 @@ test("a start Ajour ends before t3 answers says the thread may exist", async () 
     await assert.rejects(startHandoff(startRequest()), {
       message:
         "T3 Code may have started the thread. Check T3 Code before handing off again.",
+      // Ajour keeps the worktree the thread may run in (ajour#857).
+      mayHaveStarted: true,
     });
   }
+});
+
+test("a start whose answer names no thread says the thread may exist", async () => {
+  fakeT3(() => out({}));
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      "T3 Code returned no thread ID. Check T3 Code before handing off again.",
+    mayHaveStarted: true,
+  });
 });
 
 test("a start keeps the new thread when thread show outlasts the start deadline", async (t) => {
@@ -1215,6 +1228,7 @@ test("a start whose answer Ajour can't read says the thread may exist, and what 
   await assert.rejects(startHandoff(startRequest()), {
     message:
       "T3 Code may have started the thread. Check T3 Code before handing off again. T3 Code returned output Ajour can't read. It starts with: [15:17:44.306] WARN (#20): Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name. {",
+    mayHaveStarted: true,
   });
 });
 

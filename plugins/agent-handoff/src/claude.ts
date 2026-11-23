@@ -16,6 +16,7 @@ import {
   CLOSE_DEADLINE_MS,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
+  MaybeStartedError,
   ToolError,
   allLines,
   before,
@@ -375,7 +376,7 @@ export async function startClaude(
   } catch (error) {
     // Ajour stopped claude or dropped its output, so the session may exist.
     if (isUncertainStart(error))
-      throw new ToolError(MAYBE_STARTED, (error as ToolError).code);
+      throw new MaybeStartedError(MAYBE_STARTED, (error as ToolError).code);
     if (untrusted(error))
       throw new ToolError(await openTrustPrompt(request, deadline));
     throw new ToolError(
@@ -388,8 +389,9 @@ export async function startClaude(
     /\bbackgrounded\b[^A-Za-z0-9]+([A-Za-z0-9][A-Za-z0-9_-]{0,63})/i.exec(
       output,
     )?.[1];
+  // claude exited 0, so the job may run even when it printed no id.
   if (!job)
-    throw new ToolError(
+    throw new MaybeStartedError(
       "Claude Code printed no session id. Check claude agents before handing off again.",
     );
   // `--bg` chooses the session id, so read it from the list. The job is
@@ -409,7 +411,7 @@ export async function startClaude(
   }
   const sessionId = text(session?.sessionId);
   if (!session || !sessionId || !SESSION_ID.test(sessionId))
-    throw new ToolError(
+    throw new MaybeStartedError(
       `Claude Code started background session ${job}, but Ajour couldn't read its session ID${
         failure ? ` (${reasonOf(claude, failure)})` : ""
       }. Open it with claude attach ${job} instead of handing off again.`,

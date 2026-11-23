@@ -22,6 +22,7 @@ import {
   LateError,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
+  MaybeStartedError,
   ToolError,
   capture,
   closeFailure,
@@ -481,15 +482,15 @@ export async function startCodex(
       notes = { reason: MAYBE_STARTED };
     } else {
       await closeServer(rpc.session);
-      if (isLate(error) || error instanceof SessionGone)
+      if (isLate(error) || error instanceof SessionGone) {
+        const code = error instanceof ToolError ? error.code : undefined;
+        // The thread exists, and its turn may have started.
+        if (threadId) throw new MaybeStartedError(MAYBE_STARTED, code);
         throw new ToolError(
-          threadId
-            ? MAYBE_STARTED
-            : isLate(error)
-              ? NOT_IN_TIME
-              : reasonOf(codex, error),
-          error instanceof ToolError ? error.code : undefined,
+          isLate(error) ? NOT_IN_TIME : reasonOf(codex, error),
+          code,
         );
+      }
       throw new ToolError(
         `Codex didn't start the turn: ${reasonOf(codex, error)}`,
         error instanceof ToolError ? error.code : undefined,

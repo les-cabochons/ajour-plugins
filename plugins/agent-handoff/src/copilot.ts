@@ -15,6 +15,7 @@ import {
   capture,
   firstLine,
   launch,
+  launchFailure,
   oneLineTitle,
   reasonOf,
   refusalsFor,
@@ -102,10 +103,7 @@ export async function startCopilot(
       launch(copilot, command, args, prompt),
     );
   } catch (error) {
-    throw new ToolError(
-      reasonOf(copilot, error),
-      error instanceof ToolError ? error.code : undefined,
-    );
+    throw launchFailure(copilot, error);
   }
   return {
     threadId: session,

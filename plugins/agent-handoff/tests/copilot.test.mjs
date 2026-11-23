@@ -17,6 +17,7 @@ import {
 } from "../src/plugin.ts";
 import {
   fakeBroker,
+  flush,
   folders,
   manifest,
   ok,
@@ -422,4 +423,27 @@ test("T3 Code, Copilot CLI and VS Code close no thread, so a close refuses and r
       tool,
     );
   assert.deepEqual(calls, []);
+});
+
+test("a start whose launch Ajour cuts short, or that outlasts the start's deadline, says Copilot CLI may have started (ajour#857)", async (t) => {
+  // Ajour keeps the worktree it made for the start, since Copilot CLI may run there.
+  for (const code of ["timeout", "capture_incomplete", "output_limit"]) {
+    fakeCopilot(refuse(code));
+    await assert.rejects(startHandoff(startRequest()), {
+      code,
+      mayHaveStarted: true,
+    });
+  }
+  // A refused launch starts nothing: the worktree can go.
+  fakeCopilot(refuse("executable_missing"));
+  await assert.rejects(startHandoff(startRequest()), (error) => {
+    assert.equal(error.mayHaveStarted, undefined);
+    return true;
+  });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeCopilot(() => new Promise(() => {}));
+  const pending = startHandoff(startRequest());
+  await flush();
+  t.mock.timers.tick(27_000);
+  await assert.rejects(pending, { code: "late", mayHaveStarted: true });
 });

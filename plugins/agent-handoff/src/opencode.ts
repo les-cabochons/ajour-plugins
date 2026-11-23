@@ -32,6 +32,7 @@ import {
   firstLine,
   isLate,
   launch,
+  launchFailure,
   listTitle,
   listed,
   oneLineTitle,
@@ -86,8 +87,7 @@ const LABELS: Record<State, string> = {
 
 export const NO_ANSWER =
   "OpenCode didn't start on the prompt. Open the session to see why.";
-export const RUN_FAILED =
-  "OpenCode's run failed. Open the session to see why.";
+export const RUN_FAILED = "OpenCode's run failed. Open the session to see why.";
 export const BAD_SESSION_ID =
   "This handoff's OpenCode session id isn't one Ajour can read.";
 
@@ -223,10 +223,7 @@ export async function startOpenCode(
       launch(opencode, "opencode-run", args, prompt),
     );
   } catch (error) {
-    throw new ToolError(
-      reasonOf(opencode, error),
-      error instanceof ToolError ? error.code : undefined,
-    );
+    throw launchFailure(opencode, error);
   }
   return {
     threadId: session,
@@ -385,7 +382,10 @@ async function failedRun(
     handoff.native.idle === idle &&
     kept
   )
-    return keptUpdate(handoff, "failed", { label: LABELS.failed, reason: kept });
+    return keptUpdate(handoff, "failed", {
+      label: LABELS.failed,
+      reason: kept,
+    });
   let reason = RUN_FAILED;
   let kind: string | undefined;
   try {
@@ -411,7 +411,9 @@ async function failedRun(
 
 /** Reads one handoff's session and tells its state. */
 async function readOne(handoff: Handoff, deadline: number): Promise<Update> {
-  const session = record(await apiRead("opencode-session", handoff.threadId, deadline));
+  const session = record(
+    await apiRead("opencode-session", handoff.threadId, deadline),
+  );
   const now = Date.now();
   if (!session) {
     // `opencode run` may not have created the session yet.

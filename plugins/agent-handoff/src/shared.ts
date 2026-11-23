@@ -366,6 +366,19 @@ export function reasonOf(tool: Tool, error: unknown): string {
 }
 
 /**
+ * Why a launched start failed, in words the user reads. A launch Ajour cut
+ * short, or one still running when the start's deadline came, may have
+ * started the tool: its error carries `mayHaveStarted` (ajour#857), so
+ * Ajour keeps the worktree it made for the start.
+ */
+export function launchFailure(tool: Tool, error: unknown): ToolError {
+  const code = error instanceof ToolError ? error.code : undefined;
+  if (isUncertainStart(error) || isLate(error))
+    return new MaybeStartedError(reasonOf(tool, error), code);
+  return new ToolError(reasonOf(tool, error), code);
+}
+
+/**
  * Why a close failed, in words the user reads. A command that outlived the
  * deadline may still close the thread, so the user tries again: the next
  * close finds the thread closed, which counts.

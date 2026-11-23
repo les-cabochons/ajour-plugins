@@ -22,6 +22,7 @@ import {
   LateError,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
+  MaybeStartedError,
   ToolError,
   capture,
   closeFailure,
@@ -57,7 +58,7 @@ const SERVER = "codex-app-server";
 const RESUME = "codex-resume";
 // Codex refuses initialize without a client version, and Ajour gives a plugin
 // no way to read its own manifest: a test keeps this equal to plugin.json's.
-const CLIENT = { name: "ajour", title: "Ajour", version: "0.16.0" };
+const CLIENT = { name: "ajour", title: "Ajour", version: "0.18.0" };
 // Ajour sends a session one line of at most 1 MB, in UTF-8.
 export const LINE_LIMIT = 1024 * 1024;
 // One read takes at most 1000 lines, and waits at most 30 seconds.
@@ -481,15 +482,15 @@ export async function startCodex(
       notes = { reason: MAYBE_STARTED };
     } else {
       await closeServer(rpc.session);
-      if (isLate(error) || error instanceof SessionGone)
+      if (isLate(error) || error instanceof SessionGone) {
+        const code = error instanceof ToolError ? error.code : undefined;
+        // The thread exists, and its turn may have started.
+        if (threadId) throw new MaybeStartedError(MAYBE_STARTED, code);
         throw new ToolError(
-          threadId
-            ? MAYBE_STARTED
-            : isLate(error)
-              ? NOT_IN_TIME
-              : reasonOf(codex, error),
-          error instanceof ToolError ? error.code : undefined,
+          isLate(error) ? NOT_IN_TIME : reasonOf(codex, error),
+          code,
         );
+      }
       throw new ToolError(
         `Codex didn't start the turn: ${reasonOf(codex, error)}`,
         error instanceof ToolError ? error.code : undefined,
@@ -607,6 +608,8 @@ export async function listCodex(
     const title = titleOf(thread);
     if (!title) continue;
     const status = text(record(thread.status)?.type, 64);
+    // Only a turn this app-server runs is known: a thread it hasn't loaded
+    // may run in another one, so it is unknown, not idle.
     const state: State = status === "active" ? "working" : "unknown";
     const native: Native = { state, label: LABELS[state], open: "app" };
     if (status) native.status = status;
@@ -617,6 +620,7 @@ export async function listCodex(
       link: linkOf(threadId),
       resume: resumeOf(threadId, request.folder.id),
       native,
+      state,
       ...(updatedAt === undefined ? {} : { updatedAt }),
     });
   }

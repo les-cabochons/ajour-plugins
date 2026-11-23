@@ -20,6 +20,7 @@ import {
   capture,
   firstLine,
   launch,
+  launchFailure,
   oneLineTitle,
   reasonOf,
   refusalsFor,
@@ -99,10 +100,7 @@ export async function startVsCode(
       ),
     );
   } catch (error) {
-    throw new ToolError(
-      reasonOf(vscode, error),
-      error instanceof ToolError ? error.code : undefined,
-    );
+    throw launchFailure(vscode, error);
   }
   return {
     // VS Code names no chat, so the plugin chooses an id for the record.

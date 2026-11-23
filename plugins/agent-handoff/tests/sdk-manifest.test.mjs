@@ -40,12 +40,14 @@ async function manifestErrors(manifest, name) {
 
 /**
  * plugin.json without the keys the vendored SDK 0.2.0 predates: each tool's
- * `closesThreads` (ajour#850), whose values manifest.test.mjs pins. Drop
- * this once the vendored SDK has it.
+ * `closesThreads` (ajour#850) and `ownWorktree` (ajour#859), whose values
+ * manifest.test.mjs pins. Drop this once the vendored SDK has them.
  */
 function withoutNewerKeys(manifest) {
-  for (const tool of manifest.capabilities.handoff.tools)
+  for (const tool of manifest.capabilities.handoff.tools) {
     delete tool.closesThreads;
+    delete tool.ownWorktree;
+  }
   return manifest;
 }
 

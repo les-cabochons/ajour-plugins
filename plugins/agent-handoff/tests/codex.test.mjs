@@ -407,6 +407,28 @@ test("a start keeps the handoff when the turn isn't answered by 27 seconds", asy
   assert.equal(sessionsOf()[0].state, "open");
 });
 
+test("a start whose session ends once its thread exists says the thread may exist", async () => {
+  const server = program("start-ok");
+  fakeCodex([
+    (running) => ({
+      receive(line) {
+        // codex quits once it has the turn: the turn may be running.
+        if (JSON.parse(line).method === "turn/start") {
+          running.exit(1);
+          return [];
+        }
+        return server.handler.receive(line);
+      },
+    }),
+  ]);
+  await assert.rejects(startHandoff(startRequest()), {
+    message:
+      "Codex may have started the thread. Check Codex before handing off again.",
+    // Ajour keeps the worktree the thread may run in (ajour#857).
+    mayHaveStarted: true,
+  });
+});
+
 test("a start that gets no thread by 27 seconds fails, and ends its session", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const server = program("start-ok");
@@ -1249,10 +1271,14 @@ test("a listing asks an app-server in the folder which folder it runs in, and li
     open: "app",
     status: "notLoaded",
   });
-  for (const thread of threads)
+  for (const thread of threads) {
     assert.ok(
       new TextEncoder().encode(JSON.stringify(thread.native)).length <= 4096,
     );
+    // The state as the listing saw it, which Ajour's clean up reads
+    // (ajour#857): a thread this app-server hasn't loaded may run elsewhere.
+    assert.equal(thread.state, thread.native.state);
+  }
   // The listing lets go of its session, which frees one of the two.
   assert.equal(sessionsOf()[0].state, "closed");
 });

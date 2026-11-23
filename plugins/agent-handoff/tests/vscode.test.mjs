@@ -15,6 +15,7 @@ import {
 } from "../src/plugin.ts";
 import {
   fakeBroker,
+  flush,
   folders,
   manifest,
   ok,
@@ -261,4 +262,27 @@ test("the recorded code chat has every flag the commands use, and reads stdin wi
   assert.deepEqual(codeArgs, ["-m"]);
   for (const flag of codeArgs)
     assert.match(help, new RegExp(`^\\s+${flag} `, "m"), flag);
+});
+
+test("a start whose launch Ajour cuts short, or that outlasts the start's deadline, says VS Code may have started (ajour#857)", async (t) => {
+  // Ajour keeps the worktree it made for the start, since VS Code may run there.
+  for (const code of ["timeout", "capture_incomplete", "output_limit"]) {
+    fakeCode(refuse(code));
+    await assert.rejects(startHandoff(startRequest()), {
+      code,
+      mayHaveStarted: true,
+    });
+  }
+  // A refused launch starts nothing: the worktree can go.
+  fakeCode(refuse("executable_missing"));
+  await assert.rejects(startHandoff(startRequest()), (error) => {
+    assert.equal(error.mayHaveStarted, undefined);
+    return true;
+  });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeCode(() => new Promise(() => {}));
+  const pending = startHandoff(startRequest());
+  await flush();
+  t.mock.timers.tick(27_000);
+  await assert.rejects(pending, { code: "late", mayHaveStarted: true });
 });

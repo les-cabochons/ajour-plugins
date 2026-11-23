@@ -10,13 +10,13 @@ import type {
   ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
-  StartHandoffRequest,
   StartHandoffResult,
 } from "@ajour/plugin-sdk";
 import {
   CLOSE_DEADLINE_MS,
   READ_DEADLINE_MS,
   START_DEADLINE_MS,
+  MaybeStartedError,
   ToolError,
   allLines,
   before,
@@ -45,6 +45,7 @@ import {
   type Json,
   type Listed,
   type Native,
+  type StartWithRepositoryFolder,
   type State,
   type Tool,
   type Update,
@@ -79,6 +80,12 @@ const TRUST_FIRST =
   "Trust this folder in Claude Code first: run claude in the repository folder once and accept the trust prompt, then hand off again.";
 const TRUST_OPENED =
   "Claude Code doesn't trust this folder yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.";
+// The same two, for a start in a worktree: they name the repository folder
+// the user trusts, since the start's own folder is the worktree.
+const trustRepositoryFirst = (name: string) =>
+  `Trust the repository folder "${name}" in Claude Code first: run claude in it once and accept the trust prompt, then hand off again.`;
+const trustRepositoryOpened = (name: string) =>
+  `Claude Code doesn't trust the repository folder "${name}" yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.`;
 // Open attaches to a listed job. Once `claude rm` removes the job, only its
 // transcript is left, which `claude --resume` reopens, and which the Claude
 // app still imports.
@@ -279,7 +286,7 @@ function keptUpdate(handoff: Handoff, state: State, notes: Native): Update {
   return { id: handoff.id, state, native: withNotes(kept, notes) };
 }
 
-/** True when claude refused the repository folder because it doesn't trust it. */
+/** True when claude refused the start's folder because it doesn't trust it. */
 function untrusted(error: unknown): boolean {
   return (
     error instanceof ToolError &&
@@ -292,20 +299,31 @@ function untrusted(error: unknown): boolean {
 /**
  * Claude Code asks whether to trust a folder only in an interactive session,
  * and `--bg` refuses a folder it doesn't trust yet. So the plugin opens
- * claude in a terminal in the folder, where the user accepts the prompt and
- * hands off again. Returns what to tell the user.
+ * claude in a terminal, where the user accepts the prompt and hands off
+ * again. Returns what to tell the user.
+ *
+ * The terminal opens in the start's folder, unless that folder is a worktree
+ * Ajour made (ajour#857). Ajour deletes the worktree of a start that failed
+ * before the terminal gets there, and Claude Code's trust of a repository
+ * folder covers every worktree under it. So the terminal then opens in
+ * `repositoryFolder`, and the message names it.
  */
 async function openTrustPrompt(
-  folder: string,
+  request: StartWithRepositoryFolder,
   deadline: number,
 ): Promise<string> {
+  const repository = request.repositoryFolder;
+  const folder = (repository ?? request.folder).id;
   try {
     await before(claude, deadline, () =>
       launch(claude, "claude-trust", { folder }),
     );
-    return TRUST_OPENED;
+    return repository ? trustRepositoryOpened(repository.name) : TRUST_OPENED;
   } catch (error) {
-    return `${TRUST_FIRST} Ajour couldn't open a terminal: ${reasonOf(claude, error)}`;
+    const first = repository
+      ? trustRepositoryFirst(repository.name)
+      : TRUST_FIRST;
+    return `${first} Ajour couldn't open a terminal: ${reasonOf(claude, error)}`;
   }
 }
 
@@ -336,7 +354,7 @@ function opensInApp(request: { tool: string }): boolean {
 }
 
 export async function startClaude(
-  request: StartHandoffRequest,
+  request: StartWithRepositoryFolder,
 ): Promise<StartHandoffResult> {
   const app = opensInApp(request);
   const deadline = Date.now() + START_DEADLINE_MS;
@@ -358,9 +376,9 @@ export async function startClaude(
   } catch (error) {
     // Ajour stopped claude or dropped its output, so the session may exist.
     if (isUncertainStart(error))
-      throw new ToolError(MAYBE_STARTED, (error as ToolError).code);
+      throw new MaybeStartedError(MAYBE_STARTED, (error as ToolError).code);
     if (untrusted(error))
-      throw new ToolError(await openTrustPrompt(request.folder.id, deadline));
+      throw new ToolError(await openTrustPrompt(request, deadline));
     throw new ToolError(
       reasonOf(claude, error),
       error instanceof ToolError ? error.code : undefined,
@@ -371,8 +389,9 @@ export async function startClaude(
     /\bbackgrounded\b[^A-Za-z0-9]+([A-Za-z0-9][A-Za-z0-9_-]{0,63})/i.exec(
       output,
     )?.[1];
+  // claude exited 0, so the job may run even when it printed no id.
   if (!job)
-    throw new ToolError(
+    throw new MaybeStartedError(
       "Claude Code printed no session id. Check claude agents before handing off again.",
     );
   // `--bg` chooses the session id, so read it from the list. The job is
@@ -392,7 +411,7 @@ export async function startClaude(
   }
   const sessionId = text(session?.sessionId);
   if (!session || !sessionId || !SESSION_ID.test(sessionId))
-    throw new ToolError(
+    throw new MaybeStartedError(
       `Claude Code started background session ${job}, but Ajour couldn't read its session ID${
         failure ? ` (${reasonOf(claude, failure)})` : ""
       }. Open it with claude attach ${job} instead of handing off again.`,
@@ -459,12 +478,16 @@ export async function listClaude(
     if (!threadId || !SESSION_ID.test(threadId) || !title) continue;
     const job = jobOf(session);
     const link = app && job ? desktopLink(threadId) : undefined;
+    // Read from claude agents alone: a listing never stops a job, as the
+    // desktop tool's state read does (`release`).
+    const state = stateOf(session);
     threads.push({
       threadId,
       title,
       ...(link ? { link } : {}),
       ...(job ? { resume: attach(job, request.folder.id) } : {}),
-      native: nativeOf(session, stateOf(session)),
+      native: nativeOf(session, state),
+      state,
     });
   }
   return listed(threads, { limit: request.limit });

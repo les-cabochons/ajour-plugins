@@ -22,6 +22,7 @@ import {
 import {
   argvOf,
   fakeBroker,
+  flush,
   folders,
   ok,
   refuse,
@@ -473,6 +474,8 @@ test("a listing runs opencode session list in the folder and lists the project's
     args: { session: sessions[0].id, folder: FOLDER },
   });
   assert.deepEqual(threads[0].native, { state: "unknown", label: "Unknown" });
+  // Its session list doesn't say what a session does, so no state (ajour#857).
+  for (const thread of threads) assert.equal("state" in thread, false);
 });
 
 test("a listing keeps the sessions changed after since", async () => {
@@ -585,4 +588,27 @@ test("a handoff whose session id isn't OpenCode's is never closed", async () => 
   const calls = closingOpenCode();
   await assert.rejects(closing("not-a-session"), { message: BAD_SESSION_ID });
   assert.deepEqual(calls, []);
+});
+
+test("a start whose launch Ajour cuts short, or that outlasts the start's deadline, says OpenCode may have started (ajour#857)", async (t) => {
+  // Ajour keeps the worktree it made for the start, since OpenCode may run there.
+  for (const code of ["timeout", "capture_incomplete", "output_limit"]) {
+    fakeOpenCode({ run: refuse(code) });
+    await assert.rejects(startHandoff(startRequest()), {
+      code,
+      mayHaveStarted: true,
+    });
+  }
+  // A refused launch starts nothing: the worktree can go.
+  fakeOpenCode({ run: refuse("executable_missing") });
+  await assert.rejects(startHandoff(startRequest()), (error) => {
+    assert.equal(error.mayHaveStarted, undefined);
+    return true;
+  });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  fakeOpenCode({ run: () => new Promise(() => {}) });
+  const pending = startHandoff(startRequest());
+  await flush();
+  t.mock.timers.tick(27_000);
+  await assert.rejects(pending, { code: "late", mayHaveStarted: true });
 });

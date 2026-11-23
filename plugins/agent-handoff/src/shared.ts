@@ -6,6 +6,7 @@ import type {
   ListThreadsResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
+  StartHandoffRequest,
 } from "@ajour/plugin-sdk";
 import type {} from "@ajour/plugin-sdk/globals";
 
@@ -14,7 +15,15 @@ export type State = Update["state"];
 export type Json = Record<string, unknown>;
 export type Native = Record<string, string | number | boolean | null>;
 export type Handoff = ReadHandoffStatesRequest["handoffs"][number];
-export type Listed = ListThreadsResult["threads"][number];
+/**
+ * One listed thread. `state` is the thread's state as the listing saw it,
+ * read without side effects (ajour#857): Ajour's clean up reads it for a
+ * thread in a worktree that no handoff links, and never asks
+ * `readHandoffStates` for one, since a read may act on the thread, as the
+ * Claude app's read stops a finished job. A tool that doesn't know it while
+ * it lists leaves it out. The vendored SDK 0.2.0 predates it.
+ */
+export type Listed = ListThreadsResult["threads"][number] & { state?: State };
 
 /**
  * A close of one handoff's thread in its tool (ajour#850), for a tool whose
@@ -29,6 +38,28 @@ export type CloseThreadRequest = { tool: string; handoff: Handoff };
  * removes the handoff. A refusal is thrown instead.
  */
 export type CloseThreadResult = Record<string, never>;
+/**
+ * A start request with `source` (ajour#863): what the new branch starts
+ * from, as git names it, such as `origin/main`. Ajour sends it only with
+ * `branch`, and only to a tool whose manifest declares `ownWorktree`.
+ * Matches Ajour's `StartHandoffRequest`, whose `source` the vendored SDK
+ * 0.2.0 doesn't have yet. Replace it with the SDK's type once the SDK is
+ * refreshed.
+ */
+export type StartWithSource = StartHandoffRequest & {
+  source?: string | undefined;
+};
+/**
+ * A start request with `repositoryFolder` (ajour#857): the repository folder
+ * a worktree belongs to, sent when `folder` is a worktree Ajour made for the
+ * start. Absent when `folder` is the repository folder itself, and from an
+ * older Ajour. Matches Ajour's `StartHandoffRequest`, whose
+ * `repositoryFolder` the vendored SDK 0.2.0 doesn't have yet. Replace it
+ * with the SDK's type once the SDK is refreshed.
+ */
+export type StartWithRepositoryFolder = StartHandoffRequest & {
+  repositoryFolder?: { id: string; name: string } | undefined;
+};
 
 export const STATES: readonly State[] = [
   "working",
@@ -127,6 +158,16 @@ export class ToolError extends Error {
     this.name = "ToolError";
     this.code = code;
   }
+}
+
+/**
+ * A start that failed after the tool may have started its thread, such as
+ * one Ajour cut short or whose answer names no thread. `mayHaveStarted` is
+ * Ajour's refusal hint (ajour#857): Ajour then keeps the worktree it made
+ * for the start, since the tool may be working in it.
+ */
+export class MaybeStartedError extends ToolError {
+  readonly mayHaveStarted = true;
 }
 
 /** The operation's deadline passed before the tool answered. */
@@ -330,6 +371,19 @@ export function reasonOf(tool: Tool, error: unknown): string {
   const message =
     error instanceof Error ? firstLine(error.message) : `${tool.name} failed.`;
   return tool.explain(message) || `${tool.name} failed.`;
+}
+
+/**
+ * Why a launched start failed, in words the user reads. A launch Ajour cut
+ * short, or one still running when the start's deadline came, may have
+ * started the tool: its error carries `mayHaveStarted` (ajour#857), so
+ * Ajour keeps the worktree it made for the start.
+ */
+export function launchFailure(tool: Tool, error: unknown): ToolError {
+  const code = error instanceof ToolError ? error.code : undefined;
+  if (isUncertainStart(error) || isLate(error))
+    return new MaybeStartedError(reasonOf(tool, error), code);
+  return new ToolError(reasonOf(tool, error), code);
 }
 
 /**

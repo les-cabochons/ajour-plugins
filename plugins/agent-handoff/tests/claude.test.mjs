@@ -330,6 +330,7 @@ test("a hook Ajour refuses is a start failure that names Claude Code", async () 
 });
 
 test("an untrusted folder opens claude in a terminal there, for the user to trust it", async () => {
+  // The request names no repository folder, so the start's folder is it.
   const calls = fakeClaude((argv) =>
     argv[1] === "--bg" ? fail(read("untrusted.txt")) : undefined,
   );
@@ -356,15 +357,60 @@ test("an untrusted folder Ajour can't open a terminal in says to run claude ther
   });
 });
 
+// Ajour starts the session in a worktree it made, and names the repository
+// folder the worktree belongs to (ajour#857).
+const WORKTREE = "folder-worktree";
+const inWorktree = {
+  folder: { id: WORKTREE, name: "aj-39" },
+  repositoryFolder: { id: FOLDER, name: "ajour" },
+};
+
+test("an untrusted worktree opens claude in a terminal in its repository folder, which the message names", async () => {
+  // Ajour deletes the worktree of a failed start, and trusting the
+  // repository folder covers its worktrees.
+  const calls = fakeClaude((argv) =>
+    argv[1] === "--bg" ? fail(read("untrusted.txt")) : undefined,
+  );
+  await assert.rejects(startHandoff(startRequest({}, inWorktree)), {
+    message:
+      'Claude Code doesn\'t trust the repository folder "ajour" yet. Ajour opened Claude Code in a terminal there: accept its trust prompt, then hand off again.',
+  });
+  // The session still starts in the worktree.
+  assert.equal(calls[0].cwd, WORKTREE);
+  assert.deepEqual(calls[0].argv.slice(-2), ["--add-dir", WORKTREE]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], {
+    argv: ["claude"],
+    mode: "terminal",
+    cwd: FOLDER,
+    stdin: undefined,
+  });
+});
+
+test("an untrusted worktree whose repository folder Ajour can't open a terminal in says to run claude in that folder", async () => {
+  // Windows Terminal takes no & in the folder path.
+  folders[FOLDER] = "C:\\Users\\me\\R&D\\ajour";
+  fakeClaude(() => fail(read("untrusted.txt")));
+  await assert.rejects(startHandoff(startRequest({}, inWorktree)), {
+    message:
+      'Trust the repository folder "ajour" in Claude Code first: run claude in it once and accept the trust prompt, then hand off again. Ajour couldn\'t open a terminal: Ajour refused a value for claude. Check the model; a terminal also needs a repository folder path without unusual characters.',
+  });
+});
+
 test("a start Ajour runs at the system root says Ajour needs an update", async () => {
   // What claude --bg printed when started at C:\, where the broker runs
   // capture commands today.
   fakeClaude(() =>
     fail(`Starting background service…\n${read("root-untrusted.txt")}`),
   );
-  await assert.rejects(startHandoff(startRequest()), {
-    message:
+  await assert.rejects(startHandoff(startRequest()), (error) => {
+    assert.equal(
+      error.message,
       "Ajour started Claude Code at the system root instead of the repository folder, so Claude Code refused it. This needs an Ajour update.",
+    );
+    // Claude Code refused it: nothing runs, and the worktree can go.
+    assert.equal(error.mayHaveStarted, undefined);
+    return true;
   });
 });
 
@@ -374,6 +420,8 @@ test("a start Ajour ends before claude answers says the session may exist", asyn
     await assert.rejects(startHandoff(startRequest()), {
       message:
         "Claude Code may have started the session. Check claude agents before handing off again.",
+      // Ajour keeps the worktree the session may run in (ajour#857).
+      mayHaveStarted: true,
     });
   }
 });
@@ -383,6 +431,7 @@ test("a start whose output has no job id says to check claude agents", async () 
   await assert.rejects(startHandoff(startRequest()), {
     message:
       "Claude Code printed no session id. Check claude agents before handing off again.",
+    mayHaveStarted: true,
   });
 });
 
@@ -420,6 +469,7 @@ test("a start that never finds its job names the job to attach to", async (t) =>
     error.message,
     "Claude Code started background session e2cf2a01, but Ajour couldn't read its session ID. Open it with claude attach e2cf2a01 instead of handing off again.",
   );
+  assert.equal(error.mayHaveStarted, true);
   assert.equal(calls.filter((c) => c.argv[1] === "agents").length, 3);
 });
 
@@ -756,6 +806,8 @@ test("a listing runs claude agents for the folder and answers its sessions newes
     assert.equal(thread.link, undefined);
     // Claude Code doesn't say when a session last changed.
     assert.equal(thread.updatedAt, undefined);
+    // The state as the listing saw it, which Ajour's clean up reads (ajour#857).
+    assert.equal(thread.state, thread.native.state);
     assertPrivate(thread);
   }
 });
@@ -1087,6 +1139,25 @@ test("a desktop listing links each background job to the Claude app", async () =
   }
   assert.ok(threads.some((t) => t.link));
   assert.ok(threads.some((t) => !t.link));
+});
+
+test("a desktop listing says each session's state and stops no job, even one a state read would stop (ajour#857)", async () => {
+  const calls = listedClaude();
+  const { threads } = await listThreads(listRequest({ tool: DESKTOP }));
+  // Only claude agents: a state read of the done job would run claude stop.
+  assert.deepEqual(
+    calls.map((c) => c.argv.slice(0, 2)),
+    [["claude", "agents"]],
+  );
+  assert.equal(
+    threads.find((t) => t.threadId === done.sessionId).state,
+    "ready",
+  );
+  assert.equal(
+    threads.find((t) => t.threadId === permission.sessionId).state,
+    "needs-you",
+  );
+  assert.equal(threads[0].state, "working");
 });
 
 // Closing a session (ajour#850): `claude stop` for a job that runs, then

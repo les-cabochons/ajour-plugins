@@ -54,9 +54,8 @@ test("the manifest is a handoff plugin with T3 Code, Claude Code, Claude Code de
   }
   const settings = (tool) =>
     tool.settings.map((s) => [s.id, s.type, s.defaultValue]);
+  // T3 Code has no worktree setting: Ajour's Start in decides (ajour#863).
   assert.deepEqual(settings(tools[0]), [
-    ["worktree", "checkbox", true],
-    ["base", "text", "main"],
     ["provider", "text", undefined],
     ["model", "text", undefined],
   ]);
@@ -139,6 +138,19 @@ test("every tool declares the features it supports, explicitly", () => {
   for (const tool of tools)
     for (const key of ["followsState", "listsThreads", "hooks"])
       assert.equal(typeof tool[key], "boolean", `${tool.id}: ${key}`);
+});
+
+test("only T3 Code makes its own worktree", () => {
+  // Ajour #859. T3 Code can't start a thread in a folder outside its
+  // registered projects, so it can't run in a worktree Ajour makes: it makes
+  // one itself, on the branch Ajour sends. Every other tool starts in the
+  // folder it is given.
+  assert.deepEqual(
+    manifest.capabilities.handoff.tools
+      .filter((tool) => tool.ownWorktree !== undefined)
+      .map((tool) => [tool.id, tool.ownWorktree]),
+    [["t3", true]],
+  );
 });
 
 test("Claude Code, Claude Code desktop and Codex archive their threads, OpenCode deletes them, the others close none", () => {

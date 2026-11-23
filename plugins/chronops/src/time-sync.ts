@@ -3,16 +3,19 @@
 // order, then lists the window back. Ajour keeps an entry as a day and whole
 // minutes, and ChronOps as a start and an end, so this file maps between the
 // two. Ajour's running entry is the ChronOps timer (ajour-plugins#37).
+// MineHunter's change marker lets a check round answer unchanged without
+// calling the Forwarder (ajour-plugins#70, change-marker.ts).
 import type {
   PluginConnection,
   TimeSyncChange,
   TimeSyncChangeResult,
   TimeSyncEntryValues,
   TimeSyncRemoteEntry,
+  TimeSyncAnswer,
   TimeSyncRequest,
-  TimeSyncResult,
   AjourResponse,
 } from "@ajour/plugin-sdk";
+import { decodeCursor, encodeCursor, markerBeforeListing, nothingChangedSince, windowKey } from "./change-marker.ts";
 import {
   CHRONOPS_MAX_LISTED_ENTRIES,
   parseChronopsTimeEntries,
@@ -518,10 +521,24 @@ async function apply(round: Round, change: TimeSyncChange, today: string): Promi
  * safe to repeat: a create or a start finds its entry by client reference,
  * an edit sets the same values, a repeated stop answers 409 and sets them,
  * and a delete of a gone entry is synced.
+ *
+ * Every answer carries a cursor. A check round, Ajour's cursor and no
+ * changes, answers unchanged while the change marker says nothing changed,
+ * without calling the Forwarder. With a cursor, the round reads the marker
+ * just before it lists, so a write during the listing shows at the next
+ * check. A marker problem never fails a round: the plugin lists instead, at
+ * most once a minute. An Ajour that sends no cursor gets a full answer every
+ * time, as before.
  */
-export async function syncTimeEntries(connection: PluginConnection, request: TimeSyncRequest): Promise<TimeSyncResult> {
+export async function syncTimeEntries(connection: PluginConnection, request: TimeSyncRequest): Promise<TimeSyncAnswer> {
   const startedAt = performance.now();
   const { timeZone } = request;
+  const window = windowKey(request);
+  const cursor = decodeCursor(request.cursor);
+  if (cursor !== undefined && request.changes.length === 0 && (await nothingChangedSince(cursor, window, Date.now()))) {
+    // No line in Ajour's log: a check that found nothing comes every 5 seconds.
+    return { unchanged: true, cursor: request.cursor! };
+  }
   const round: Round = {
     connection,
     timeZone,
@@ -557,10 +574,17 @@ export async function syncTimeEntries(connection: PluginConnection, request: Tim
     const today = round.localDate(Date.now());
     const results: TimeSyncChangeResult[] = [];
     for (const change of request.changes) results.push(await apply(round, change, today));
+    const listingAt = Date.now();
+    const marker = cursor === undefined ? {} : await markerBeforeListing(connection, cursor, listingAt);
     const listed = await listWindow(round);
     const entries = listed.filter(takes).map((entry) => remoteEntry(entry, round));
-    ajour.log("info", "ChronOps time entries synced", { ...event("synced"), listed: entries.length, skipped: listed.length - entries.length });
-    return { results, entries };
+    ajour.log("info", "ChronOps time entries synced", {
+      ...event("synced"),
+      listed: entries.length,
+      skipped: listed.length - entries.length,
+      marker: "etag" in marker ? "read" : "link" in marker ? "unreadable" : "retryLinkAt" in marker ? "none" : "not_asked",
+    });
+    return { results, entries, cursor: encodeCursor({ v: 1, window, listedAt: listingAt, ...marker }) };
   } catch (error) {
     ajour.log("warn", "ChronOps time entries synced", { ...event("failed"), error: error instanceof Error ? error.name : "unknown" });
     throw error;

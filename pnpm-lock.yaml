@@ -38,8 +38,8 @@ importers:
   plugins/chronops:
     devDependencies:
       '@ajour/plugin-sdk':
-        specifier: file:../../vendor/ajour-plugin-sdk-0.2.0.tgz
-        version: file:vendor/ajour-plugin-sdk-0.2.0.tgz
+        specifier: file:../../vendor/ajour-plugin-sdk-0.3.0.tgz
+        version: file:vendor/ajour-plugin-sdk-0.3.0.tgz
       '@types/node':
         specifier: ^22.13.10
         version: 22.20.5
@@ -133,7 +133,7 @@ packages:
     version: 0.2.0
 
   '@ajour/plugin-sdk@file:vendor/ajour-plugin-sdk-0.3.0.tgz':
-    resolution: {integrity: sha512-Tes+RuYUJ0BPsATALk2RK1ubCjytLBWnnHzK4IDJmvw8G8aZVq7OX5vLMumOTLwEZON/iZvw3BYXcIrqKrLmDQ==, tarball: file:vendor/ajour-plugin-sdk-0.3.0.tgz}
+    resolution: {integrity: sha512-9bEYG7MrJrIt0hTsgQzP1nD1mbAv+kfcjhGseKXEvN7IICIkwGMKY92Wjum6JZ431P1DjZ7iIXJEVOOYyi1VEQ==, tarball: file:vendor/ajour-plugin-sdk-0.3.0.tgz}
     version: 0.3.0
 
   '@jridgewell/sourcemap-codec@1.6.0':

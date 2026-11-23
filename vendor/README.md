@@ -25,10 +25,15 @@ the time sync capability (`timeSync` and `syncTimeEntries`, from #691 to
 the lockfile integrity changes. `agent-handoff` and `chronops` use it.
 
 `ajour-plugin-sdk-0.3.0.tgz` is `@ajour/plugin-sdk` 0.3.0, packed at commit
-`447449a7` (origin/main on 2026-11-21, after #849). It adds the
-`typeOverrides` connection field type and its reader, `parseTypeOverrides`,
-`formatTypeOverrides` and `typeOverrideFor` (#847). `azure-devops` uses it,
-and copies the reader into its source, since a plugin runs from its own files.
+`82dd6ccd` (origin/main on 2026-11-21, after #855, the last commit before the
+SDK became 0.4.0). It adds the `typeOverrides` connection field type and its
+reader, `parseTypeOverrides`, `formatTypeOverrides` and `typeOverrideFor`
+(#847). `azure-devops` uses it, and copies the reader into its source, since a
+plugin runs from its own files. It also has the time sync check rounds of #843
+(#845): an optional `cursor` on `syncTimeEntries` requests and answers, and the
+`{ unchanged: true, cursor }` answer to a check round (`TimeSyncAnswer`).
+`chronops` uses them. The first pack, at `447449a7`, predates #845, so the
+filename stays the same and the lockfile integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

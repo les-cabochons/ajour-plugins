@@ -15,7 +15,15 @@ export type State = Update["state"];
 export type Json = Record<string, unknown>;
 export type Native = Record<string, string | number | boolean | null>;
 export type Handoff = ReadHandoffStatesRequest["handoffs"][number];
-export type Listed = ListThreadsResult["threads"][number];
+/**
+ * One listed thread. `state` is the thread's state as the listing saw it,
+ * read without side effects (ajour#857): Ajour's clean up reads it for a
+ * thread in a worktree that no handoff links, and never asks
+ * `readHandoffStates` for one, since a read may act on the thread, as the
+ * Claude app's read stops a finished job. A tool that doesn't know it while
+ * it lists leaves it out. The vendored SDK 0.2.0 predates it.
+ */
+export type Listed = ListThreadsResult["threads"][number] & { state?: State };
 
 /**
  * A close of one handoff's thread in its tool (ajour#850), for a tool whose

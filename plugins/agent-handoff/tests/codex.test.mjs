@@ -1271,10 +1271,14 @@ test("a listing asks an app-server in the folder which folder it runs in, and li
     open: "app",
     status: "notLoaded",
   });
-  for (const thread of threads)
+  for (const thread of threads) {
     assert.ok(
       new TextEncoder().encode(JSON.stringify(thread.native)).length <= 4096,
     );
+    // The state as the listing saw it, which Ajour's clean up reads
+    // (ajour#857): a thread this app-server hasn't loaded may run elsewhere.
+    assert.equal(thread.state, thread.native.state);
+  }
   // The listing lets go of its session, which frees one of the two.
   assert.equal(sessionsOf()[0].state, "closed");
 });

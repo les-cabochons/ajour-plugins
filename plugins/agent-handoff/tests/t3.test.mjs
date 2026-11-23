@@ -1073,6 +1073,11 @@ test("a listing runs thread list for the folder and answers its threads newest f
       ["ready", "Ready for review"],
     ],
   );
+  // The state as the listing saw it, which Ajour's clean up reads (ajour#857).
+  assert.deepEqual(
+    threads.map((t) => t.state),
+    ["working", "done", "done", "ready"],
+  );
   assert.deepEqual(threads[0].native, {
     state: "working",
     label: "Working",

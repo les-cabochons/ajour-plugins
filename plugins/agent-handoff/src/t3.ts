@@ -436,11 +436,15 @@ export async function listT3(
     if (!threadId || !title || thread.parentThreadId) continue;
     const link = appLink(thread.link);
     const updatedAt = timeOf(thread.updatedAt);
+    // The list leaves out pendingRequestCount, so a live thread that waits
+    // for the user lists as working: either keeps a worktree in clean up.
+    const state = stateOf(thread);
     result.push({
       threadId,
       title,
       ...(link ? { link } : {}),
-      native: nativeOf(thread, stateOf(thread)),
+      native: nativeOf(thread, state),
+      state,
       ...(updatedAt === undefined ? {} : { updatedAt }),
     });
   }

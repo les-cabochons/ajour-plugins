@@ -806,6 +806,8 @@ test("a listing runs claude agents for the folder and answers its sessions newes
     assert.equal(thread.link, undefined);
     // Claude Code doesn't say when a session last changed.
     assert.equal(thread.updatedAt, undefined);
+    // The state as the listing saw it, which Ajour's clean up reads (ajour#857).
+    assert.equal(thread.state, thread.native.state);
     assertPrivate(thread);
   }
 });
@@ -1137,6 +1139,25 @@ test("a desktop listing links each background job to the Claude app", async () =
   }
   assert.ok(threads.some((t) => t.link));
   assert.ok(threads.some((t) => !t.link));
+});
+
+test("a desktop listing says each session's state and stops no job, even one a state read would stop (ajour#857)", async () => {
+  const calls = listedClaude();
+  const { threads } = await listThreads(listRequest({ tool: DESKTOP }));
+  // Only claude agents: a state read of the done job would run claude stop.
+  assert.deepEqual(
+    calls.map((c) => c.argv.slice(0, 2)),
+    [["claude", "agents"]],
+  );
+  assert.equal(
+    threads.find((t) => t.threadId === done.sessionId).state,
+    "ready",
+  );
+  assert.equal(
+    threads.find((t) => t.threadId === permission.sessionId).state,
+    "needs-you",
+  );
+  assert.equal(threads[0].state, "working");
 });
 
 // Closing a session (ajour#850): `claude stop` for a job that runs, then

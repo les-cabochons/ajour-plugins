@@ -608,6 +608,8 @@ export async function listCodex(
     const title = titleOf(thread);
     if (!title) continue;
     const status = text(record(thread.status)?.type, 64);
+    // Only a turn this app-server runs is known: a thread it hasn't loaded
+    // may run in another one, so it is unknown, not idle.
     const state: State = status === "active" ? "working" : "unknown";
     const native: Native = { state, label: LABELS[state], open: "app" };
     if (status) native.status = status;
@@ -618,6 +620,7 @@ export async function listCodex(
       link: linkOf(threadId),
       resume: resumeOf(threadId, request.folder.id),
       native,
+      state,
       ...(updatedAt === undefined ? {} : { updatedAt }),
     });
   }

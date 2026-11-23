@@ -478,12 +478,16 @@ export async function listClaude(
     if (!threadId || !SESSION_ID.test(threadId) || !title) continue;
     const job = jobOf(session);
     const link = app && job ? desktopLink(threadId) : undefined;
+    // Read from claude agents alone: a listing never stops a job, as the
+    // desktop tool's state read does (`release`).
+    const state = stateOf(session);
     threads.push({
       threadId,
       title,
       ...(link ? { link } : {}),
       ...(job ? { resume: attach(job, request.folder.id) } : {}),
-      native: nativeOf(session, stateOf(session)),
+      native: nativeOf(session, state),
+      state,
     });
   }
   return listed(threads, { limit: request.limit });

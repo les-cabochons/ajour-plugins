@@ -474,6 +474,8 @@ test("a listing runs opencode session list in the folder and lists the project's
     args: { session: sessions[0].id, folder: FOLDER },
   });
   assert.deepEqual(threads[0].native, { state: "unknown", label: "Unknown" });
+  // Its session list doesn't say what a session does, so no state (ajour#857).
+  for (const thread of threads) assert.equal("state" in thread, false);
 });
 
 test("a listing keeps the sessions changed after since", async () => {

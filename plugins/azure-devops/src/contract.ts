@@ -381,6 +381,12 @@ export interface CodeHostSubmitReviewRequest extends CodeHostPullRequestRef {
   verdict: "approve" | "request_changes" | "comment";
   body?: string;
   comments: (CodeHostLineAnchor & { body: string })[];
+  /**
+   * Names this review across tries and restarts. A try with the identity of
+   * an earlier one sends only what the code host doesn't hold yet, so Retry
+   * after an uncertain failure posts nothing twice.
+   */
+  submissionId?: string;
 }
 
 export interface CodeHostSubmitReviewResult {

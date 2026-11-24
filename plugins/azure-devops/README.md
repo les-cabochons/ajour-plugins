@@ -379,17 +379,23 @@ requests**:
   (the right side of the file), the base's (the left side), from the first
   line of a range, or on the whole pull request without an anchor. Line
   comments sit on the iteration whose head is the commit you reviewed,
-  compared with the target branch, the diff Deck showed. When no iteration
-  has that commit any more, the comment fails and asks you to open the pull
-  request again.
+  compared with the common commit of the source and target branches, the
+  diff Deck showed (`iterationContext` with both comparing iterations set to
+  that iteration). When no iteration has that commit any more, the comment
+  fails and asks you to open the pull request again.
 - `submitReview` has no review to submit on Azure DevOps. It posts a thread
   for each line comment and one for the summary, then sets your vote:
   **Approve** votes 10, **Request changes** votes -5, "Wait for author", and
-  **Comment** leaves your vote as it is. Before posting, it reads the pull
-  request's threads and skips a comment you posted in the last 15 minutes at
-  the same place with the same words, so retrying a submit that failed half
-  way, such as on the vote, repeats no comment. The same words in an earlier
-  review are posted again.
+  **Comment** leaves your vote as it is. Every submit checks the head you
+  reviewed first, a vote with no comments too: a head no iteration has fails,
+  and so does an approval of an iteration that isn't the latest, since a vote
+  counts for code you didn't read. Nothing is posted then.
+- Each thread of a submit carries Ajour's submission id in a thread property,
+  `Ajour.ReviewSubmission`, which Azure DevOps doesn't show. Ajour keeps the
+  id with the draft review until the submit succeeds, so a retry, after a
+  restart too, reads the pull request's threads and posts only the places
+  with no thread of yours for that submission, then votes. A thread of
+  another submission, or of none, never holds a comment back.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

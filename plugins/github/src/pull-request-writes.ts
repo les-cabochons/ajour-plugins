@@ -1,4 +1,4 @@
-import { pathSegments, type GitHubClient } from "./github.ts";
+import { pathSegments, splitRepository, type GitHubClient } from "./github.ts";
 import type {
   CodeHostCommentResult,
   CodeHostDiffSide,
@@ -14,6 +14,11 @@ import type {
  * comments in one call, so GitHub holds no pending review. The manifest puts
  * these REST endpoints behind the "Review pull requests" access choice, and
  * Ajour refuses the operations while it's off.
+ *
+ * GitHub takes no idempotency key, so a review carries its submission id in
+ * an HTML comment at the end of its body, which GitHub's pages don't show.
+ * Before posting, a submit with an id looks for the user's review that
+ * carries it: an earlier try whose answer was lost, after GitHub took it.
  */
 
 const EVENTS: Record<CodeHostSubmitReviewRequest["verdict"], string> = {
@@ -57,17 +62,71 @@ export async function postPullRequestComment(
   return { commentId: String(id) };
 }
 
-/** A review with its verdict and its line comments, at the head the user reviewed. */
+/** The hidden line naming a review's submission. Ajour's own reading leaves it out. */
+const markOf = (submissionId: string) => `<!-- ajour-review: ${submissionId} -->`;
+const MARK = /\s*<!-- ajour-review: [\w-]+ -->\s*$/;
+
+/** A review body without its submission line. */
+export function withoutSubmissionMark(body: string) {
+  return body.replace(MARK, "");
+}
+
+const REVIEWS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { reviews(last: 100) { nodes { databaseId state viewerDidAuthor body } } }
+  }
+}`;
+
+interface ReviewNode {
+  databaseId: number | null;
+  state: string;
+  viewerDidAuthor: boolean;
+  body: string;
+}
+
+/** The user's submitted review that carries `submissionId`, among the pull request's last 100. */
+async function findSubmitted(client: GitHubClient, request: CodeHostSubmitReviewRequest, submissionId: string) {
+  const [owner, name] = splitRepository(request.repository);
+  const data = await client.query<{
+    repository: { pullRequest: { reviews: { nodes: (ReviewNode | null)[] } } | null } | null;
+  }>(REVIEWS_QUERY, { owner, name, number: request.number });
+  const mark = markOf(submissionId);
+  return data.repository?.pullRequest?.reviews.nodes.find(
+    (node) =>
+      node?.databaseId != null && node.viewerDidAuthor && node.state !== "PENDING" && node.body.trimEnd().endsWith(mark),
+  );
+}
+
+/**
+ * A review with its verdict and its line comments, at the head the user
+ * reviewed. With a submission id, one GitHub already holds is returned as
+ * it is: a retry sends nothing twice.
+ */
 export async function submitPullRequestReview(
   client: GitHubClient,
   request: CodeHostSubmitReviewRequest,
 ): Promise<CodeHostSubmitReviewResult> {
+  const { submissionId } = request;
+  if (submissionId !== undefined && !/^[\w-]{1,100}$/.test(submissionId)) {
+    throw new Error("The review's submission id must be letters, digits, - and _.");
+  }
+  if (submissionId) {
+    const submitted = await findSubmitted(client, request, submissionId);
+    if (submitted) return { reviewId: String(submitted.databaseId) };
+  }
+  const body = submissionId
+    ? request.body
+      ? `${request.body}
+
+${markOf(submissionId)}`
+      : markOf(submissionId)
+    : request.body;
   const { id } = await client.rest<{ id: number }>(`${pullsPath(request.repository, request.number)}/reviews`, {
     method: "POST",
     body: {
       commit_id: request.headSha,
       event: EVENTS[request.verdict],
-      ...(request.body ? { body: request.body } : {}),
+      ...(body ? { body } : {}),
       comments: request.comments.map((comment) => ({ ...lineFields(comment), body: comment.body })),
     },
   });

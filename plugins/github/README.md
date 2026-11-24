@@ -81,6 +81,14 @@ ADR 0002):
   /repos/{owner}/{repo}/pulls/{number}/reviews`): its verdict as `APPROVE`,
   `REQUEST_CHANGES` or `COMMENT`, its summary when there is one, and every
   line comment of the draft. GitHub holds no pending review.
+- GitHub takes no idempotency key, so a review's body ends with an HTML
+  comment naming Ajour's submission id, `<!-- ajour-review: … -->`, which
+  GitHub's pages don't show and Ajour leaves out when it reads the
+  conversation. Ajour keeps the id with the draft review until the submit
+  succeeds. A submit with an id first looks among the pull request's last 100
+  reviews, through GraphQL, for one of yours that carries it: when the
+  answer to an earlier try was lost after GitHub took the review, the retry
+  returns that review and posts nothing again.
 
 These endpoints sit behind the connection's **Review pull requests** access
 choice, which also covers the replies, resolving, viewed files, title and

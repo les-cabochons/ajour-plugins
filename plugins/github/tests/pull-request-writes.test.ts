@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { postComment, submitReview } from "../src/plugin.ts";
-import { installAjour, json, pluginConnection, type SeenRequest } from "./support/github-ajour.ts";
+import { installAjour, json, pluginConnection, stubGitHub, type SeenRequest } from "./support/github-ajour.ts";
 
 /*
  * The writes of Deck's draft review (les-cabochons/ajour#784): a comment
@@ -149,6 +149,72 @@ describe("submitReview", () => {
     await expect(
       submitReview!(connection([]), { ...ref, headSha: "abc123", verdict: "approve", comments: [] }),
     ).rejects.toThrow(/reviewPullRequests/);
+    expect(requests).toEqual([]);
+  });
+});
+
+describe("submitReview with a submission", () => {
+  const SUBMISSION = "review_submission_1";
+  const MARK = `<!-- ajour-review: ${SUBMISSION} -->`;
+  const review = {
+    ...ref,
+    headSha: "abc123",
+    verdict: "approve" as const,
+    body: "Ship it.",
+    comments: [{ path: "src/retry.ts", side: "head" as const, line: 14, body: "Nit." }],
+    submissionId: SUBMISSION,
+  };
+
+  /** GitHub with these reviews on the pull request, answering a new review with id 80. */
+  function withReviews(nodes: unknown[]) {
+    return stubGitHub(
+      () => ({ repository: { pullRequest: { reviews: { nodes } } } }),
+      () => json({ id: 80 }, 200),
+      { access: [REVIEW] },
+    );
+  }
+
+  it("marks the review with its submission in a line GitHub doesn't show", async () => {
+    const { requests } = withReviews([]);
+
+    await submitReview!(connection(), review);
+    await submitReview!(connection(), { ...review, body: undefined });
+
+    expect(requests.filter((request) => request.host === "rest").map((request) => request.body.body)).toEqual([
+      `Ship it.\n\n${MARK}`,
+      MARK,
+    ]);
+  });
+
+  it("finds the review an earlier try left, and sends nothing again", async () => {
+    // The first try's answer was lost after GitHub took the review.
+    const { requests } = withReviews([
+      { databaseId: 70, state: "APPROVED", viewerDidAuthor: true, body: "LGTM" },
+      { databaseId: 79, state: "APPROVED", viewerDidAuthor: true, body: `Ship it.\n\n${MARK}` },
+    ]);
+
+    await expect(submitReview!(connection(), review)).resolves.toEqual({ reviewId: "79" });
+    expect(requests.filter((request) => request.host === "rest")).toEqual([]);
+    expect(requests[0]!.body.variables).toEqual({ owner: "acme", name: "api", number: 7 });
+  });
+
+  it.each([
+    ["someone else's", { databaseId: 79, state: "APPROVED", viewerDidAuthor: false, body: MARK }],
+    ["another submission's", { databaseId: 79, state: "APPROVED", viewerDidAuthor: true, body: "<!-- ajour-review: other -->" }],
+    ["a pending", { databaseId: 79, state: "PENDING", viewerDidAuthor: true, body: MARK }],
+  ])("submits beside %s review", async (_, node) => {
+    const { requests } = withReviews([node]);
+
+    await expect(submitReview!(connection(), review)).resolves.toEqual({ reviewId: "80" });
+    expect(requests.filter((request) => request.host === "rest")).toHaveLength(1);
+  });
+
+  it("refuses an identity a marker can't hold, sending nothing", async () => {
+    const { requests } = withReviews([]);
+
+    await expect(submitReview!(connection(), { ...review, submissionId: "a --> b" })).rejects.toThrow(
+      "The review's submission id",
+    );
     expect(requests).toEqual([]);
   });
 });

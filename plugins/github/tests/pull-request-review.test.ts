@@ -92,7 +92,8 @@ describe("getPullRequestConversation", () => {
       timeline: {
         "": page([
           { __typename: "PullRequestCommit", commit: { oid: "abc123", messageHeadline: "Stop on 410", committedDate: "2026-11-01T10:30:00Z", author: { name: "Alice" } } },
-          { __typename: "PullRequestReview", id: "R_1", state: "APPROVED", body: "", submittedAt: "2026-11-01T14:00:00Z", author: bob },
+          // Ajour's submission line, which GitHub doesn't show either.
+          { __typename: "PullRequestReview", id: "R_1", state: "APPROVED", body: "Ship it.\n\n<!-- ajour-review: review_submission_1 -->", submittedAt: "2026-11-01T14:00:00Z", author: bob },
           { __typename: "PullRequestReview", id: "R_2", state: "PENDING", body: "draft", submittedAt: null, author: alice },
           { __typename: "IssueComment", id: "IC_1", body: "Ready for another look.", createdAt: "2026-11-01T13:30:00Z", author: alice },
           { __typename: "RenamedTitleEvent", id: "E_1", createdAt: "2026-11-01T10:45:00Z", previousTitle: "WIP", currentTitle: "Stop retries on 410", actor: alice },
@@ -151,7 +152,7 @@ describe("getPullRequestConversation", () => {
       ["event", "requested a review from acme/backend"],
       ["event", "force-pushed the branch"],
       ["comment", "Ready for another look."],
-      ["review", ""],
+      ["review", "Ship it."],
     ]);
     expect(conversation.timeline[1]).toEqual({
       kind: "commit",
@@ -160,7 +161,7 @@ describe("getPullRequestConversation", () => {
       authorName: "Alice",
       createdAt: Date.parse("2026-11-01T10:30:00Z"),
     });
-    expect(conversation.timeline.at(-1)).toMatchObject({ kind: "review", id: "R_1", verdict: "approved" });
+    expect(conversation.timeline.at(-1)).toMatchObject({ kind: "review", id: "R_1", verdict: "approved", body: "Ship it." });
     expect(conversation.timeline[4]).not.toHaveProperty("actor");
     // Each connection reads page by page: the threads took two.
     expect(calls.filter((call) => call.query.includes("reviewThreads(")).map((call) => call.variables.after)).toEqual([null, "threads-2"]);

@@ -102,6 +102,7 @@ export interface GraphQLCall {
 export function stubGitHub(
   handler: (call: GraphQLCall) => unknown,
   rest: (request: SeenRequest) => FakeResponseInit | Promise<FakeResponseInit> = () => json([]),
+  options: { access?: readonly string[] } = {},
 ) {
   const calls: GraphQLCall[] = [];
   const installed = installAjour((request) => {
@@ -110,6 +111,6 @@ export function stubGitHub(
     calls.push(call);
     const data = handler(call);
     return json(data instanceof Error ? { errors: [{ message: data.message }] } : { data });
-  });
+  }, options);
   return { calls, ...installed };
 }

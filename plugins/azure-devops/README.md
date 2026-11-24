@@ -367,6 +367,15 @@ Deck's review page shows a pull request's conversation and checks:
 - `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
   checks: approved passes, rejected and broken fail, not applicable is skipped,
   and queued and running are pending. A build links to its last run.
+- `getPullRequestVersions` returns the pull request's iterations for Deck's
+  versions bar (les-cabochons/ajour#787), read with their commits
+  (`includeCommits=true`): each iteration keeps its number, its source
+  commit as the head, its common commit as the base, the push's date (or
+  the iteration's), whether it was a force push or a rebase, and its
+  commits oldest first, at most 250. The answer says versions are
+  iterations, so Deck names them so.
+- `syncPullRequests` names the branch the pull request merges into, without
+  `refs/heads/`.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

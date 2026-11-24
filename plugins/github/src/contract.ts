@@ -102,6 +102,8 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   closedAt?: number;
   viewerIsAuthor: boolean;
   headSha: string;
+  /** The branch the pull request merges into, such as `main`. */
+  baseRef?: string;
   lastPushedAt: number;
   lastPushActor?: CodeHostUser;
   reviewRequests: CodeHostReviewRequest[];
@@ -203,6 +205,35 @@ export type CodeHostChecksRequest = CodeHostPullRequestRef;
 /** The checks on the pull request's head, at most 500. */
 export interface CodeHostChecksResult {
   checks: CodeHostCheck[];
+}
+
+/** A commit a version brought. */
+export interface CodeHostVersionCommit {
+  sha: string;
+  headline: string;
+  authorName: string;
+  createdAt: number;
+}
+
+/** One version of a pull request: a push on GitHub, an iteration on Azure DevOps. */
+export interface CodeHostVersion {
+  /** From 1, in push order. */
+  number: number;
+  headSha: string;
+  /** Where this head met the target branch. Absent when the code host doesn't say. */
+  baseSha?: string;
+  pushedAt: number;
+  /** The push rewrote the branch. */
+  forced?: boolean;
+  /** At most 250, oldest first. */
+  commits: CodeHostVersionCommit[];
+}
+
+/** At most 500 versions, oldest first; the last is the pull request's head. */
+export interface CodeHostVersionsResult {
+  versions: CodeHostVersion[];
+  /** What the code host calls a version. A push when absent. */
+  versionName?: "push" | "iteration";
 }
 
 /** A changed file. Deck reads only its path, previous path and status. */

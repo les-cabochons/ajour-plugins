@@ -199,6 +199,8 @@ interface GitHubPullRequest {
   closedAt: string | null;
   headRefOid: string;
   headRefName: string;
+  /** Absent in answers from before it was asked. */
+  baseRefName?: string;
   headRepository: { nameWithOwner: string } | null;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   repository: { nameWithOwner: string };
@@ -248,7 +250,7 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName mergeable
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable
   headRepository { nameWithOwner }
   repository { nameWithOwner }
   author { ${ACTOR_FIELDS} }
@@ -502,6 +504,7 @@ export function toPullRequestFacts(
     ...(pullRequest.closedAt ? { closedAt: time(pullRequest.closedAt) } : {}),
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
+    ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
     lastPushedAt,
     reviewRequests,
     reviewRequestEvents: (pullRequest.reviewRequestTimeline?.nodes ?? []).flatMap((event) => {

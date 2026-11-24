@@ -200,6 +200,8 @@ export interface AzurePullRequest {
   reviewers?: AzureReviewer[];
   mergeStatus?: string;
   lastMergeSourceCommit?: { commitId: string };
+  /** The branch it merges into, such as `refs/heads/main`. */
+  targetRefName?: string;
   repository: { id: string; name: string; project: { id: string; name: string } };
 }
 
@@ -244,6 +246,15 @@ export interface AzureIteration {
   /** The commit the iteration is compared with: where its head and the target branch met when it was pushed. */
   commonRefCommit?: { commitId: string };
   push?: { date?: string; pushedBy?: AzureIdentity };
+  /** Why the iteration was made: create, push, forcePush, rebase… */
+  reason?: string;
+  /** Listed only with `includeCommits=true`, newest first. */
+  commits?: {
+    commitId?: string;
+    comment?: string;
+    author?: { name?: string; date?: string };
+    committer?: { date?: string };
+  }[];
 }
 
 export interface AzurePolicyEvaluation {
@@ -275,6 +286,12 @@ interface MappingContext {
   viewer: Viewer;
   /** Lowercased ids of the viewer's teams, or empty when team requests are off. */
   viewerTeams: Set<string>;
+}
+
+/** The branch a pull request merges into, without `refs/heads/`. */
+function baseRefOf(pullRequest: AzurePullRequest): { baseRef?: string } {
+  const name = pullRequest.targetRefName?.replace(/^refs\/heads\//, "").trim();
+  return name ? { baseRef: name.slice(0, 400) } : {};
 }
 
 export function time(value: string | undefined) {
@@ -548,6 +565,7 @@ export function toPullRequestFacts(
     viewerIsAuthor: sameId(pullRequest.createdBy.id, context.viewer.id),
     headSha:
       pullRequest.lastMergeSourceCommit?.commitId ?? lastIteration?.sourceRefCommit?.commitId ?? "unknown",
+    ...baseRefOf(pullRequest),
     lastPushedAt,
     ...(pusher?.id ? { lastPushActor: toUser(pusher, context.viewer) } : {}),
     reviewRequests: lastN(toReviewRequests(pullRequest, context), 100),

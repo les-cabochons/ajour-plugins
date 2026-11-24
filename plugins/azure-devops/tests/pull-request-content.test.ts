@@ -270,6 +270,48 @@ describe("getFileContent", () => {
     expect(requests.map(label)).toEqual(["GET /Fabrikam%20Web/_apis/git/repositories/web%20app/items"]);
   });
 
+  it("fails with Azure DevOps's message on a 404 that doesn't say the item is missing, even without a type", async () => {
+    serveFixture(createAzureFixture(ORGANIZATION), {
+      override: () => ({
+        status: 404,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "TF401019: The Git repository with name or identifier api does not exist or you do not have permissions for the operation you are attempting.",
+        }),
+      }),
+    });
+
+    await expect(
+      getFileContent(connection, { repository: ref.repository, sha: HEAD_1, path: "src/limits.ts" }),
+    ).rejects.toThrow("Azure DevOps request failed (404): TF401019");
+  });
+
+  it("fails on a 404 page that isn't Azure DevOps's, rather than call the file missing", async () => {
+    serveFixture(createAzureFixture(ORGANIZATION), {
+      override: () => ({ status: 404, headers: { "content-type": "text/html" }, body: "<html>Not Found</html>" }),
+    });
+
+    await expect(
+      getFileContent(connection, { repository: ref.repository, sha: HEAD_1, path: "src/limits.ts" }),
+    ).rejects.toThrow("Azure DevOps request failed (404)");
+  });
+
+  it("answers missing for Azure DevOps's item-not-found error, even without a type", async () => {
+    serveFixture(createAzureFixture(ORGANIZATION), {
+      override: () => ({
+        status: 404,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "TF401174: The item '/src/limits.ts' could not be found in the repository 'api' at the version specified by '<Commit: abc>'.",
+        }),
+      }),
+    });
+
+    await expect(
+      getFileContent(connection, { repository: ref.repository, sha: HEAD_1, path: "src/limits.ts" }),
+    ).resolves.toEqual({ kind: "missing" });
+  });
+
   it("fails rather than read Azure DevOps's description of a file as its text", async () => {
     const description = { objectId: "blob-new-2", gitObjectType: "blob", commitId: HEAD_1, path: "/src/limits.ts" };
     serveFixture(createAzureFixture(ORGANIZATION), {

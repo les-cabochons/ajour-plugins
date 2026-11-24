@@ -103,8 +103,10 @@ export class AzureReposClient {
     if (isRejectedToken(response)) throw new Error(TOKEN_REJECTED);
     if (response.status === 404) {
       const payload = isJson ? ((await response.json().catch(() => null)) as AzureErrorPayload | null) : null;
-      if (!payload?.typeKey || payload.typeKey === "GitItemNotFoundException") return { kind: "missing" };
-      throw new Error(`Azure DevOps request failed (404): ${payload.message?.trim() || "Request failed"}`);
+      // Only Azure DevOps's own "item not found" means the file isn't at that
+      // commit; any other 404, typed or not, keeps its message.
+      if (isItemNotFound(payload)) return { kind: "missing" };
+      throw new Error(`Azure DevOps request failed (404): ${payload?.message?.trim() || "Request failed"}`);
     }
     if (!response.ok) {
       throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
@@ -693,4 +695,11 @@ export async function syncPullRequests(
     toPullRequestFacts(pullRequest, await fetchDetails(client, pullRequest), context),
   );
   return { viewer: viewer.user, instanceUrl: config.organizationUrl, pullRequests };
+}
+
+/** Azure DevOps's answer when an item isn't at the version asked for (TF401174). */
+function isItemNotFound(payload: AzureErrorPayload | null): boolean {
+  if (!payload) return false;
+  if (payload.typeKey) return payload.typeKey === "GitItemNotFoundException";
+  return /^TF401174:/.test(payload.message?.trim() ?? "");
 }

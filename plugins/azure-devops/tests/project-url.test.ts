@@ -6,7 +6,9 @@ import {
   stubAzureFetch,
 } from "./support/azure-ajour.ts";
 import {
+  BASE_1,
   createAzureFixture,
+  HEAD_1,
   PROJECT,
   ORIGINAL_ESTIMATE,
 } from "./support/azure-fixture.ts";
@@ -140,6 +142,19 @@ it.each([
         url: `${root}/${PROJECT}/_git/api/pullrequest/12`,
       }),
     );
+    const content = await plugin.getPullRequestContent!(connection, {
+      number: 12,
+      repository: `${PROJECT}/api`,
+    });
+    expect(content).toMatchObject({ headSha: HEAD_1, baseSha: BASE_1 });
+    expect(content.files).toHaveLength(6);
+    await expect(
+      plugin.getFileContent!(connection, {
+        repository: `${PROJECT}/api`,
+        sha: HEAD_1,
+        path: "src/new.ts",
+      }),
+    ).resolves.toEqual({ kind: "text", content: "export const added = true;\n" });
     await expect(
       plugin.listSettleStates!(connection, { sourceId }),
     ).resolves.toBeDefined();

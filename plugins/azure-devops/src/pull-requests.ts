@@ -1,6 +1,7 @@
 import { isRejectedToken, sendAzureDevOps, TOKEN_REJECTED, type AzureResponse } from "./azure-devops.ts";
 import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.ts";
 import type {
+  CodeHostApproval,
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
   CodeHostPullRequestRef,
@@ -13,13 +14,13 @@ import type {
   CodeHostUser,
 } from "./contract.ts";
 
-const API_VERSION = "7.1";
+export const API_VERSION = "7.1";
 const TEAMS_API_VERSION = "7.1-preview.3";
-const POLICY_API_VERSION = "7.1-preview.1";
+export const POLICY_API_VERSION = "7.1-preview.1";
 const PAGE_SIZE = 100;
 const MAX_PULL_REQUESTS = 1000;
 const DETAIL_CONCURRENCY = 4;
-const BUILD_POLICY_TYPE = "0609b952-1397-4640-95ec-e00a01b2c241";
+export const BUILD_POLICY_TYPE = "0609b952-1397-4640-95ec-e00a01b2c241";
 const STATUS_POLICY_TYPE = "cbdc66da-9728-4af8-aada-9a5a32e4a226";
 
 /** Thrown for 404 and 403, so a pull request out of reach can be skipped. */
@@ -125,12 +126,15 @@ interface AzureIdentity {
 interface AzureReviewer extends AzureIdentity {
   vote?: number;
   hasDeclined?: boolean;
+  isRequired?: boolean;
 }
 
 export interface AzurePullRequest {
   pullRequestId: number;
   status: "active" | "completed" | "abandoned" | "notSet" | "all";
   title: string;
+  /** Markdown, at most 4,000 characters. */
+  description?: string;
   isDraft?: boolean;
   creationDate: string;
   closedDate?: string;
@@ -163,6 +167,16 @@ export interface AzureThread {
   publishedDate?: string;
   lastUpdatedDate?: string;
   isDeleted?: boolean;
+  /** active, pending, fixed, wontFix, closed, byDesign or unknown. */
+  status?: string;
+  /** The file and lines a code thread is on; absent on a thread about the whole pull request. */
+  threadContext?: {
+    filePath?: string;
+    leftFileStart?: { line?: number };
+    leftFileEnd?: { line?: number };
+    rightFileStart?: { line?: number };
+    rightFileEnd?: { line?: number };
+  } | null;
   properties?: Record<string, AzureProperty | undefined>;
   identities?: Record<string, AzureIdentity | undefined>;
   comments: {
@@ -170,6 +184,7 @@ export interface AzureThread {
     author?: AzureIdentity;
     content?: string;
     publishedDate?: string;
+    lastUpdatedDate?: string;
     commentType?: string;
     isDeleted?: boolean;
   }[];
@@ -185,8 +200,15 @@ export interface AzureIteration {
 }
 
 export interface AzurePolicyEvaluation {
+  evaluationId?: string;
   status?: string;
-  configuration?: { isEnabled?: boolean; type?: { id?: string } };
+  configuration?: {
+    isEnabled?: boolean;
+    type?: { id?: string; displayName?: string };
+    settings?: { displayName?: string | null };
+  };
+  /** A build policy's last build, `buildId`. */
+  context?: { buildId?: number } | null;
 }
 
 export interface PullRequestDetails {
@@ -208,7 +230,7 @@ interface MappingContext {
   viewerTeams: Set<string>;
 }
 
-function time(value: string | undefined) {
+export function time(value: string | undefined) {
   const parsed = value ? Date.parse(value) : NaN;
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
@@ -297,16 +319,16 @@ export function mentions(content: string, identityId: string) {
   return false;
 }
 
-function threadType(thread: AzureThread) {
+export function threadType(thread: AzureThread) {
   const value = propertyValue(thread, "CodeReviewThreadType");
   return typeof value === "string" ? value : undefined;
 }
 
-function threadTime(thread: AzureThread) {
+export function threadTime(thread: AzureThread) {
   return time(thread.publishedDate) ?? time(thread.comments[0]?.publishedDate);
 }
 
-function toReviews(threads: AzureThread[], viewer: Viewer): CodeHostReviewFact[] {
+export function toReviews(threads: AzureThread[], viewer: Viewer): CodeHostReviewFact[] {
   return threads.flatMap((thread): CodeHostReviewFact[] => {
     if (threadType(thread) !== "VoteUpdate") return [];
     const vote = Number(propertyValue(thread, "CodeReviewVoteResult"));
@@ -388,6 +410,27 @@ function toReviewRequests(pullRequest: AzurePullRequest, context: MappingContext
             includesViewer: sameId(reviewer.id, context.viewer.id),
           },
     );
+}
+
+/** Azure DevOps's votes: 10 approved, 5 approved with suggestions, -5 waiting for the author, -10 rejected. */
+function approvalVote(vote: number | undefined): CodeHostApproval["vote"] {
+  if (vote === undefined || vote === 0) return "none";
+  if (vote > 0) return "approved";
+  return vote <= -10 ? "rejected" : "changes_requested";
+}
+
+/** Each reviewer's vote, people and groups, except those who declined. At most 100. */
+function toApprovals(pullRequest: AzurePullRequest, context: MappingContext): CodeHostApproval[] {
+  return (pullRequest.reviewers ?? [])
+    .filter((reviewer) => !reviewer.hasDeclined)
+    .slice(0, 100)
+    .map((reviewer) => ({
+      reviewer: reviewer.isContainer
+        ? { login: reviewer.displayName?.trim() || reviewer.id, isBot: false }
+        : toUser(reviewer, context.viewer),
+      vote: approvalVote(reviewer.vote),
+      ...(reviewer.isRequired ? { required: true } : {}),
+    }));
 }
 
 export function checkState(evaluations: AzurePolicyEvaluation[] | undefined): CodeHostPullRequestFacts["checks"] {
@@ -517,6 +560,7 @@ export function toPullRequestFacts(
     comments,
     checks: checkState(details.evaluations),
     mergeability: mergeability(pullRequest.mergeStatus),
+    approvals: toApprovals(pullRequest, context),
   };
 }
 
@@ -605,7 +649,7 @@ export class PullRequestSearch {
   }
 }
 
-async function fetchTracked(client: AzureReposClient, ref: CodeHostPullRequestRef) {
+export async function fetchTracked(client: AzureReposClient, ref: CodeHostPullRequestRef) {
   try {
     return await client.get<AzurePullRequest>(`/_apis/git/pullrequests/${ref.number}`, {
       "api-version": API_VERSION,

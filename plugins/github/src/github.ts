@@ -1,6 +1,7 @@
 import type {} from "@ajour/plugin-sdk/globals";
 import { repositoryInScope, type GitHubConfig } from "./config.ts";
 import type {
+  CodeHostApproval,
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
   CodeHostPullRequestRef,
@@ -173,7 +174,7 @@ async function refuseUnlessOk(response: GitHubResponse) {
   }
 }
 
-interface GitHubActor {
+export interface GitHubActor {
   __typename: string;
   login: string;
   avatarUrl?: string;
@@ -246,6 +247,10 @@ interface GitHubPullRequest {
       author: GitHubActor | null;
     }[];
   };
+  /** Each reviewer's latest approval or change request. Absent in answers from before it was asked. */
+  latestOpinionatedReviews?: {
+    nodes: { state: string; author: GitHubActor | null }[];
+  };
   comments: { nodes: GitHubComment[] };
   reviewThreads: {
     nodes: { id: string; comments: { nodes: GitHubComment[] } }[];
@@ -293,6 +298,7 @@ const PULL_REQUEST_FIELDS = `
     }
   }
   reviews(last: 100) { nodes { id state submittedAt body author { ${ACTOR_FIELDS} } } }
+  latestOpinionatedReviews(first: 100) { nodes { state author { ${ACTOR_FIELDS} } } }
   comments(last: 100) { nodes { id createdAt body author { ${ACTOR_FIELDS} } } }
   reviewThreads(last: 50) {
     nodes { id comments(last: 30) { nodes { id createdAt body author { ${ACTOR_FIELDS} } } } }
@@ -334,7 +340,7 @@ function time(value: string) {
   return Date.parse(value);
 }
 
-function toUser(actor: GitHubActor | null): CodeHostUser {
+export function toUser(actor: GitHubActor | null): CodeHostUser {
   if (!actor) {
     // GitHub shows deleted accounts as "ghost".
     return { login: "ghost", isBot: false };
@@ -427,6 +433,38 @@ export function toRepositoryIdentity(
       ? { source: { repository: fork.nameWithOwner, cloneUrls: forkUrls } }
       : {}),
   };
+}
+
+const VOTES: Record<string, CodeHostApproval["vote"]> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes_requested",
+};
+
+/**
+ * Each reviewer's vote: their latest approval or change request, then each
+ * person or team asked to review who hasn't given one. At most 100.
+ */
+function toApprovals(pullRequest: GitHubPullRequest): CodeHostApproval[] {
+  const approvals: CodeHostApproval[] = [];
+  const seen = new Set<string>();
+  for (const review of pullRequest.latestOpinionatedReviews?.nodes ?? []) {
+    const vote = VOTES[review.state];
+    if (!vote) continue;
+    const reviewer = toUser(review.author);
+    seen.add(reviewer.login.toLowerCase());
+    approvals.push({ reviewer, vote });
+  }
+  for (const { requestedReviewer: requested } of pullRequest.reviewRequests.nodes) {
+    if (!requested) continue;
+    const reviewer =
+      requested.__typename === "Team"
+        ? { login: `${requested.organization.login}/${requested.slug}`, isBot: false }
+        : { login: requested.login, isBot: requested.__typename === "Bot" || requested.login.endsWith("[bot]") };
+    if (seen.has(reviewer.login.toLowerCase())) continue;
+    seen.add(reviewer.login.toLowerCase());
+    approvals.push({ reviewer, vote: "none" });
+  }
+  return approvals.slice(0, 100);
 }
 
 export function toPullRequestFacts(
@@ -527,6 +565,7 @@ export function toPullRequestFacts(
         : pullRequest.mergeable === "CONFLICTING"
           ? "conflicting"
           : "unknown",
+    approvals: toApprovals(pullRequest),
   };
 }
 

@@ -208,7 +208,11 @@ describe("syncPullRequests", () => {
             reviewers: [
               { ...viewerIdentity, vote: 0 },
               { ...alice, vote: -5 },
-              { id: TEAM, displayName: "[Fabrikam Web]\\Reviewers", isContainer: true, vote: 0 },
+              { id: TEAM, displayName: "[Fabrikam Web]\\Reviewers", isContainer: true, vote: 0, isRequired: true },
+              { ...buildService, vote: 10 },
+              { id: "77777777-7777-7777-7777-777777777777", displayName: "Rejecter", uniqueName: "r@contoso.com", vote: -10 },
+              { id: "88888888-8888-8888-8888-888888888888", displayName: "Suggester", uniqueName: "s@contoso.com", vote: 5 },
+              { id: "99999999-9999-9999-9999-999999999999", displayName: "Gone", uniqueName: "g@contoso.com", vote: 0, hasDeclined: true },
             ],
           }),
         ],
@@ -310,6 +314,15 @@ describe("syncPullRequests", () => {
     expect(facts.reviewRequests).toEqual([
       { kind: "user", name: "viewer@contoso.com", includesViewer: true },
       { kind: "team", name: "[Fabrikam Web]\\Reviewers", includesViewer: true },
+    ]);
+    // Each reviewer's vote; a reviewer who declined is left out.
+    expect(facts.approvals).toEqual([
+      { reviewer: { login: "viewer@contoso.com", displayName: "Viewer", isBot: false }, vote: "none" },
+      { reviewer: { login: "alice@contoso.com", displayName: "Alice", isBot: false }, vote: "changes_requested" },
+      { reviewer: { login: "[Fabrikam Web]\\Reviewers", isBot: false }, vote: "none", required: true },
+      { reviewer: { login: buildService.uniqueName, displayName: buildService.displayName, isBot: true }, vote: "approved" },
+      { reviewer: { login: "r@contoso.com", displayName: "Rejecter", isBot: false }, vote: "rejected" },
+      { reviewer: { login: "s@contoso.com", displayName: "Suggester", isBot: false }, vote: "approved" },
     ]);
     expect(facts.reviewRequestEvents).toEqual([
       {

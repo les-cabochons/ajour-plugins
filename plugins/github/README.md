@@ -54,6 +54,26 @@ file, so its hunks match Review Deck's. The plugin gives it what it needs:
   8 MB answer limit, and one whose name the broker can't request (a `%`,
   `;` or `\` in it). A file that is not at that commit is missing.
 
+### Conversation and checks, for Deck
+
+Beside the diff, Deck's review page shows the pull request's conversation and
+its checks:
+
+- `getPullRequestConversation` reads, through GraphQL and page by page, the
+  description, the review threads with their path, side, lines, resolved and
+  outdated marks and comments (up to 500 per thread), the timeline (comments,
+  reviews, commits, force pushes, renames, review requests, draft and ready
+  changes, merges, closes and reopens, after an "opened" event), the files you
+  marked viewed and the merge methods the repository allows. It keeps Ajour's
+  limits: 2,000 threads, 5,000 timeline events and 3,000 files.
+- `getChecks` reads the check runs and commit statuses on the head, at most
+  500, each with its name, its state (pending, success, failure or skipped:
+  cancelled, timed out and action required count as failures; neutral,
+  skipped and stale, a run that never completed, as skipped) and its link
+  when it's http or https.
+- `syncPullRequests` adds each reviewer's vote: their latest approval or
+  change request, then each person or team asked who hasn't given one.
+
 Writes (comments, reviews, merge) come in later versions.
 
 ## Issues
@@ -94,7 +114,8 @@ The plugin declares `connector.description` with `write` and a `maxLength` of
   user edits the description in GitHub. GitHub has no conditional update on an
   issue, so a change made between that read and the write is overwritten; it
   stays in the issue's edit history.
-- Pull requests are not backlog items: their bodies are never read or written.
+- Pull requests are not backlog items: their bodies are never written. Deck's
+  review page reads a pull request's description and comments to show them.
 
 Issues need the Issues permission set to Read and write, to close and reopen
 them and to write their descriptions back. Ajour lets the user turn issues

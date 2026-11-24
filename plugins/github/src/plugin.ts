@@ -5,6 +5,7 @@ import { readIssueDescription, writeIssueDescription } from "./description-sourc
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
+import { readChecks, readConversation } from "./pull-request-review.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
@@ -48,6 +49,16 @@ export const getPullRequestContent: NonNullable<PluginModule["getPullRequestCont
 /** One file's text at a commit, for Deck to build a pull request's diff. */
 export const getFileContent: NonNullable<PluginModule["getFileContent"]> = async (connection, request) =>
   await readFileAtCommit(new GitHubClient(connection.id), request);
+
+/** The description, timeline, review threads and viewed files, for Deck's review page. */
+export const getPullRequestConversation: NonNullable<PluginModule["getPullRequestConversation"]> = async (
+  connection,
+  request,
+) => await readConversation(new GitHubClient(connection.id), request);
+
+/** The checks on the pull request's head, for Deck's status line. */
+export const getChecks: NonNullable<PluginModule["getChecks"]> = async (connection, request) =>
+  await readChecks(new GitHubClient(connection.id), request);
 
 /** Issues assigned to you, as backlog items. */
 export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>

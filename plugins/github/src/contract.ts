@@ -120,6 +120,8 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   comments: CodeHostCommentFact[];
   checks: "none" | "pending" | "success" | "failure";
   mergeability: "mergeable" | "conflicting" | "unknown";
+  /** Each reviewer's current vote, one per reviewer, at most 100. */
+  approvals?: CodeHostApproval[];
 }
 
 export interface CodeHostSyncRequest {
@@ -130,6 +132,87 @@ export interface CodeHostSyncResult {
   viewer: CodeHostUser;
   instanceUrl?: string;
   pullRequests: CodeHostPullRequestFacts[];
+}
+
+/** One reviewer's current vote. `rejected` is Azure DevOps's Reject; `none` is asked, with no vote yet. */
+export type CodeHostApprovalVote = "approved" | "changes_requested" | "rejected" | "none";
+
+export interface CodeHostApproval {
+  /** A person, or a team or group asked to review. */
+  reviewer: CodeHostUser;
+  vote: CodeHostApprovalVote;
+  /** The code host's policy requires this reviewer's approval. */
+  required?: boolean;
+}
+
+export type CodeHostDiffSide = "base" | "head";
+
+export interface CodeHostThreadComment {
+  id: string;
+  author: CodeHostUser;
+  /** Markdown, at most 65,536 characters. */
+  body: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface CodeHostReviewThread {
+  id: string;
+  path: string;
+  side: CodeHostDiffSide;
+  /** Absent when the thread no longer maps to a line of the latest diff. */
+  line?: number;
+  startLine?: number;
+  resolved: boolean;
+  outdated: boolean;
+  /** 1 to 500. */
+  comments: CodeHostThreadComment[];
+}
+
+export type CodeHostTimelineEvent =
+  | { kind: "comment"; id: string; author: CodeHostUser; body: string; createdAt: number }
+  | {
+      kind: "review";
+      id: string;
+      author: CodeHostUser;
+      verdict: CodeHostReviewVerdict;
+      body: string;
+      createdAt: number;
+    }
+  | { kind: "commit"; sha: string; headline: string; authorName: string; createdAt: number }
+  /** Any other event, already phrased, such as "renamed the title". 1 to 1,000 characters. */
+  | { kind: "event"; id: string; actor?: CodeHostUser; text: string; createdAt: number };
+
+export type CodeHostConversationRequest = CodeHostPullRequestRef;
+
+export interface CodeHostConversationResult {
+  /** Markdown, at most 65,536 characters. */
+  description: string;
+  /** Oldest first, at most 5,000. */
+  timeline: CodeHostTimelineEvent[];
+  /** At most 2,000. */
+  threads: CodeHostReviewThread[];
+  /** At most 3,000. */
+  viewedPaths: string[];
+  mergeMethods: ("merge" | "squash" | "rebase")[];
+}
+
+/** `skipped` is skipped, neutral or not applicable: neither passed nor failed. */
+export type CodeHostCheckRunState = "pending" | "success" | "failure" | "skipped";
+
+export interface CodeHostCheck {
+  /** 1 to 500 characters. */
+  name: string;
+  state: CodeHostCheckRunState;
+  /** An http or https URL, at most 2,000 characters. */
+  url?: string;
+}
+
+export type CodeHostChecksRequest = CodeHostPullRequestRef;
+
+/** The checks on the pull request's head, at most 500. */
+export interface CodeHostChecksResult {
+  checks: CodeHostCheck[];
 }
 
 /** A changed file. Deck reads only its path, previous path and status. */

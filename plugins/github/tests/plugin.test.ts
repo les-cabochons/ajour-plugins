@@ -292,6 +292,13 @@ describe("GitHub plugin", () => {
           { id: "R_2", state: "PENDING", submittedAt: null, author: alice },
         ],
       },
+      latestOpinionatedReviews: {
+        nodes: [
+          { state: "CHANGES_REQUESTED", author: viewer },
+          { state: "APPROVED", author: alice },
+          { state: "COMMENTED", author: bot },
+        ],
+      },
       comments: {
         nodes: [{ id: "C_2", createdAt: "2026-10-01T15:00:00Z", body: "Coverage dropped.", author: bot }],
       },
@@ -402,6 +409,14 @@ describe("GitHub plugin", () => {
       ],
       checks: "failure",
       mergeability: "mergeable",
+      // Each reviewer's latest approval or change request, then whoever is
+      // asked and hasn't given one: the viewer's request shows their vote.
+      approvals: [
+        { reviewer: expect.objectContaining({ login: "octocat" }), vote: "changes_requested" },
+        { reviewer: expect.objectContaining({ login: "alice" }), vote: "approved" },
+        { reviewer: { login: "acme/backend", isBot: false }, vote: "none" },
+        { reviewer: { login: "acme/frontend", isBot: false }, vote: "none" },
+      ],
     });
     expect(result.pullRequests.find((facts) => facts.number === 2)).toMatchObject({
       viewerIsAuthor: true,

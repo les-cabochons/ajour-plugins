@@ -37,6 +37,7 @@ import {
   fetchViewer,
   syncPullRequests as syncAzurePullRequests,
 } from "./pull-requests.ts";
+import { readChecks, readConversation } from "./pull-request-review.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
@@ -391,6 +392,18 @@ export const syncPullRequests: NonNullable<
     buildPullRequestConfig(connection),
     request.tracked,
   );
+
+/** The description, timeline and code threads, for Deck's review page. */
+export const getPullRequestConversation: NonNullable<
+  PluginModule["getPullRequestConversation"]
+> = async (connection, request) =>
+  await readConversation(buildPullRequestConfig(connection), request);
+
+/** The pull request's policies, as checks, for Deck's status line. */
+export const getChecks: NonNullable<PluginModule["getChecks"]> = async (
+  connection,
+  request,
+) => await readChecks(buildPullRequestConfig(connection), request);
 
 /** People to assign the item to, by uniqueName, for the settle dialog. */
 export const searchAssignees: NonNullable<

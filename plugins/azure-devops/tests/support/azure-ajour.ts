@@ -8,6 +8,7 @@ import {
   type RecordedHttpRequest,
 } from "@ajour/plugin-sdk/testing";
 import manifestJson from "../../plugin.json";
+import type { AzureFixture } from "./azure-fixture.ts";
 
 /** The repository's own manifest: the fake refuses any request it does not declare, as Ajour's broker does. */
 export const manifest = manifestJson as unknown as PluginManifest;
@@ -160,7 +161,44 @@ export function stubAzureFetch(handler: FetchLikeHandler, options: InstallOption
   return { fetchMock, fake, requests: fake.requests };
 }
 
-/** A request as an assertion names it: `PATCH /_apis/wit/workitems/42`, with `identities` before a derived host's path. */
+/**
+ * The fake `ajour`, answered by the stateful fixture: each request that passes
+ * the manifest reaches `fixture.answer` by its path and query, as the broker
+ * would send it to the Organization URL. `override` answers first, for a
+ * refusal or an answer the fixture doesn't give.
+ */
+export function serveFixture(
+  fixture: Pick<AzureFixture, "answer">,
+  options: InstallOptions & {
+    override?: (request: RecordedHttpRequest) => FakeResponseInit | undefined;
+  } = {},
+) {
+  return installAjour((request) => {
+    const replaced = options.override?.(request);
+    if (replaced) return replaced;
+    const query = new URLSearchParams();
+    for (const [key, raw] of Object.entries(request.query ?? {})) {
+      for (const value of Array.isArray(raw) ? raw : [raw]) query.append(key, String(value));
+    }
+    const answer = fixture.answer({
+      method: request.method,
+      path: request.path,
+      query,
+      ...(request.bodyText !== undefined ? { body: request.bodyText } : {}),
+      identities: request.host === "identities",
+    });
+    return {
+      status: answer.status,
+      headers: {
+        ...(answer.json !== undefined ? { "content-type": "application/json" } : {}),
+        ...answer.headers,
+      },
+      body: answer.json !== undefined ? JSON.stringify(answer.json) : (answer.body ?? ""),
+    };
+  }, options);
+}
+
+/** A request as an assertion names it:`PATCH /_apis/wit/workitems/42`, with `identities` before a derived host's path. */
 export function label(request: RecordedHttpRequest) {
   return `${request.method} ${request.host ? `${request.host} ` : ""}${request.path}`;
 }

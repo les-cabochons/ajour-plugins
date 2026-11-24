@@ -12,7 +12,7 @@ import type {
   CodeHostUser,
 } from "./contract.ts";
 
-const API_VERSION = "7.1";
+export const API_VERSION = "7.1";
 const TEAMS_API_VERSION = "7.1-preview.3";
 const POLICY_API_VERSION = "7.1-preview.1";
 const PAGE_SIZE = 100;
@@ -77,6 +77,43 @@ export class AzureReposClient {
     return (await response.json()) as T;
   }
 
+  /**
+   * A file's raw bytes, as text: `missing` when Azure DevOps has no such item
+   * at that version, and `too large` when the broker refused an answer over
+   * its size limit (8 MB). Any other 404, such as a repository the token
+   * can't see, throws with Azure DevOps's message.
+   */
+  async rawFile(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<{ kind: "text"; text: string } | { kind: "missing" } | { kind: "too large" }> {
+    let response: AzureResponse;
+    try {
+      response = await sendAzureDevOps(
+        { id: this.connectionId, organizationUrl: this.organizationUrl },
+        path,
+        { query: params, accept: "application/octet-stream" },
+      );
+    } catch (error) {
+      const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined;
+      if (cause?.code === "limit") return { kind: "too large" };
+      throw error;
+    }
+    const isJson = (response.headers["content-type"] ?? "").includes("application/json");
+    if (isRejectedToken(response)) throw new Error(TOKEN_REJECTED);
+    if (response.status === 404) {
+      const payload = isJson ? ((await response.json().catch(() => null)) as AzureErrorPayload | null) : null;
+      if (!payload?.typeKey || payload.typeKey === "GitItemNotFoundException") return { kind: "missing" };
+      throw new Error(`Azure DevOps request failed (404): ${payload.message?.trim() || "Request failed"}`);
+    }
+    if (!response.ok) {
+      throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
+    }
+    // Asked for the bytes, Azure DevOps answers JSON only with the item's description.
+    if (isJson) throw new Error("Azure DevOps answered with the file's description instead of its content.");
+    return { kind: "text", text: await response.text() };
+  }
+
   /** The repositories the token can read, across the organization. Needs Code (Read). */
   async listRepositories() {
     try {
@@ -99,6 +136,12 @@ function codeAccessError(error: unknown) {
   return error instanceof AzureReposNotFoundError
     ? new Error("Azure DevOps refused to list pull requests. Give the token the Code (Read) scope.")
     : error;
+}
+
+/** Azure DevOps's error answer: a message, and the server exception's short name, such as `GitItemNotFoundException`. */
+interface AzureErrorPayload {
+  message?: string;
+  typeKey?: string;
 }
 
 async function errorDetail(response: AzureResponse, isJson: boolean) {
@@ -167,6 +210,8 @@ export interface AzureIteration {
   updatedDate?: string;
   author?: AzureIdentity;
   sourceRefCommit?: { commitId: string };
+  /** The commit the iteration is compared with: where its head and the target branch met when it was pushed. */
+  commonRefCommit?: { commitId: string };
   push?: { date?: string; pushedBy?: AzureIdentity };
 }
 
@@ -540,7 +585,7 @@ export class PullRequestSearch {
   }
 }
 
-async function fetchTracked(client: AzureReposClient, ref: CodeHostPullRequestRef) {
+export async function fetchTracked(client: AzureReposClient, ref: CodeHostPullRequestRef) {
   try {
     return await client.get<AzurePullRequest>(`/_apis/git/pullrequests/${ref.number}`, {
       "api-version": API_VERSION,

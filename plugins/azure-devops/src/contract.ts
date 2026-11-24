@@ -284,6 +284,40 @@ export interface CodeHostSyncResult {
   pullRequests: CodeHostPullRequestFacts[];
 }
 
+/** A changed file. Deck reads only its path, previous path and status. */
+export interface CodeHostChangedFile {
+  path: string;
+  previousPath?: string;
+  status: "added" | "modified" | "removed" | "renamed" | "copied";
+  additions: number;
+  deletions: number;
+  /** Unified diff hunks. Ajour builds its own diff, so the plugin leaves it out. */
+  patch?: string;
+  binary: boolean;
+}
+
+export type CodeHostContentRequest = CodeHostPullRequestRef;
+
+export interface CodeHostContentResult {
+  headSha: string;
+  /** The commit the diff starts from: the latest iteration's common commit. */
+  baseSha: string;
+  /** At most 3,000. */
+  files: CodeHostChangedFile[];
+}
+
+export interface CodeHostFileContentRequest {
+  repository: string;
+  sha: string;
+  path: string;
+}
+
+/** A text file's content is at most 5,000,000 characters. */
+export type CodeHostFileContentResult =
+  | { kind: "text"; content: string }
+  | { kind: "binary" }
+  | { kind: "missing" };
+
 export type BacklogReaction =
   | "like"
   | "dislike"

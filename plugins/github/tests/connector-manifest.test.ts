@@ -126,11 +126,19 @@ describe("network declaration", () => {
     ]);
     expect(rest.endpoints.map((endpoint: { method: string; path: string }) => `${endpoint.method} ${endpoint.path}`)).toEqual([
       "GET /repos/*/*/activity",
+      "GET /repos/*/*/compare/*",
+      "GET /repos/*/*/contents/**",
       "GET /repos/*/*/issues/*",
       "PATCH /repos/*/*/issues/*",
+      "GET /repos/*/*/pulls/*",
+      "GET /repos/*/*/pulls/*/files",
       "GET /repositories/*/activity",
+      "GET /repositories/*/compare/*",
+      "GET /repositories/*/contents/**",
       "GET /repositories/*/issues/*",
       "PATCH /repositories/*/issues/*",
+      "GET /repositories/*/pulls/*",
+      "GET /repositories/*/pulls/*/files",
     ]);
   });
 

@@ -275,6 +275,8 @@ afterAll(() => {
 describe("the source entrypoint", () => {
   it("exports one function per operation the worker may call", () => {
     expect(Object.keys(moduleExports).sort()).toEqual([
+      "getFileContent",
+      "getPullRequestContent",
       "listSettleStates",
       "readDescription",
       "syncConnection",

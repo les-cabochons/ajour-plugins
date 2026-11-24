@@ -23,7 +23,31 @@ token as a bearer credential, so the plugin never sees the token.
   pull request that closed.
 
 Ajour decides what needs you from these facts. The plugin only reports them.
-Review content and writes (comments, reviews, merge) come in later versions.
+
+### Pull request content, for Deck
+
+Deck builds a pull request's diff itself, from both versions of each changed
+file, so its hunks match Review Deck's. The plugin gives it what it needs:
+
+- `getPullRequestContent` lists the changed files, their statuses and a
+  renamed file's previous path, at most 3,000, from the merge base to the
+  head. It reads the pull request, then the second page of the comparison
+  of its base and head, which names the merge base without any file's
+  patch: `base.sha` is the base branch's tip when the pull request last
+  changed, not where the head branched off. Without a merge base it fails
+  rather than diff from the tip. It reads the pull request again after its
+  files, and starts over once if a push landed meanwhile, so the files and
+  the head match. The patches GitHub sends with the file list
+  are left out. A file with no patch and no line counted is marked binary,
+  as a guess. A file whose path is longer than Ajour's 1,000 characters is
+  left out.
+- `getFileContent` reads one file at a commit, raw. A file Ajour can't read
+  whole is answered as binary, so Deck shows it without its lines: one with
+  a NUL byte, one longer than 5,000,000 characters or over the broker's
+  8 MB answer limit, and one whose name the broker can't request (a `%`,
+  `;` or `\` in it). A file that is not at that commit is missing.
+
+Writes (comments, reviews, merge) come in later versions.
 
 ## Issues
 
@@ -158,6 +182,10 @@ on the GitHub URL itself, and the base path of the URL is ignored.
 | `graphql` | POST | `/graphql` | Checking the token, searching and reading pull requests and issues, closing and reopening issues |
 | `rest` | GET | `/repos/*/*/activity`, `/repositories/*/activity` | Attributing a push to the pusher and its time |
 | `rest` | GET | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Reading an issue's description |
+| `rest` | GET | `/repos/*/*/pulls/*`, `/repositories/*/pulls/*` | Reading a pull request's head and base, for Deck |
+| `rest` | GET | `/repos/*/*/pulls/*/files`, `/repositories/*/pulls/*/files` | Listing a pull request's changed files, for Deck |
+| `rest` | GET | `/repos/*/*/compare/*`, `/repositories/*/compare/*` | Finding where a pull request's head branched off, for Deck |
+| `rest` | GET | `/repos/*/*/contents/**`, `/repositories/*/contents/**` | Reading a changed file at the base and the head, for Deck |
 | `rest` | PATCH | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Writing an issue's description |
 
 The `/repositories/*` paths are for a renamed or transferred repository: GitHub

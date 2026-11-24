@@ -785,6 +785,7 @@
         "getFileContent",
         "getPullRequestConversation",
         "getChecks",
+        "getPullRequestVersions",
         "browsePullRequests"
       ]
     },

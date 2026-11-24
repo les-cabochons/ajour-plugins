@@ -65,7 +65,26 @@ its checks:
   skipped and stale, a run that never completed, as skipped) and its link
   when it's http or https.
 - `syncPullRequests` adds each reviewer's vote: their latest approval or
-  change request, then each person or team asked who hasn't given one.
+  change request, then each person or team asked who hasn't given one, and
+  the base branch's name.
+
+### Versions, for Deck
+
+Deck's versions bar lists a pull request's pushes, and compares the one you
+reviewed with the latest (les-cabochons/ajour#787). GitHub keeps no record
+of a plain push, so `getPullRequestVersions` reads them from the timeline,
+through GraphQL and page by page: each force push is a version at the
+commit it pushed, with the commits the timeline lists after it, and the
+commits listed between two other events (a review, a comment, a force push)
+are one push. A review names the commit it reviewed, so the push ends
+there: GitHub lists a commit by its date, and one committed before a review
+may have been pushed after it. A push is dated by its last commit, after the
+event it follows and never after the one that closed it. The last version is always the
+pull request's head; after a force push, or a push the timeline doesn't
+list, it brings the head's commits no earlier version had. GitHub doesn't
+say where an older head met the base branch, so the versions carry no base,
+and Deck reads an older version against the head's base unless it cached
+that version before. At most 500 versions, each with at most 250 commits.
 
 ### Reviewing, from Deck
 

@@ -6,6 +6,7 @@ import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests }
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation } from "./pull-request-review.ts";
+import { readVersions } from "./pull-request-versions.ts";
 import { postPullRequestComment, submitPullRequestReview } from "./pull-request-writes.ts";
 
 /*
@@ -68,6 +69,10 @@ export const submitReview: NonNullable<PluginModule["submitReview"]> = async (co
 /** One comment, on lines or on the conversation, sent at once from Deck's Comment now. */
 export const postComment: NonNullable<PluginModule["postComment"]> = async (connection, request) =>
   await postPullRequestComment(new GitHubClient(connection.id), request);
+
+/** Each push with its commits, from the timeline, for Deck's versions bar. */
+export const getPullRequestVersions: NonNullable<PluginModule["getPullRequestVersions"]> = async (connection, request) =>
+  await readVersions(new GitHubClient(connection.id), request);
 
 /** Issues assigned to you, as backlog items. */
 export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>

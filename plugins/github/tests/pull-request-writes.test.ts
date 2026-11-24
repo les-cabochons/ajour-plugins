@@ -277,7 +277,7 @@ describe("writes with a submission", () => {
     ]);
   });
 
-  it("stops looking at reviews from before the first try", async () => {
+  it("reads every page back to the pull request's first review, however old, before it posts", async () => {
     const { calls, requests } = gitHub({
       reviews: Array.from({ length: 60 }, (_, index) =>
         node({ databaseId: index + 1, body: "Old.", state: "COMMENTED", createdAt: at(-60) }),
@@ -285,8 +285,27 @@ describe("writes with a submission", () => {
     });
 
     await expect(submitReview!(connection(), retry)).resolves.toEqual({ reviewId: "80" });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     expect(posts(requests)).toHaveLength(1);
+  });
+
+  it("finds the review an earlier try left when this computer's clock runs ahead of GitHub's", async () => {
+    // The first try said 10:03 by this computer; GitHub stamped its review 10:00.
+    const { requests } = gitHub({
+      reviews: [
+        node({ databaseId: 79, body: `${MARK}
+
+Ship it.`, createdAt: at(0) }),
+        ...Array.from({ length: 60 }, (_, index) =>
+          node({ databaseId: 100 + index, viewerDidAuthor: false, body: "Me too.", createdAt: at(1) }),
+        ),
+      ],
+    });
+
+    await expect(submitReview!(connection(), { ...review, firstTriedAt: FIRST_TRY + 3 * 60_000 })).resolves.toEqual({
+      reviewId: "79",
+    });
+    expect(posts(requests)).toEqual([]);
   });
 
   it.each([
@@ -325,11 +344,11 @@ describe("writes with a submission", () => {
     expect(posts(requests)).toEqual([]);
   });
 
-  it("can't tell, and posts nothing, when it runs out of pages before the first try", async () => {
+  it("can't tell, and posts nothing, when it runs out of pages before the pull request's first review", async () => {
     const { calls, requests } = gitHub({
       size: 1,
       reviews: Array.from({ length: 40 }, (_, index) =>
-        node({ databaseId: index + 1, viewerDidAuthor: false, createdAt: at(2) }),
+        node({ databaseId: index + 1, viewerDidAuthor: false, createdAt: at(-60) }),
       ),
     });
 
@@ -399,6 +418,39 @@ describe("writes with a submission", () => {
       ).resolves.toEqual({ commentId: "61" });
       expect(posts(requests)).toEqual([]);
       expect(calls[0]!.query).toContain("comments(last:");
+    });
+
+    it("on the conversation: a retry finds the one an earlier try left when this computer's clock runs ahead", async () => {
+      const { requests } = gitHub({
+        comments: [{ databaseId: 61, viewerDidAuthor: true, body: `${COMMENT_MARK}
+
+Thanks!`, createdAt: at(0) }],
+      });
+
+      await expect(
+        postComment!(connection(), { ...onConversation, firstTriedAt: FIRST_TRY + 3 * 60_000 }),
+      ).resolves.toEqual({ commentId: "61" });
+      expect(posts(requests)).toEqual([]);
+    });
+
+    it("on lines: a retry finds the one an earlier try left when this computer's clock runs ahead", async () => {
+      const { requests } = gitHub({
+        reviews: [
+          node({
+            databaseId: 60,
+            state: "COMMENTED",
+            createdAt: at(0),
+            comments: [{ databaseId: 61, body: `${COMMENT_MARK}
+
+Why 410 only?` }],
+          }),
+        ],
+      });
+
+      await expect(postComment!(connection(), { ...onLine, firstTriedAt: FIRST_TRY + 3 * 60_000 })).resolves.toEqual({
+        commentId: "61",
+      });
+      expect(posts(requests)).toEqual([]);
     });
 
     it("can't tell when a comment of the user's since the first try names no submission", async () => {

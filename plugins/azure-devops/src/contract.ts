@@ -433,8 +433,10 @@ export interface CodeHostSubmission {
   submissionId?: string;
   /**
    * Set on a retry only: when the first try with this `submissionId` was
-   * sent, in Unix milliseconds. The plugin looks back to then for what that
-   * try posted.
+   * sent, in Unix milliseconds, by this computer's clock. A hint only, as
+   * the clocks may disagree: the plugin looks for what that try posted
+   * whatever its time, and treats an unmarked post of the user's from
+   * around then on as maybe it.
    */
   firstTriedAt?: number;
 }

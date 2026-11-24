@@ -18,13 +18,14 @@ import type {
  *
  * GitHub takes no idempotency key, so a review or comment carries its
  * submission id in an HTML comment on the first line of its body, which
- * GitHub's pages don't show. A retry looks back, newest first, to the first
- * try for the user's post that carries it: an earlier try whose answer was
- * lost, after GitHub took it. A post of the user's since then that names no
- * submission may be it with the mark edited out, so the answer is
- * uncertain, and Ajour asks the user before posting again; so is a look
- * that runs out of pages first. Ajour runs the tries of one submission one
- * at a time.
+ * GitHub's pages don't show. A retry reads the history, newest first, for
+ * the user's post that carries it: an earlier try whose answer was lost,
+ * after GitHub took it. It reads back to the first post whatever the time,
+ * since this computer's clock may run ahead of GitHub's. A post of the
+ * user's from around the first try on that names no submission may be it
+ * with the mark edited out, so the answer is uncertain, and Ajour asks the
+ * user before posting again; so is a look that runs out of pages first.
+ * Ajour runs the tries of one submission one at a time.
  */
 
 const EVENTS: Record<CodeHostSubmitReviewRequest["verdict"], string> = {
@@ -84,8 +85,11 @@ function checkSubmissionId(submissionId: string | undefined) {
 }
 
 /**
- * How far before the first try a retry looks, for the clocks of this
- * computer and GitHub to disagree by.
+ * How far before the first try a post of the user's that names no
+ * submission still counts as maybe the first try's, for the clocks of this
+ * computer and GitHub to disagree by. Only a hint: the look for the mark
+ * itself reads the whole history, since this computer's clock proves
+ * nothing about what GitHub holds.
  */
 const CLOCK_SLACK_MS = 2 * 60_000;
 /** Pages a retry reads before it calls the answer uncertain. */
@@ -101,9 +105,9 @@ type Verdict<T> = { found: T } | "maybe" | undefined;
 
 /**
  * Reads a pull request's posts newest first, page by page, back to the
- * first try: the post that carries the submission, or `uncertain` when one
- * of the user's since then names none, or the pages ran out first.
- * Undefined when nothing since the first try is the user's.
+ * first: the post that carries the submission, or `uncertain` when one of
+ * the user's from around the first try on names none, or the pages ran out
+ * before the first post. Undefined when the whole history holds neither.
  */
 async function lookBack<T extends { createdAt: string }, R>(
   page: (before: string | undefined) => Promise<Page<T> | undefined>,
@@ -118,10 +122,11 @@ async function lookBack<T extends { createdAt: string }, R>(
     if (!current) return maybe ? "uncertain" : undefined;
     for (const node of [...current.nodes].reverse()) {
       if (!node) continue;
-      if (Date.parse(node.createdAt) < since) return maybe ? "uncertain" : undefined;
       const verdict = judge(node);
-      if (verdict === "maybe") maybe = true;
-      else if (verdict) return verdict;
+      if (verdict === "maybe") {
+        // An unmarked post is only a suspect from around the first try on.
+        if (!(Date.parse(node.createdAt) < since)) maybe = true;
+      } else if (verdict) return verdict;
     }
     if (!current.pageInfo.hasPreviousPage || !current.pageInfo.startCursor) {
       return maybe ? "uncertain" : undefined;

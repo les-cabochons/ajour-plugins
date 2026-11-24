@@ -107,12 +107,14 @@ ADR 0002):
   it. Ajour keeps the id with the draft review until the write succeeds, and a
   retry also says when the first try was sent. A retry first reads the pull
   request's reviews (or, for a comment on the conversation, its comments)
-  through GraphQL, newest first and page by page, back to the first try, for
-  one of yours that carries it: when the answer to an earlier try was lost
+  through GraphQL, newest first and page by page, back to the first one
+  whatever its time, since this computer's clock may run ahead of GitHub's,
+  for one of yours that carries it: when the answer to an earlier try was lost
   after GitHub took the review, the retry returns that review and posts
-  nothing again. A review or comment of yours since the first try that names
-  no submission, as when someone edited the mark out, or a look that runs out
-  of pages first, makes the answer uncertain: the plugin posts nothing, and
+  nothing again. A review or comment of yours from around the first try on
+  that names no submission, as when someone edited the mark out, or a look
+  that runs out of pages (20) before the first one, makes the answer
+  uncertain: the plugin posts nothing, and
   Ajour asks you before posting again. Ajour runs the tries of one submission
   one at a time.
 

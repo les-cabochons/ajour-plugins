@@ -503,7 +503,11 @@ function closingReferences(body: string, repository: string): { repository: stri
   return [...found.values()];
 }
 
-/** The issues of `references`, in their order: one GraphQL query, each issue by an alias. */
+/**
+ * The issues of `references`, in their order: one GraphQL query, each issue
+ * by an alias. One that doesn't exist, or the token can't see, is left out;
+ * any other failure fails the read.
+ */
 async function readIssues(
   client: GitHubClient,
   references: { repository: string; number: number }[],
@@ -516,7 +520,9 @@ async function readIssues(
     parameters.push(`$o${index}: String!, $n${index}: String!, $i${index}: Int!`);
     return `t${index}: repository(owner: $o${index}, name: $n${index}) { issueOrPullRequest(number: $i${index}) { __typename ... on Issue { ${ISSUE_FIELDS} } } }`;
   });
-  const data = await client.query<Record<string, { issueOrPullRequest: (GitHubLinkedIssue & { __typename: string }) | null } | null>>(
+  const data = await client.queryAllowingMissing<
+    Record<string, { issueOrPullRequest: (GitHubLinkedIssue & { __typename: string }) | null } | null>
+  >(
     `query(${parameters.join(", ")}) {\n  ${fields.join("\n  ")}\n}`,
     variables,
   );
@@ -530,9 +536,10 @@ async function readIssues(
  * The issues the pull request closes or is linked to, in GitHub's order, as
  * GitHub lists them under Development: by a closing keyword or a link added
  * by hand. GitHub links closing keywords only for a pull request into the
- * default branch, so for one that lists none, such as a stacked layer, the
- * issues its description names with a closing keyword are read instead.
- * One that can't be read is left out.
+ * default branch, so for a stacked layer the issues its description names
+ * with a closing keyword are read too, after the linked ones, each once.
+ * One that doesn't exist or can't be seen is left out; a read that fails
+ * otherwise fails, so Deck says the tickets couldn't be read and asks again.
  */
 export async function readLinkedTickets(
   client: GitHubClient,
@@ -543,15 +550,12 @@ export async function readLinkedTickets(
   >(LINKED_TICKETS_QUERY, variables(ref));
   const pullRequest = data.repository?.pullRequest;
   if (!pullRequest) notFound();
-  const linked = (pullRequest.closingIssuesReferences?.nodes ?? []).flatMap(toTicket);
-  if (linked.length) return { tickets: linked.slice(0, MAX_TICKETS) };
-  const references = closingReferences(pullRequest.body ?? "", ref.repository);
-  if (!references.length) return { tickets: [] };
-  try {
-    return { tickets: await readIssues(client, references) };
-  } catch {
-    // A name that isn't an issue, or one the token can't read, fails the
-    // whole query: the pull request then shows no linked ticket.
-    return { tickets: [] };
-  }
+  const linked = (pullRequest.closingIssuesReferences?.nodes ?? []).flatMap(toTicket).slice(0, MAX_TICKETS);
+  const keyOf = (repository: string, number: number) => `${repository.toLowerCase()}#${number}`;
+  const known = new Set(linked.map((ticket) => keyOf(ticket.repository ?? ref.repository, ticket.number)));
+  const references = closingReferences(pullRequest.body ?? "", ref.repository)
+    .filter((reference) => !known.has(keyOf(reference.repository, reference.number)))
+    .slice(0, MAX_TICKETS - linked.length);
+  if (!references.length) return { tickets: linked };
+  return { tickets: [...linked, ...(await readIssues(client, references))] };
 }

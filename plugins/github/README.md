@@ -75,9 +75,12 @@ keyword or a link added by hand. It returns at most 50, each with its number,
 repository, title, body (cut at 65,536 characters), link and state, "Open" or
 "Closed". Deck heads the pull request's summary with the first one's title.
 An issue the token can't read is left out. GitHub links closing keywords only
-for a pull request into the default branch, so for one that lists none, such
-as a stacked layer, the plugin reads the issues its description names with a
-closing keyword ("Fixes #12", "closes acme/web#3") in a second query.
+for a pull request into the default branch, so for a stacked layer the plugin
+also reads, in a second query, the issues its description names with a
+closing keyword ("Fixes #12", "closes acme/web#3") that aren't linked
+already, after the linked ones. A named issue or repository that doesn't
+exist is left out; any other failure fails the read, so Deck says the
+tickets couldn't be read and tries again on the next open.
 
 Writes (comments, reviews, merge) come in later versions.
 

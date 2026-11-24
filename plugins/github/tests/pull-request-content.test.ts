@@ -67,6 +67,7 @@ describe("getPullRequestContent", () => {
       "GET rest /repos/acme/api/pulls/7",
       "GET rest /repos/acme/api/compare/base-tip...head-sha",
       "GET rest /repos/acme/api/pulls/7/files",
+      "GET rest /repos/acme/api/pulls/7",
     ]);
     // The second page of a comparison holds no files, only the merge base.
     expect(requests[1]?.query).toEqual({ per_page: 1, page: 2 });
@@ -83,6 +84,44 @@ describe("getPullRequestContent", () => {
     expect(content.files).toHaveLength(205);
     expect(content.files[204]?.path).toBe("src/f204.ts");
     expect(requests.filter((request) => request.path.endsWith("/files")).map((request) => request.query?.page)).toEqual([1, 2, 3]);
+  });
+
+  it("starts over when a push lands while it lists the files, so the files and head match", async () => {
+    let reads = 0;
+    const { requests } = installAjour((request) => {
+      if (request.path === "/repos/acme/api/pulls/7") {
+        reads += 1;
+        // The first listing sees head-sha; a push lands before it ends.
+        return json({ number: 7, head: { sha: reads === 1 ? "head-sha" : "pushed-sha" }, base: { sha: "base-tip" } });
+      }
+      if (request.path.includes("/compare/")) return json({ merge_base_commit: { sha: "merge-base" } });
+      return json([file({ filename: reads === 1 ? "src/old-head.ts" : "src/new-head.ts" })]);
+    });
+
+    await expect(getPullRequestContent(connection, ref)).resolves.toMatchObject({
+      headSha: "pushed-sha",
+      files: [{ path: "src/new-head.ts" }],
+    });
+    expect(requests.filter((request) => request.path.includes("/compare/")).map((request) => request.path)).toEqual([
+      "/repos/acme/api/compare/base-tip...head-sha",
+      "/repos/acme/api/compare/base-tip...pushed-sha",
+    ]);
+  });
+
+  it("gives up when the pull request keeps changing while it reads", async () => {
+    let reads = 0;
+    installAjour((request) => {
+      if (request.path === "/repos/acme/api/pulls/7") {
+        reads += 1;
+        return json({ number: 7, head: { sha: `head-${reads}` }, base: { sha: "base-tip" } });
+      }
+      if (request.path.includes("/compare/")) return json({ merge_base_commit: { sha: "merge-base" } });
+      return json([]);
+    });
+
+    await expect(getPullRequestContent(connection, ref)).rejects.toThrow(
+      "The pull request kept changing while Ajour read it. Try again.",
+    );
   });
 
   it("fails when GitHub names no merge base, rather than diff from the base branch's tip", async () => {

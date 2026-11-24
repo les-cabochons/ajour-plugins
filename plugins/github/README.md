@@ -35,7 +35,9 @@ file, so its hunks match Review Deck's. The plugin gives it what it needs:
   of its base and head, which names the merge base without any file's
   patch: `base.sha` is the base branch's tip when the pull request last
   changed, not where the head branched off. Without a merge base it fails
-  rather than diff from the tip. The patches GitHub sends with the file list
+  rather than diff from the tip. It reads the pull request again after its
+  files, and starts over once if a push landed meanwhile, so the files and
+  the head match. The patches GitHub sends with the file list
   are left out. A file with no patch and no line counted is marked binary,
   as a guess. A file whose path is longer than Ajour's 1,000 characters is
   left out.

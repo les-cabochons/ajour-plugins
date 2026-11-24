@@ -64,19 +64,41 @@ function changedFile(file: GitHubChangedFile): CodeHostChangedFile {
 const fitsAjour = (file: GitHubChangedFile) =>
   file.filename.length <= MAX_PATH_LENGTH && (file.previous_filename ?? "").length <= MAX_PATH_LENGTH;
 
+/** How many times a listing starts over when a push lands while it reads. */
+const SNAPSHOT_ATTEMPTS = 2;
+
 /**
  * The pull request's changed files, from the merge base to the head.
  * `base.sha` is the base branch's tip when the pull request last changed,
  * not where the head branched off, so the merge base comes from comparing
  * the two. The second page of a comparison holds only the merge base and no
- * files: its first page would carry every file's patch.
+ * files: its first page would carry every file's patch. The pull request is
+ * read again after its files, so a push in between can't mix two heads.
  */
 export async function readPullRequestFiles(
   client: GitHubClient,
   request: CodeHostContentRequest,
 ): Promise<CodeHostContentResult> {
   const repository = pathSegments(request.repository);
-  const pull = await client.rest<GitHubPullRequest>(`/repos/${repository}/pulls/${request.number}`);
+  const readPull = () => client.rest<GitHubPullRequest>(`/repos/${repository}/pulls/${request.number}`);
+  let pull = await readPull();
+  for (let attempt = 1; ; attempt += 1) {
+    const content = await readSnapshot(client, repository, request.number, pull);
+    const after = await readPull();
+    if (after.head.sha === pull.head.sha && after.base.sha === pull.base.sha) return content;
+    if (attempt >= SNAPSHOT_ATTEMPTS) {
+      throw new Error("The pull request kept changing while Ajour read it. Try again.");
+    }
+    pull = after;
+  }
+}
+
+async function readSnapshot(
+  client: GitHubClient,
+  repository: string,
+  number: number,
+  pull: GitHubPullRequest,
+): Promise<CodeHostContentResult> {
   const comparison = await client.rest<GitHubComparison>(
     `/repos/${repository}/compare/${pathSegments(`${pull.base.sha}...${pull.head.sha}`)}`,
     { query: { per_page: 1, page: 2 } },
@@ -89,7 +111,7 @@ export async function readPullRequestFiles(
 
   const files: CodeHostChangedFile[] = [];
   for (let page = 1; files.length < MAX_FILES; page += 1) {
-    const listed = await client.rest<GitHubChangedFile[]>(`/repos/${repository}/pulls/${request.number}/files`, {
+    const listed = await client.rest<GitHubChangedFile[]>(`/repos/${repository}/pulls/${number}/files`, {
       query: { per_page: FILES_PAGE_SIZE, page },
     });
     files.push(...listed.filter(fitsAjour).slice(0, MAX_FILES - files.length).map(changedFile));

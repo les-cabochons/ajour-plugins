@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncPullRequests, validateConnection } from "../src/plugin.ts";
-import { AzureReposClient, checkState, mentions, PullRequestSearch } from "../src/pull-requests.ts";
+import {
+  AzureReposClient,
+  checkState,
+  mentions,
+  PullRequestSearch,
+  toRepositoryIdentity,
+  type AzurePullRequest,
+} from "../src/pull-requests.ts";
 import type { PluginConnection } from "@ajour/plugin-sdk";
 import { ALL_ACCESS, READ_ONLY_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
@@ -197,6 +204,7 @@ describe("syncPullRequests", () => {
       [`reviewerId=${VIEWER}`]: {
         value: [
           pullRequest(7, {
+            sourceRefName: "refs/heads/feature/login",
             reviewers: [
               { ...viewerIdentity, vote: 0 },
               { ...alice, vote: -5 },
@@ -287,6 +295,13 @@ describe("syncPullRequests", () => {
       updatedAt: Date.parse("2026-10-02T09:00:00Z"),
       viewerIsAuthor: false,
       headSha: "sha-7",
+      headRef: "feature/login",
+      repositoryIdentity: {
+        cloneUrls: [
+          `${ORG}/Fabrikam%20Web/_git/api`,
+          "git@ssh.dev.azure.com:v3/contoso/Fabrikam%20Web/api",
+        ],
+      },
       lastPushedAt: Date.parse("2026-10-01T18:00:00Z"),
       lastPushActor: { login: "alice@contoso.com" },
       checks: "pending",
@@ -486,5 +501,62 @@ describe("checkState", () => {
     [[build("running"), build("broken")], "failure"],
   ])("reads %j as %s", (evaluations, expected) => {
     expect(checkState(evaluations)).toBe(expected);
+  });
+});
+
+describe("where a pull request's repository is cloned from", () => {
+  const azurePullRequest = (overrides: Partial<AzurePullRequest> = {}) =>
+    pullRequest(7, overrides) as unknown as AzurePullRequest;
+
+  it("keeps the addresses the response gives", () => {
+    expect(
+      toRepositoryIdentity(
+        azurePullRequest({
+          repository: {
+            ...repository,
+            remoteUrl: "https://contoso@dev.azure.com/contoso/Fabrikam%20Web/_git/api",
+            sshUrl: "git@ssh.dev.azure.com:v3/contoso/Fabrikam%20Web/api",
+          },
+        }),
+        ORG,
+      ),
+    ).toEqual({
+      cloneUrls: [
+        "https://contoso@dev.azure.com/contoso/Fabrikam%20Web/_git/api",
+        "git@ssh.dev.azure.com:v3/contoso/Fabrikam%20Web/api",
+      ],
+    });
+  });
+
+  it("names an older visualstudio.com organization's SSH address, and no guessed one on a server", () => {
+    expect(
+      toRepositoryIdentity(azurePullRequest(), "https://contoso.visualstudio.com").cloneUrls,
+    ).toEqual([
+      "https://contoso.visualstudio.com/Fabrikam%20Web/_git/api",
+      "contoso@vs-ssh.visualstudio.com:v3/contoso/Fabrikam%20Web/api",
+    ]);
+    expect(
+      toRepositoryIdentity(azurePullRequest(), "https://tfs.contoso.com/tfs/DefaultCollection")
+        .cloneUrls,
+    ).toEqual(["https://tfs.contoso.com/tfs/DefaultCollection/Fabrikam%20Web/_git/api"]);
+  });
+
+  it("names the fork a pull request comes from, never the repository itself", () => {
+    const fork = { id: "repo-2", name: "api-fork", project: { id: "p2", name: "Alice" } };
+    expect(
+      toRepositoryIdentity(azurePullRequest({ forkSource: { name: "refs/heads/fix", repository: fork } }), ORG),
+    ).toEqual({
+      cloneUrls: [
+        `${ORG}/Fabrikam%20Web/_git/api`,
+        "git@ssh.dev.azure.com:v3/contoso/Fabrikam%20Web/api",
+      ],
+      source: {
+        repository: "Alice/api-fork",
+        cloneUrls: [`${ORG}/Alice/_git/api-fork`, "git@ssh.dev.azure.com:v3/contoso/Alice/api-fork"],
+      },
+    });
+    expect(
+      toRepositoryIdentity(azurePullRequest({ forkSource: { repository } }), ORG).source,
+    ).toBeUndefined();
   });
 });

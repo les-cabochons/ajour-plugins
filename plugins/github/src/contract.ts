@@ -90,6 +90,12 @@ export interface CodeHostPullRequestRef {
   number: number;
 }
 
+export interface CodeHostRepositoryIdentity {
+  cloneUrls: string[];
+  /** The fork the pull request comes from, when it isn't the repository. */
+  source?: { repository: string; cloneUrls: string[] };
+}
+
 export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   id: string;
   url: string;
@@ -102,6 +108,10 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   closedAt?: number;
   viewerIsAuthor: boolean;
   headSha: string;
+  /** The branch the pull request comes from. */
+  headRef?: string;
+  /** Where the repository is cloned from, and the fork it comes from. */
+  repositoryIdentity?: CodeHostRepositoryIdentity;
   lastPushedAt: number;
   lastPushActor?: CodeHostUser;
   reviewRequests: CodeHostReviewRequest[];

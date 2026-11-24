@@ -25,9 +25,18 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     closedAt: null,
     headRefOid: "abc123",
     headRefName: "change/rate-limits",
-    headRepository: { nameWithOwner: "alice/api" },
+    headRepository: {
+      nameWithOwner: "alice/api",
+      url: "https://github.com/alice/api",
+      sshUrl: "git@github.com:alice/api.git",
+    },
+    isCrossRepository: true,
     mergeable: "MERGEABLE",
-    repository: { nameWithOwner: "acme/api" },
+    repository: {
+      nameWithOwner: "acme/api",
+      url: "https://github.com/acme/api",
+      sshUrl: "git@github.com:acme/api.git",
+    },
     author: alice,
     commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] },
     timelineItems: {
@@ -352,6 +361,14 @@ describe("GitHub plugin", () => {
       updatedAt: Date.parse("2026-10-02T10:00:00Z"),
       viewerIsAuthor: false,
       headSha: "abc123",
+      headRef: "change/rate-limits",
+      repositoryIdentity: {
+        cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],
+        source: {
+          repository: "alice/api",
+          cloneUrls: ["https://github.com/alice/api.git", "git@github.com:alice/api.git"],
+        },
+      },
       lastPushedAt: Date.parse("2026-10-01T12:00:00Z"),
       reviewRequestEvents: [],
       reviewRequests: [
@@ -501,5 +518,82 @@ describe("mentions", () => {
     ["see acme/@octocat", false],
   ])("%j mentions octocat: %s", (body, expected) => {
     expect(mentions(body, "octocat")).toBe(expected);
+  });
+});
+
+describe("where a pull request's repository is cloned from", () => {
+  const identityOf = async (overrides: Record<string, unknown>) => {
+
+    stubGitHub((call) =>
+      call.query.includes("search(")
+        ? searchResult([pullRequest(overrides)])
+        : call.query.includes("organizations")
+          ? { viewer: { organizations: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } }
+          : { viewer },
+    );
+    const result = await syncPullRequests(connection, { tracked: [] });
+    return result.pullRequests[0]!.repositoryIdentity;
+  };
+
+  it("asks GitHub for both repositories' clone addresses and whether the pull request comes from a fork", async () => {
+
+    const queries: string[] = [];
+    stubGitHub((call) => {
+      queries.push(call.query);
+      return call.query.includes("search(")
+        ? searchResult([])
+        : call.query.includes("organizations")
+          ? { viewer: { organizations: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } }
+          : { viewer };
+    });
+    await syncPullRequests(connection, { tracked: [] });
+    const search = queries.find((query) => query.includes("search("))!;
+    expect(search).toContain("isCrossRepository");
+    expect(search).toContain("headRepository { nameWithOwner url sshUrl }");
+    expect(search).toContain("repository { nameWithOwner url sshUrl }");
+  });
+
+  it("names the repository alone when the pull request comes from one of its branches", async () => {
+    expect(
+      await identityOf({
+        isCrossRepository: false,
+        headRepository: {
+          nameWithOwner: "acme/api",
+          url: "https://github.com/acme/api",
+          sshUrl: "git@github.com:acme/api.git",
+        },
+      }),
+    ).toEqual({
+      cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],
+    });
+  });
+
+  it("names the fork when it comes from one, and no fork once it was deleted", async () => {
+    expect((await identityOf({}))?.source).toEqual({
+      repository: "alice/api",
+      cloneUrls: ["https://github.com/alice/api.git", "git@github.com:alice/api.git"],
+    });
+    expect(await identityOf({ headRepository: null })).toEqual({
+      cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],
+    });
+  });
+
+  it("keeps a GitHub Enterprise host, and says nothing without an address", async () => {
+    expect(
+      await identityOf({
+        isCrossRepository: false,
+        repository: {
+          nameWithOwner: "acme/api",
+          url: "https://github.example.com/acme/api",
+          sshUrl: "git@github.example.com:acme/api.git",
+        },
+      }),
+    ).toEqual({
+      cloneUrls: [
+        "https://github.example.com/acme/api.git",
+        "git@github.example.com:acme/api.git",
+      ],
+    });
+    expect(await identityOf({ repository: { nameWithOwner: "acme/api" } })).toBeUndefined();
   });
 });

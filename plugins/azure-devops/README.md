@@ -341,6 +341,8 @@ pull requests automatically** is on, separately from **Auto sync to backlog**.
 | Last push and its actor | The latest pull request iteration and who pushed it.                                                                                                           |
 | Checks                  | Build and Status policy evaluations.                                                                                                                           |
 | Mergeability            | The pull request's merge status.                                                                                                                               |
+| Clone addresses         | The repository's `remoteUrl` and `sshUrl` when the response has them, or else its HTTPS address under the organization and, on Azure DevOps Services, its SSH one. |
+| Head branch and fork    | `sourceRefName`, and `forkSource` for a pull request from a fork, with the fork's addresses.                                                                    |
 
 Comment and review text is never returned to Ajour. Pull requests need the
 **Code (Read)** scope, and **Project and Team (Read)** to find your teams.

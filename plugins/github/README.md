@@ -24,6 +24,13 @@ token as a bearer credential, so the plugin never sees the token.
 
 Ajour decides what needs you from these facts. The plugin only reports them.
 
+Each pull request's facts also say where its repository is cloned from: the
+repository's HTTPS and SSH clone addresses, its head branch, and, for a pull
+request from a fork, the fork and its addresses (`repositoryIdentity`, from
+GraphQL's `url`, `sshUrl` and `isCrossRepository`). Deck uses them to find
+your local clone of the repository. A deleted fork is left out. The plugin
+never runs git: Ajour fetches the pull request into your clone itself.
+
 ### Pull request content, for Deck
 
 Deck builds a pull request's diff itself, from both versions of each changed

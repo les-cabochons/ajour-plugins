@@ -4,6 +4,7 @@ import type {
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
   CodeHostPullRequestRef,
+  CodeHostRepositoryIdentity,
   CodeHostReviewFact,
   CodeHostReviewRequest,
   CodeHostReviewRequestEvent,
@@ -137,7 +138,20 @@ export interface AzurePullRequest {
   reviewers?: AzureReviewer[];
   mergeStatus?: string;
   lastMergeSourceCommit?: { commitId: string };
-  repository: { id: string; name: string; project: { id: string; name: string } };
+  /** The branch the pull request comes from, such as `refs/heads/feature/login`. */
+  sourceRefName?: string;
+  repository: AzureRepository;
+  /** The fork the pull request comes from, when it isn't the repository itself. */
+  forkSource?: { name?: string; repository?: AzureRepository };
+}
+
+/** A repository as a pull request names it, with its clone addresses when the response has them. */
+interface AzureRepository {
+  id: string;
+  name: string;
+  project: { id: string; name: string };
+  remoteUrl?: string;
+  sshUrl?: string;
 }
 
 interface AzureProperty {
@@ -404,6 +418,52 @@ export function webUrl(organizationUrl: string, pullRequest: AzurePullRequest) {
   return `${organizationUrl}/${encodeURIComponent(repository.project.name)}/_git/${encodeURIComponent(repository.name)}/pullrequest/${pullRequest.pullRequestId}`;
 }
 
+/**
+ * A repository's clone addresses: the ones the response gives, or else the
+ * HTTPS address under the organization and, on Azure DevOps Services, the
+ * SSH one. A server's SSH address depends on its setup, so it isn't guessed.
+ */
+function cloneUrlsOf(organizationUrl: string, repository: AzureRepository): string[] {
+  const https =
+    repository.remoteUrl ??
+    `${organizationUrl.replace(/\/+$/, "")}/${encodeURIComponent(repository.project.name)}/_git/${encodeURIComponent(repository.name)}`;
+  let ssh = repository.sshUrl;
+  if (!ssh) {
+    const url = new URL(organizationUrl);
+    const path = `${encodeURIComponent(repository.project.name)}/${encodeURIComponent(repository.name)}`;
+    const organization = url.pathname.split("/").filter(Boolean)[0];
+    const services = /^([a-z0-9-]+)\.visualstudio\.com$/i.exec(url.hostname);
+    if (url.hostname.toLowerCase() === "dev.azure.com" && organization) {
+      ssh = `git@ssh.dev.azure.com:v3/${organization}/${path}`;
+    } else if (services) {
+      ssh = `${services[1]}@vs-ssh.visualstudio.com:v3/${services[1]}/${path}`;
+    }
+  }
+  return [https, ...(ssh ? [ssh] : [])];
+}
+
+/**
+ * Where the pull request's repository is cloned from, and the fork it comes
+ * from, so Ajour finds the user's local clone (les-cabochons/ajour#795).
+ */
+export function toRepositoryIdentity(
+  pullRequest: AzurePullRequest,
+  organizationUrl: string,
+): CodeHostRepositoryIdentity {
+  const fork = pullRequest.forkSource?.repository;
+  return {
+    cloneUrls: cloneUrlsOf(organizationUrl, pullRequest.repository),
+    ...(fork && fork.id !== pullRequest.repository.id
+      ? {
+          source: {
+            repository: `${fork.project.name}/${fork.name}`,
+            cloneUrls: cloneUrlsOf(organizationUrl, fork),
+          },
+        }
+      : {}),
+  };
+}
+
 const lastN = <T>(items: T[], count: number) => items.slice(Math.max(0, items.length - count));
 
 export function toPullRequestFacts(
@@ -444,6 +504,10 @@ export function toPullRequestFacts(
     viewerIsAuthor: sameId(pullRequest.createdBy.id, context.viewer.id),
     headSha:
       pullRequest.lastMergeSourceCommit?.commitId ?? lastIteration?.sourceRefCommit?.commitId ?? "unknown",
+    ...(pullRequest.sourceRefName?.startsWith("refs/heads/")
+      ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length) }
+      : {}),
+    repositoryIdentity: toRepositoryIdentity(pullRequest, context.organizationUrl),
     lastPushedAt,
     ...(pusher?.id ? { lastPushActor: toUser(pusher, context.viewer) } : {}),
     reviewRequests: lastN(toReviewRequests(pullRequest, context), 100),

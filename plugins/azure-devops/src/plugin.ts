@@ -37,6 +37,7 @@ import {
   fetchViewer,
   syncPullRequests as syncAzurePullRequests,
 } from "./pull-requests.ts";
+import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation } from "./pull-request-review.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
@@ -392,6 +393,18 @@ export const syncPullRequests: NonNullable<
     buildPullRequestConfig(connection),
     request.tracked,
   );
+
+/** A pull request's changed files and their statuses, for Deck to build its diff. */
+export const getPullRequestContent: NonNullable<
+  PluginModule["getPullRequestContent"]
+> = async (connection, request) =>
+  await readPullRequestFiles(buildPullRequestConfig(connection), request);
+
+/** One file's text at a commit, for Deck to build a pull request's diff. */
+export const getFileContent: NonNullable<PluginModule["getFileContent"]> = async (
+  connection,
+  request,
+) => await readFileAtCommit(buildPullRequestConfig(connection), request);
 
 /** The description, timeline and code threads, for Deck's review page. */
 export const getPullRequestConversation: NonNullable<

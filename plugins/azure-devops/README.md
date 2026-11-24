@@ -133,6 +133,8 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | PUT, DELETE   | `/*/_apis/wit/workItems/*/comments/*/reactions/*`                                                              | Edit work items                       |
 | GET           | `/_apis/git/repositories`, `/_apis/git/pullrequests`, `/*/_apis/git/pullrequests`, `/_apis/git/pullrequests/*` | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`                                         | Pull requests                         |
+| GET           | `/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes`, for Deck                                    | Pull requests                         |
+| GET           | `/*/_apis/git/repositories/*/items` (as `application/octet-stream`), for Deck                                  | Pull requests                         |
 | GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
 | POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads`                                                           | Review pull requests                  |
 | PUT           | `/*/_apis/git/repositories/*/pullRequests/*/reviewers/*`                                                       | Review pull requests                  |
@@ -402,6 +404,40 @@ Ajour lets the user turn work items and pull requests on and off separately.
 argument and checks only their access, so a pull-request-only token needs no
 work item scope. The fields of each capability declare it, so Ajour hides them
 while it is off.
+
+### Pull request content, for Deck
+
+Deck builds a pull request's diff itself, from both versions of each changed
+file, so its hunks match Review Deck's. The plugin gives it what it needs,
+behind the read-only **Pull requests** choice and the **Code (Read)** scope:
+
+- `getPullRequestContent` reads the pull request by its id, its iterations,
+  and the changes of the latest iteration against its common commit
+  (`$compareTo=0`), 2,000 a page. That is the comparison Review Deck shows
+  and publishes guides for. The head is the iteration's source commit and
+  the base its common commit: where the head and the target branch met when
+  the iteration was pushed, Azure DevOps's own merge base, which a later
+  commit on the target branch doesn't move. An iteration never changes, so a
+  push while the changes are read can't mix two heads. Without a common
+  commit it fails rather than diff from elsewhere. Folders and submodules,
+  which have no content to read, are left out, and so is a file whose path
+  is longer than Ajour's 1,000 characters. The change
+  types read as Review Deck reads them: an addition or a deletion first, then
+  a rename with its previous path, and anything else is an edit. Azure
+  DevOps counts no lines and doesn't say a file is binary, so every file
+  reads as text with no lines counted; Deck learns otherwise when it reads
+  the file. A pull request that changes more than 3,000 files fails, rather
+  than show part of it as the whole.
+- `getFileContent` reads one file at a commit through items, raw
+  (`application/octet-stream`), with the path in the query, so any name the
+  repository holds can be read. Git LFS files are read as their pointers, as
+  Review Deck reads them. A file Ajour can't read whole is answered as
+  binary, so Deck shows it without its lines: one with a NUL byte, one longer
+  than 5,000,000 characters, and one over the broker's 8 MB answer limit. A
+  file Azure DevOps doesn't have at that commit is missing; a repository the
+  token can't read fails with Azure DevOps's message, and so does an answer
+  that describes the item instead of holding its bytes. A JSON file served as
+  JSON is read as its text.
 
 ## Priority levels
 

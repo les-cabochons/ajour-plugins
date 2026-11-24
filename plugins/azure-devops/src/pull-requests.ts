@@ -101,6 +101,49 @@ export class AzureReposClient {
     return (await response.json()) as T;
   }
 
+  /**
+   * A file's raw bytes, as text: `missing` when Azure DevOps has no such item
+   * at that version, and `too large` when the broker refused an answer over
+   * its size limit (8 MB). Any other 404, such as a repository the token
+   * can't see, throws with Azure DevOps's message.
+   */
+  async rawFile(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<{ kind: "text"; text: string } | { kind: "missing" } | { kind: "too large" }> {
+    let response: AzureResponse;
+    try {
+      response = await sendAzureDevOps(
+        { id: this.connectionId, organizationUrl: this.organizationUrl },
+        path,
+        { query: params, accept: "application/octet-stream" },
+      );
+    } catch (error) {
+      const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined;
+      if (cause?.code === "limit") return { kind: "too large" };
+      throw error;
+    }
+    const isJson = (response.headers["content-type"] ?? "").includes("application/json");
+    if (isRejectedToken(response)) throw new Error(TOKEN_REJECTED);
+    if (response.status === 404) {
+      const payload = isJson ? ((await response.json().catch(() => null)) as AzureErrorPayload | null) : null;
+      // Only Azure DevOps's own "item not found" means the file isn't at that
+      // commit; any other 404, typed or not, keeps its message.
+      if (isItemNotFound(payload)) return { kind: "missing" };
+      throw new Error(`Azure DevOps request failed (404): ${payload?.message?.trim() || "Request failed"}`);
+    }
+    if (!response.ok) {
+      throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
+    }
+    const text = await response.text();
+    // Asked for the bytes, Azure DevOps could still describe the item in
+    // JSON. A JSON file's own text comes back as it is.
+    if (isJson && isItemDescription(text, params.path)) {
+      throw new Error("Azure DevOps answered with the file's description instead of its content.");
+    }
+    return { kind: "text", text };
+  }
+
   /** The repositories the token can read, across the organization. Needs Code (Read). */
   async listRepositories() {
     try {
@@ -123,6 +166,22 @@ function codeAccessError(error: unknown) {
   return error instanceof AzureReposNotFoundError
     ? new Error("Azure DevOps refused to list pull requests. Give the token the Code (Read) scope.")
     : error;
+}
+
+/** Whether `text` is Azure DevOps's JSON description of the item at `path`, not the item's content. */
+function isItemDescription(text: string, path: string | undefined) {
+  try {
+    const item = JSON.parse(text) as { objectId?: unknown; gitObjectType?: unknown; path?: unknown } | null;
+    return typeof item?.objectId === "string" && typeof item.gitObjectType === "string" && item.path === path;
+  } catch {
+    return false;
+  }
+}
+
+/** Azure DevOps's error answer: a message, and the server exception's short name, such as `GitItemNotFoundException`. */
+interface AzureErrorPayload {
+  message?: string;
+  typeKey?: string;
 }
 
 async function errorDetail(response: AzureResponse, isJson: boolean) {
@@ -205,6 +264,8 @@ export interface AzureIteration {
   updatedDate?: string;
   author?: AzureIdentity;
   sourceRefCommit?: { commitId: string };
+  /** The commit the iteration is compared with: where its head and the target branch met when it was pushed. */
+  commonRefCommit?: { commitId: string };
   push?: { date?: string; pushedBy?: AzureIdentity };
 }
 
@@ -701,4 +762,11 @@ export async function syncPullRequests(
     toPullRequestFacts(pullRequest, await fetchDetails(client, pullRequest), context),
   );
   return { viewer: viewer.user, instanceUrl: config.organizationUrl, pullRequests };
+}
+
+/** Azure DevOps's answer when an item isn't at the version asked for (TF401174). */
+function isItemNotFound(payload: AzureErrorPayload | null): boolean {
+  if (!payload) return false;
+  if (payload.typeKey) return payload.typeKey === "GitItemNotFoundException";
+  return /^TF401174:/.test(payload.message?.trim() ?? "");
 }

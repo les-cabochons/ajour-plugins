@@ -761,7 +761,7 @@
     {
       "id": "reviewPullRequests",
       "label": "Review pull requests",
-      "description": "Comment on pull requests, and submit your reviews and votes from Deck.",
+      "description": "Comment on pull requests, submit your reviews and votes, and make Ajour's other pull request changes: replies, resolving, viewed files, titles and merges.",
       "tokenScope": "Code (Read & write)",
       "always": false,
       "operations": [

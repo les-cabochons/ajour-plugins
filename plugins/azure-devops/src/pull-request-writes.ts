@@ -4,6 +4,9 @@ import {
   API_VERSION,
   AzureReposClient,
   fetchViewer,
+  time,
+  type AzureIteration,
+  type AzurePullRequest,
   type AzureThread,
 } from "./pull-requests.ts";
 import type {
@@ -19,7 +22,9 @@ import type {
  * DevOps has no review to submit: a comment is a thread, and Finish review
  * posts a thread per line comment, one for the summary, then sets the
  * reviewer's vote, approve as 10 and request changes as -5, "Wait for
- * author". A comment leaves the vote as it is. The manifest puts these
+ * author". A comment leaves the vote as it is. Line comments sit on the
+ * iteration whose head is the commit the user reviewed, against the target
+ * branch, the diff Deck showed. The manifest puts these
  * endpoints behind the "Review pull requests" access choice, Code (Read &
  * write), and Ajour refuses the operations while it's off.
  */
@@ -44,12 +49,42 @@ function threadContext(anchor: CodeHostLineAnchor) {
   };
 }
 
-function newThread(body: string, anchor?: CodeHostLineAnchor) {
+/** How long after a try a retry may find its comments posted already. */
+const RETRY_WINDOW_MS = 15 * 60 * 1000;
+
+function newThread(body: string, anchor?: CodeHostLineAnchor, iteration?: number) {
   return {
     comments: [{ parentCommentId: 0, content: body, commentType: TEXT_COMMENT }],
     status: ACTIVE,
     ...(anchor ? { threadContext: threadContext(anchor) } : {}),
+    // Lines of the iteration the user reviewed, compared with the target branch.
+    ...(anchor && iteration !== undefined
+      ? {
+          pullRequestThreadContext: {
+            iterationContext: { firstComparingIteration: 1, secondComparingIteration: iteration },
+          },
+        }
+      : {}),
   };
+}
+
+/**
+ * The iteration whose head is `headSha`: the one the user reviewed. A head
+ * no iteration has means the pull request moved on since Deck read it.
+ */
+async function reviewedIteration(client: AzureReposClient, pullRequest: AzurePullRequest, headSha: string) {
+  const iterations = (
+    await client.get<{ value: AzureIteration[] }>(`${pullRequestPath(pullRequest)}/iterations`, {
+      "api-version": API_VERSION,
+    })
+  ).value;
+  const found = iterations.find((iteration) => iteration.sourceRefCommit?.commitId?.toLowerCase() === headSha.toLowerCase());
+  if (!found) {
+    throw new Error(
+      "The pull request has new commits since you read it. Open it again to comment on its latest changes.",
+    );
+  }
+  return found.id;
 }
 
 /** The same place and words as `anchor` and `body`: no context for a thread on the whole pull request. */
@@ -72,19 +107,21 @@ export async function postPullRequestComment(
 ): Promise<CodeHostCommentResult> {
   const client = clientOf(config);
   const pullRequest = await findPullRequest(client, request);
+  const iteration = request.anchor ? await reviewedIteration(client, pullRequest, request.anchor.headSha) : undefined;
   const thread = await client.send<AzureThread>(
     "POST",
     `${pullRequestPath(pullRequest)}/threads`,
     { "api-version": API_VERSION },
-    newThread(request.body, request.anchor),
+    newThread(request.body, request.anchor, iteration),
   );
   return { commentId: `${thread.id}-${thread.comments[0]?.id ?? 1}` };
 }
 
 /**
  * A review: a thread for each line comment and one for the summary, then
- * the vote. A comment the user's earlier try already posted, same place and
- * words, isn't posted again, so Retry after a failure repeats nothing.
+ * the vote. A comment the user posted in the last 15 minutes at the same
+ * place with the same words is taken as an earlier try's and isn't posted
+ * again, so Retry after a failure, such as on the vote, repeats nothing.
  */
 export async function submitPullRequestReview(
   config: PullRequestConfig,
@@ -93,9 +130,13 @@ export async function submitPullRequestReview(
   const client = clientOf(config);
   const [viewer, pullRequest] = await Promise.all([fetchViewer(client), findPullRequest(client, request)]);
   const base = pullRequestPath(pullRequest);
+  const iteration = request.comments.length ? await reviewedIteration(client, pullRequest, request.headSha) : undefined;
+  const since = Date.now() - RETRY_WINDOW_MS;
   const theirs = (await client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION })).value.filter(
     (thread) =>
-      !thread.isDeleted && thread.comments[0]?.author?.id?.toLowerCase() === viewer.id.toLowerCase(),
+      !thread.isDeleted &&
+      thread.comments[0]?.author?.id?.toLowerCase() === viewer.id.toLowerCase() &&
+      (time(thread.publishedDate ?? thread.comments[0]?.publishedDate) ?? 0) >= since,
   );
   const posts: { body: string; anchor?: CodeHostLineAnchor }[] = [
     ...request.comments.map(({ body, ...anchor }) => ({ body, anchor })),
@@ -103,7 +144,7 @@ export async function submitPullRequestReview(
   ];
   for (const post of posts) {
     if (theirs.some((thread) => samePlace(thread, post.body, post.anchor))) continue;
-    await client.send("POST", `${base}/threads`, { "api-version": API_VERSION }, newThread(post.body, post.anchor));
+    await client.send("POST", `${base}/threads`, { "api-version": API_VERSION }, newThread(post.body, post.anchor, iteration));
   }
   const vote = VOTES[request.verdict];
   if (vote !== undefined) {

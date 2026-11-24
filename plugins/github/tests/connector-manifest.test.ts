@@ -187,8 +187,10 @@ describe("network declaration", () => {
       {
         id: "reviewPullRequests",
         label: "Review pull requests",
-        description: "Comment on pull requests and submit your reviews from Deck.",
+        description:
+          "Comment on pull requests, submit your reviews, and make Ajour's other pull request changes: replies, resolving, viewed files, titles and merges.",
         tokenScope: "Pull requests (Read and write)",
+        always: false,
         operations: [
           "submitReview",
           "postComment",

@@ -377,14 +377,19 @@ requests**:
 
 - `postComment` posts a comment as a new active thread: on the head's lines
   (the right side of the file), the base's (the left side), from the first
-  line of a range, or on the whole pull request without an anchor.
+  line of a range, or on the whole pull request without an anchor. Line
+  comments sit on the iteration whose head is the commit you reviewed,
+  compared with the target branch, the diff Deck showed. When no iteration
+  has that commit any more, the comment fails and asks you to open the pull
+  request again.
 - `submitReview` has no review to submit on Azure DevOps. It posts a thread
   for each line comment and one for the summary, then sets your vote:
   **Approve** votes 10, **Request changes** votes -5, "Wait for author", and
   **Comment** leaves your vote as it is. Before posting, it reads the pull
-  request's threads and skips a comment you already posted at the same place
-  with the same words, so retrying a submit that failed half way, such as on
-  the vote, repeats no comment.
+  request's threads and skips a comment you posted in the last 15 minutes at
+  the same place with the same words, so retrying a submit that failed half
+  way, such as on the vote, repeats no comment. The same words in an earlier
+  review are posted again.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

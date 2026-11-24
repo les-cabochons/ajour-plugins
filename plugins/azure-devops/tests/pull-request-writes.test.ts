@@ -83,6 +83,14 @@ function azure(options: { access?: string[]; threads?: unknown[]; failVote?: boo
       if (url.endsWith("/_apis/connectionData")) return json(connectionData);
       if (url.endsWith("/_apis/git/pullrequests/7")) return json(pullRequest);
       if (url === `${BASE}/threads` && method === "GET") return json({ value: options.threads ?? [] });
+      if (url === `${BASE}/iterations`)
+        return json({
+          value: [
+            { id: 1, sourceRefCommit: { commitId: "first" } },
+            { id: 2, sourceRefCommit: { commitId: "abc123" } },
+            { id: 3, sourceRefCommit: { commitId: "newer" } },
+          ],
+        });
       if (url === `${BASE}/threads` && method === "POST") {
         const id = nextThread++;
         return json({ id, comments: [{ id: 1, ...body.comments[0] }], ...body });
@@ -129,9 +137,26 @@ describe("postComment", () => {
             rightFileStart: { line: 12, offset: 1 },
             rightFileEnd: { line: 14, offset: 1 },
           },
+          // On the iteration the user reviewed, not the newer one.
+          pullRequestThreadContext: {
+            iterationContext: { firstComparingIteration: 1, secondComparingIteration: 2 },
+          },
         },
       },
     ]);
+  });
+
+  it("refuses lines of a head no iteration has, posting nothing", async () => {
+    const sent = azure();
+
+    await expect(
+      postComment!(connection(), {
+        ...ref,
+        body: "Here.",
+        anchor: { path: "src/retry.ts", side: "head", line: 14, headSha: "gone" },
+      }),
+    ).rejects.toThrow("The pull request has new commits since you read it.");
+    expect(sent).toEqual([]);
   });
 
   it("posts a thread on the base's line, or on the whole pull request without an anchor", async () => {
@@ -152,6 +177,9 @@ describe("postComment", () => {
           filePath: "/src/old.ts",
           leftFileStart: { line: 9, offset: 1 },
           leftFileEnd: { line: 9, offset: 1 },
+        },
+        pullRequestThreadContext: {
+          iterationContext: { firstComparingIteration: 1, secondComparingIteration: 2 },
         },
       },
       { comments: [{ parentCommentId: 0, content: "Thanks!", commentType: 1 }], status: 1 },
@@ -223,6 +251,7 @@ describe("submitReview", () => {
       .map((request, index) => ({
         id: 100 + index,
         status: "active",
+        publishedDate: new Date(Date.now() - 60_000).toISOString(),
         threadContext: request.body.threadContext,
         comments: [{ id: 1, author: viewerIdentity, content: request.body.comments[0].content, commentType: "text" }],
       }));
@@ -230,6 +259,24 @@ describe("submitReview", () => {
     await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", comments });
 
     expect(retried.map((request) => request.method)).toEqual(["PUT"]);
+  });
+
+  it("posts again a comment the user wrote the same way in an earlier review", async () => {
+    const sent = azure({
+      threads: [
+        {
+          id: 5,
+          status: "active",
+          publishedDate: "2026-11-01T10:00:00Z",
+          threadContext: { filePath: "/src/retry.ts", rightFileEnd: { line: 14 } },
+          comments: [{ id: 1, author: viewerIdentity, content: "Why 410 only?", commentType: "text" }],
+        },
+      ],
+    });
+
+    await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "comment", comments: [comments[0]!] });
+
+    expect(sent.map((request) => request.method)).toEqual(["POST"]);
   });
 
   it("is refused while the connection has Review pull requests off", async () => {

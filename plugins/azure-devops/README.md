@@ -370,8 +370,9 @@ behind the read-only **Pull requests** choice and the **Code (Read)** scope:
   the iteration was pushed, Azure DevOps's own merge base, which a later
   commit on the target branch doesn't move. An iteration never changes, so a
   push while the changes are read can't mix two heads. Without a common
-  commit it fails rather than diff from elsewhere. Folders are left out, and
-  so is a file whose path is longer than Ajour's 1,000 characters. The change
+  commit it fails rather than diff from elsewhere. Folders and submodules,
+  which have no content to read, are left out, and so is a file whose path
+  is longer than Ajour's 1,000 characters. The change
   types read as Review Deck reads them: an addition or a deletion first, then
   a rename with its previous path, and anything else is an edit. Azure
   DevOps counts no lines and doesn't say a file is binary, so every file
@@ -385,7 +386,9 @@ behind the read-only **Pull requests** choice and the **Code (Read)** scope:
   binary, so Deck shows it without its lines: one with a NUL byte, one longer
   than 5,000,000 characters, and one over the broker's 8 MB answer limit. A
   file Azure DevOps doesn't have at that commit is missing; a repository the
-  token can't read fails with Azure DevOps's message.
+  token can't read fails with Azure DevOps's message, and so does an answer
+  that describes the item instead of holding its bytes. A JSON file served as
+  JSON is read as its text.
 
 ## Priority levels
 

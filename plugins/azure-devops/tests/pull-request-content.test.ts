@@ -44,7 +44,7 @@ const fileOf = (path: string, status: string, previousPath?: string) => ({
 });
 
 describe("getPullRequestContent", () => {
-  it("lists the latest iteration's changes against its common commit: edits, additions, deletions, renames and binary files", async () => {
+  it("lists the latest iteration's changes against its common commit: edits, additions, deletions and renames, a binary file as any other", async () => {
     const fixture = createAzureFixture(ORGANIZATION);
     const { requests } = serveFixture(fixture);
 
@@ -111,13 +111,16 @@ describe("getPullRequestContent", () => {
     );
   });
 
-  it("leaves out a file whose path, or previous path, is longer than Ajour reads", async () => {
+  it("leaves out a submodule, and a file whose path, or previous path, is longer than Ajour reads", async () => {
     const fixture = createAzureFixture(ORGANIZATION);
     const long = `/src/${"a".repeat(1_000)}.ts`;
+    const submodule = change(4, "/vendor/lib", "edit");
+    submodule.item.gitObjectType = "commit";
     fixture.push(HEAD_2, BASE_2, [
       change(1, long, "edit"),
       change(2, "/src/short.ts", "edit, rename", long),
       change(3, "/src/kept.ts", "edit"),
+      submodule,
     ]);
     serveFixture(fixture);
 
@@ -268,13 +271,25 @@ describe("getFileContent", () => {
   });
 
   it("fails rather than read Azure DevOps's description of a file as its text", async () => {
+    const description = { objectId: "blob-new-2", gitObjectType: "blob", commitId: HEAD_1, path: "/src/limits.ts" };
     serveFixture(createAzureFixture(ORGANIZATION), {
-      override: () => ({ status: 200, headers: { "content-type": "application/json" }, body: '{"objectId":"blob"}' }),
+      override: () => ({ status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(description) }),
     });
 
     await expect(
       getFileContent(connection, { repository: ref.repository, sha: HEAD_1, path: "src/limits.ts" }),
     ).rejects.toThrow("Azure DevOps answered with the file's description instead of its content.");
+  });
+
+  it("reads a JSON file served as JSON as its text", async () => {
+    const text = '{ "name": "api", "version": "1.0.0" }\n';
+    serveFixture(createAzureFixture(ORGANIZATION), {
+      override: () => ({ status: 200, headers: { "content-type": "application/json; charset=utf-8" }, body: text }),
+    });
+
+    await expect(
+      getFileContent(connection, { repository: ref.repository, sha: HEAD_1, path: "package.json" }),
+    ).resolves.toEqual({ kind: "text", content: text });
   });
 
   it("fails with Azure DevOps's status for any other refusal", async () => {

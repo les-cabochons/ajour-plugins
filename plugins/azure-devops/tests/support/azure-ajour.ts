@@ -198,7 +198,7 @@ export function serveFixture(
   }, options);
 }
 
-/** A request as an assertion names it:`PATCH /_apis/wit/workitems/42`, with `identities` before a derived host's path. */
+/** A request as an assertion names it: `PATCH /_apis/wit/workitems/42`, with `identities` before a derived host's path. */
 export function label(request: RecordedHttpRequest) {
   return `${request.method} ${request.host ? `${request.host} ` : ""}${request.path}`;
 }

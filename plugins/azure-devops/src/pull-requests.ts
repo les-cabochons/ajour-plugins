@@ -109,9 +109,13 @@ export class AzureReposClient {
     if (!response.ok) {
       throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
     }
-    // Asked for the bytes, Azure DevOps answers JSON only with the item's description.
-    if (isJson) throw new Error("Azure DevOps answered with the file's description instead of its content.");
-    return { kind: "text", text: await response.text() };
+    const text = await response.text();
+    // Asked for the bytes, Azure DevOps could still describe the item in
+    // JSON. A JSON file's own text comes back as it is.
+    if (isJson && isItemDescription(text, params.path)) {
+      throw new Error("Azure DevOps answered with the file's description instead of its content.");
+    }
+    return { kind: "text", text };
   }
 
   /** The repositories the token can read, across the organization. Needs Code (Read). */
@@ -136,6 +140,16 @@ function codeAccessError(error: unknown) {
   return error instanceof AzureReposNotFoundError
     ? new Error("Azure DevOps refused to list pull requests. Give the token the Code (Read) scope.")
     : error;
+}
+
+/** Whether `text` is Azure DevOps's JSON description of the item at `path`, not the item's content. */
+function isItemDescription(text: string, path: string | undefined) {
+  try {
+    const item = JSON.parse(text) as { objectId?: unknown; gitObjectType?: unknown; path?: unknown } | null;
+    return typeof item?.objectId === "string" && typeof item.gitObjectType === "string" && item.path === path;
+  } catch {
+    return false;
+  }
 }
 
 /** Azure DevOps's error answer: a message, and the server exception's short name, such as `GitItemNotFoundException`. */

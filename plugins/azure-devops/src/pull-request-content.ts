@@ -1,5 +1,11 @@
 import type { PullRequestConfig } from "./pull-request-config.ts";
-import { API_VERSION, AzureReposClient, fetchTracked, type AzureIteration } from "./pull-requests.ts";
+import {
+  API_VERSION,
+  AzureReposClient,
+  fetchTracked,
+  type AzureIteration,
+  type AzurePullRequest,
+} from "./pull-requests.ts";
 import type {
   CodeHostChangedFile,
   CodeHostContentRequest,
@@ -25,12 +31,9 @@ const MAX_PATH_LENGTH = 1_000;
 /** The longest text Ajour reads. A longer file is answered as binary: Deck doesn't show its lines. */
 const MAX_TEXT_LENGTH = 5_000_000;
 
-/**
- * A change of an iteration. `changeType` is a list of flags, such as
- * "edit, rename", or their number when another client serialized it.
- */
+/** A change of an iteration. `changeType` is a list of flags, such as "edit, rename". */
 interface AzureChange {
-  changeType?: string | number;
+  changeType?: string;
   item?: { path?: string; isFolder?: boolean; gitObjectType?: string };
   originalPath?: string;
 }
@@ -40,51 +43,52 @@ interface AzureIterationChanges {
   nextSkip?: number;
 }
 
-// VersionControlChangeType's flags, the ones the status depends on.
-const ADD = 1;
-const RENAME = 8;
-const DELETE = 16;
-const FLAGS: Record<string, number> = { add: ADD, rename: RENAME, delete: DELETE };
-
-function flagsOf(changeType: AzureChange["changeType"]) {
-  if (typeof changeType === "number") return changeType;
-  return (changeType ?? "")
-    .split(",")
-    .reduce((flags, name) => flags | (FLAGS[name.trim().toLowerCase()] ?? 0), 0);
-}
-
 const withoutSlash = (path: string) => path.replace(/^\//, "");
 
 /**
- * A change as a changed file, or nothing for a folder. The status follows
- * Review Deck's order: an addition or a deletion first, then a rename, and
- * anything else is an edit. Azure DevOps counts no lines and doesn't say a
- * file is binary: Deck learns that when it reads the file.
+ * Whether the change is a file Deck can read. A folder has no content, and
+ * neither has a submodule, whose entry names a commit of another repository:
+ * reading either at a commit would fail the whole pull request's open.
  */
-function changedFile(change: AzureChange): CodeHostChangedFile[] {
+function isFile(change: AzureChange) {
   const item = change.item;
-  if (!item?.path || item.isFolder || item.gitObjectType === "tree") return [];
-  const path = withoutSlash(item.path);
-  const flags = flagsOf(change.changeType);
+  return !!item?.path && !item.isFolder && item.gitObjectType !== "tree" && item.gitObjectType !== "commit";
+}
+
+/** Whether Ajour accepts the change's paths: a file with a longer path is left out. */
+function fitsAjour(change: AzureChange) {
+  const path = withoutSlash(change.item!.path!);
+  return path.length > 0 && path.length <= MAX_PATH_LENGTH && withoutSlash(change.originalPath ?? "").length <= MAX_PATH_LENGTH;
+}
+
+/**
+ * A change as a changed file. The status follows Review Deck's order: an
+ * addition or a deletion first, then a rename, and anything else is an edit.
+ * Azure DevOps counts no lines and doesn't say a file is binary: Deck learns
+ * that when it reads the file.
+ */
+function changedFile(change: AzureChange): CodeHostChangedFile {
+  const flags = new Set((change.changeType ?? "").split(",").map((flag) => flag.trim().toLowerCase()));
   const previousPath = change.originalPath ? withoutSlash(change.originalPath) : undefined;
-  const status =
-    flags & ADD ? "added" : flags & DELETE ? "removed" : flags & RENAME && previousPath ? "renamed" : "modified";
-  if (!path || path.length > MAX_PATH_LENGTH) return [];
-  if (status === "renamed" && previousPath!.length > MAX_PATH_LENGTH) return [];
-  return [
-    {
-      path,
-      ...(status === "renamed" ? { previousPath } : {}),
-      status,
-      additions: 0,
-      deletions: 0,
-      binary: false,
-    },
-  ];
+  const status = flags.has("add")
+    ? "added"
+    : flags.has("delete")
+      ? "removed"
+      : flags.has("rename") && previousPath
+        ? "renamed"
+        : "modified";
+  return {
+    path: withoutSlash(change.item!.path!),
+    ...(status === "renamed" ? { previousPath } : {}),
+    status,
+    additions: 0,
+    deletions: 0,
+    binary: false,
+  };
 }
 
 /** The pull request's address under its project and repository, by id. */
-function pullRequestPath(pullRequest: { pullRequestId: number; repository: { id: string; project: { id: string } } }) {
+function pullRequestPath(pullRequest: AzurePullRequest) {
   const { project, id: repositoryId } = pullRequest.repository;
   return `/${encodeURIComponent(project.id)}/_apis/git/repositories/${encodeURIComponent(repositoryId)}/pullRequests/${pullRequest.pullRequestId}`;
 }
@@ -129,7 +133,7 @@ export async function readPullRequestFiles(
       $skip: skip,
       "api-version": API_VERSION,
     });
-    files.push(...(page.changeEntries ?? []).flatMap(changedFile));
+    files.push(...(page.changeEntries ?? []).filter(isFile).filter(fitsAjour).map(changedFile));
     // Part of a pull request would read as the whole of it, so a larger one fails.
     if (files.length > MAX_FILES) {
       throw new Error("This pull request changes more than 3,000 files, more than Deck reads.");

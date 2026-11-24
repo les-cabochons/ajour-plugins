@@ -6,6 +6,7 @@ import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests }
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation } from "./pull-request-review.ts";
+import { readVersions } from "./pull-request-versions.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
@@ -59,6 +60,10 @@ export const getPullRequestConversation: NonNullable<PluginModule["getPullReques
 /** The checks on the pull request's head, for Deck's status line. */
 export const getChecks: NonNullable<PluginModule["getChecks"]> = async (connection, request) =>
   await readChecks(new GitHubClient(connection.id), request);
+
+/** Each push with its commits, from the timeline, for Deck's versions bar. */
+export const getPullRequestVersions: NonNullable<PluginModule["getPullRequestVersions"]> = async (connection, request) =>
+  await readVersions(new GitHubClient(connection.id), request);
 
 /** Issues assigned to you, as backlog items. */
 export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>

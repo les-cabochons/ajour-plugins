@@ -279,6 +279,7 @@ describe("the source entrypoint", () => {
       "getFileContent",
       "getPullRequestContent",
       "getPullRequestConversation",
+      "getPullRequestVersions",
       "listSettleStates",
       "readDescription",
       "syncConnection",

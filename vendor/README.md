@@ -39,9 +39,12 @@ filename stays the same and the lockfile integrity changes.
 `feat/deck-threads-status` branch of `les-cabochons/ajour` at commit
 `fd394b66` (les-cabochons/ajour#783, on origin/main `8c393814` of
 2026-11-24). It adds the code host's `getChecks` operation and the optional
-`approvals` on pull request facts. `github` and `azure-devops` use it. Pack it
-again from origin/main once that branch merges; the SDK's version stays
-0.4.0, so only the lockfile integrity changes.
+`approvals` on pull request facts. `github` and `azure-devops` use it. It was packed again from the
+`feat/deck-versions` branch of `les-cabochons/ajour` (les-cabochons/ajour#787),
+after #883 and #902 merged, adding `getPullRequestVersions` with each
+version's commits and `versionName`, and the optional `baseRef` on pull
+request facts. Pack it again from origin/main once that branch merges; the
+SDK's version stays 0.4.0, so only the lockfile integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

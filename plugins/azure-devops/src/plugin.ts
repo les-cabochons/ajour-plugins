@@ -39,6 +39,10 @@ import {
 } from "./pull-requests.ts";
 import { readChecks, readConversation } from "./pull-request-review.ts";
 import {
+  postPullRequestComment,
+  submitPullRequestReview,
+} from "./pull-request-writes.ts";
+import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
   PRIORITY_LEVELS,
@@ -404,6 +408,19 @@ export const getChecks: NonNullable<PluginModule["getChecks"]> = async (
   connection,
   request,
 ) => await readChecks(buildPullRequestConfig(connection), request);
+
+/** A review from Deck's Finish review: its threads, then the vote. */
+export const submitReview: NonNullable<PluginModule["submitReview"]> = async (
+  connection,
+  request,
+) =>
+  await submitPullRequestReview(buildPullRequestConfig(connection), request);
+
+/** One comment from Deck's Comment now, as a thread of its own. */
+export const postComment: NonNullable<PluginModule["postComment"]> = async (
+  connection,
+  request,
+) => await postPullRequestComment(buildPullRequestConfig(connection), request);
 
 /** People to assign the item to, by uniqueName, for the settle dialog. */
 export const searchAssignees: NonNullable<

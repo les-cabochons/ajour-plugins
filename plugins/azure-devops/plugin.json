@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -360,6 +360,16 @@
         "access": "pullRequests"
       },
       {
+        "method": "POST",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/threads",
+        "access": "reviewPullRequests"
+      },
+      {
+        "method": "PUT",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/reviewers/*",
+        "access": "reviewPullRequests"
+      },
+      {
         "method": "GET",
         "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
         "access": "pullRequests"
@@ -532,6 +542,16 @@
             "access": "pullRequests"
           },
           {
+            "method": "POST",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/threads",
+            "access": "reviewPullRequests"
+          },
+          {
+            "method": "PUT",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/reviewers/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
@@ -651,6 +671,16 @@
             "access": "pullRequests"
           },
           {
+            "method": "POST",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/threads",
+            "access": "reviewPullRequests"
+          },
+          {
+            "method": "PUT",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/reviewers/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
@@ -725,7 +755,16 @@
         "getFileContent",
         "getPullRequestConversation",
         "getChecks",
-        "browsePullRequests",
+        "browsePullRequests"
+      ]
+    },
+    {
+      "id": "reviewPullRequests",
+      "label": "Review pull requests",
+      "description": "Comment on pull requests, and submit your reviews and votes from Deck.",
+      "tokenScope": "Code (Read & write)",
+      "always": false,
+      "operations": [
         "submitReview",
         "postComment",
         "replyToThread",

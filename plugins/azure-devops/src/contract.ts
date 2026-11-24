@@ -367,6 +367,36 @@ export interface CodeHostChecksResult {
   checks: CodeHostCheck[];
 }
 
+/** A comment anchored to lines of the diff at `headSha`. */
+export interface CodeHostLineAnchor {
+  path: string;
+  side: CodeHostDiffSide;
+  line: number;
+  startLine?: number;
+}
+
+/** A review, sent at once with its verdict and its line comments (at most 500). */
+export interface CodeHostSubmitReviewRequest extends CodeHostPullRequestRef {
+  headSha: string;
+  verdict: "approve" | "request_changes" | "comment";
+  body?: string;
+  comments: (CodeHostLineAnchor & { body: string })[];
+}
+
+export interface CodeHostSubmitReviewResult {
+  reviewId: string;
+}
+
+/** A single comment: on the conversation, or on lines when `anchor` is set. */
+export interface CodeHostPostCommentRequest extends CodeHostPullRequestRef {
+  body: string;
+  anchor?: CodeHostLineAnchor & { headSha: string };
+}
+
+export interface CodeHostCommentResult {
+  commentId: string;
+}
+
 export type BacklogReaction =
   | "like"
   | "dislike"

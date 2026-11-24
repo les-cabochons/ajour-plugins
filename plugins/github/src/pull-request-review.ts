@@ -329,9 +329,11 @@ export async function readConversation(
   const page = <T, K extends string>(query: string, key: K) =>
     async (after: string | null) =>
       (await client.query<PullRequestOf<Record<K, Connection<T>>>>(query, { ...vars, after })).repository?.pullRequest?.[key];
-  const threads = await readAll(MAX_THREADS, page<GitHubThread, "reviewThreads">(THREADS_QUERY, "reviewThreads"));
-  const items = await readAll(MAX_TIMELINE - 1, page<GitHubTimelineItem, "timelineItems">(TIMELINE_QUERY, "timelineItems"));
-  const files = await readAll(MAX_VIEWED, page<{ path: string; viewerViewedState: string }, "files">(FILES_QUERY, "files"));
+  const [threads, items, files] = await Promise.all([
+    readAll(MAX_THREADS, page<GitHubThread, "reviewThreads">(THREADS_QUERY, "reviewThreads")),
+    readAll(MAX_TIMELINE - 1, page<GitHubTimelineItem, "timelineItems">(TIMELINE_QUERY, "timelineItems")),
+    readAll(MAX_VIEWED, page<{ path: string; viewerViewedState: string }, "files">(FILES_QUERY, "files")),
+  ]);
 
   const opened: CodeHostTimelineEvent = {
     kind: "event",
@@ -360,9 +362,9 @@ function checkRunState(status: string, conclusion: string | null): CodeHostCheck
       return "success";
     case "NEUTRAL":
     case "SKIPPED":
-      return "skipped";
+    // GitHub marks a run stale when it never completed; it won't finish now.
     case "STALE":
-      return "pending";
+      return "skipped";
     default:
       // FAILURE, CANCELLED, TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE.
       return "failure";
@@ -398,7 +400,6 @@ function toCheck(context: GitHubCheckContext): CodeHostCheck[] {
 /** Every check run and commit status on the pull request's head, as GitHub lists them. */
 export async function readChecks(client: GitHubClient, ref: CodeHostPullRequestRef): Promise<CodeHostChecksResult> {
   const vars = variables(ref);
-  let found = false;
   const contexts = await readAll<GitHubCheckContext>(MAX_CHECKS, async (after) => {
     const data = await client.query<
       PullRequestOf<{
@@ -407,9 +408,7 @@ export async function readChecks(client: GitHubClient, ref: CodeHostPullRequestR
     >(CHECKS_QUERY, { ...vars, after });
     const pullRequest = data.repository?.pullRequest;
     if (!pullRequest) notFound();
-    found = true;
     return pullRequest.commits.nodes[0]?.commit.statusCheckRollup?.contexts;
   });
-  if (!found) notFound();
   return { checks: contexts.flatMap(toCheck) };
 }

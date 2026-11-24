@@ -61,8 +61,9 @@ its checks:
   limits: 2,000 threads, 5,000 timeline events and 3,000 files.
 - `getChecks` reads the check runs and commit statuses on the head, at most
   500, each with its name, its state (pending, success, failure or skipped:
-  cancelled, timed out and action required count as failures, neutral and
-  skipped as skipped) and its link when it's http or https.
+  cancelled, timed out and action required count as failures; neutral,
+  skipped and stale, a run that never completed, as skipped) and its link
+  when it's http or https.
 - `syncPullRequests` adds each reviewer's vote: their latest approval or
   change request, then each person or team asked who hasn't given one.
 

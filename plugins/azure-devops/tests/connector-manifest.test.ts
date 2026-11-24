@@ -402,7 +402,7 @@ describe("saved cloud project URL routing", () => {
 describe("connection access", () => {
   // Ajour's own table for this plugin on API 3 (packages/shared/connection-access.ts),
   // by the same ids, so a migrated connection keeps its choices, and Review pull
-  // requests since 2.5.0 (les-cabochons/ajour#784), which starts off.
+  // requests since 2.6.0 (les-cabochons/ajour#784), which starts off.
   it("declares Ajour's Azure DevOps choices, by the same ids, each with its token scope", () => {
     expect(
       validManifest.connectionAccess.map((choice: any) => [
@@ -475,6 +475,7 @@ describe("connection access", () => {
       "getFileContent",
       "getPullRequestConversation",
       "getChecks",
+      "getPullRequestVersions",
       "browsePullRequests",
     ]);
     // Every write to a pull request waits for Review pull requests, Code (Read & write).

@@ -100,14 +100,21 @@ ADR 0002):
   /repos/{owner}/{repo}/pulls/{number}/reviews`): its verdict as `APPROVE`,
   `REQUEST_CHANGES` or `COMMENT`, its summary when there is one, and every
   line comment of the draft. GitHub holds no pending review.
-- GitHub takes no idempotency key, so a review's body ends with an HTML
-  comment naming Ajour's submission id, `<!-- ajour-review: … -->`, which
-  GitHub's pages don't show and Ajour leaves out when it reads the
-  conversation. Ajour keeps the id with the draft review until the submit
-  succeeds. A submit with an id first looks among the pull request's last 100
-  reviews, through GraphQL, for one of yours that carries it: when the
-  answer to an earlier try was lost after GitHub took the review, the retry
-  returns that review and posts nothing again.
+- GitHub takes no idempotency key, so a review's or comment's body starts
+  with an HTML comment naming Ajour's submission id, `<!-- ajour-review: … -->`,
+  on a line of its own before your Markdown, which GitHub's pages don't show
+  and Ajour leaves out when it reads the conversation, wherever an edit left
+  it. Ajour keeps the id with the draft review until the write succeeds, and a
+  retry also says when the first try was sent. A retry first reads the pull
+  request's reviews (or, for a comment on the conversation, its comments)
+  through GraphQL, newest first and page by page, back to the first try, for
+  one of yours that carries it: when the answer to an earlier try was lost
+  after GitHub took the review, the retry returns that review and posts
+  nothing again. A review or comment of yours since the first try that names
+  no submission, as when someone edited the mark out, or a look that runs out
+  of pages first, makes the answer uncertain: the plugin posts nothing, and
+  Ajour asks you before posting again. Ajour runs the tries of one submission
+  one at a time.
 
 These endpoints sit behind the connection's **Review pull requests** access
 choice, which also covers the replies, resolving, viewed files, title and

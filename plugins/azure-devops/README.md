@@ -94,7 +94,7 @@ Each connection chooses what it may do. Ajour shows the choices with the token
 scope each needs, refuses an operation whose choice is off before the plugin
 runs, and its broker refuses a request to an endpoint whose choice is off. The
 ids are the ones Ajour gave this plugin on API 3, so a connection keeps its
-choices. Review pull requests came in 2.5.0: an update to it asks for consent
+choices. Review pull requests came in 2.6.0: an update to it asks for consent
 once, and it starts off on every connection.
 
 | Choice                                | Token scope                                        | Unlocks                                                                                                           |
@@ -406,7 +406,10 @@ requests**:
   id with the draft review until the submit succeeds, so a retry, after a
   restart too, reads the pull request's threads and posts only the places
   with no thread of yours for that submission, then votes. A thread of
-  another submission, or of none, never holds a comment back.
+  another submission, or of none, never holds a comment back. A comment
+  posted on its own carries its submission the same way, and its retry
+  returns the thread an earlier try left. Ajour runs the tries of one
+  submission one at a time.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

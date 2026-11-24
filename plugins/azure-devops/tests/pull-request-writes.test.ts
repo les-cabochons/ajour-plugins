@@ -210,6 +210,51 @@ describe("postComment", () => {
   });
 });
 
+describe("postComment with a submission", () => {
+  const SUBMISSION = "comment_submission_1";
+  const MARK = { "Ajour.ReviewSubmission": { $type: "System.String", $value: SUBMISSION } };
+  const comment = {
+    ...ref,
+    body: "Why 410 only?",
+    anchor: { path: "src/retry.ts", side: "head" as const, line: 14, headSha: "abc123" },
+    submissionId: SUBMISSION,
+  };
+  const thread = (author: typeof viewerIdentity, properties?: unknown) => ({
+    id: 5,
+    status: "active",
+    ...(properties ? { properties } : {}),
+    comments: [{ id: 3, author, content: "Why 410 only?", commentType: "text" }],
+  });
+
+  it("marks its thread with its submission", async () => {
+    const sent = azure();
+
+    await postComment!(connection(), comment);
+
+    expect(sent.map((request) => request.body.properties)).toEqual([MARK]);
+  });
+
+  it("on a retry, finds the thread an earlier try left and posts nothing", async () => {
+    const sent = azure({ threads: [thread(viewerIdentity, MARK)] });
+
+    await expect(postComment!(connection(), { ...comment, firstTriedAt: Date.now() - 60_000 })).resolves.toEqual({
+      commentId: "5-3",
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it.each([
+    ["someone else's thread of the submission", thread(alice, MARK)],
+    ["the user's thread of another one", thread(viewerIdentity, { "Ajour.ReviewSubmission": { $type: "System.String", $value: "other" } })],
+  ])("on a retry, posts beside %s", async (_, existing) => {
+    const sent = azure({ threads: [existing] });
+
+    await postComment!(connection(), { ...comment, firstTriedAt: Date.now() - 60_000 });
+
+    expect(sent.map((request) => request.method)).toEqual(["POST"]);
+  });
+});
+
 describe("submitReview", () => {
   const comments = [
     { path: "src/retry.ts", side: "head" as const, line: 14, body: "Why 410 only?" },

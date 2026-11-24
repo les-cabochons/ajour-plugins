@@ -9,9 +9,9 @@ import {
   type AzureThread,
 } from "./pull-requests.ts";
 import type {
-  CodeHostCommentResult,
   CodeHostLineAnchor,
   CodeHostPostCommentRequest,
+  CodeHostPostCommentResult,
   CodeHostSubmitReviewRequest,
   CodeHostSubmitReviewResult,
 } from "./contract.ts";
@@ -42,7 +42,9 @@ const ACTIVE = 1;
 /**
  * The thread property naming the review a thread was posted for. Azure
  * DevOps keeps a thread's properties and shows none of them, so a retry
- * finds what an earlier try posted by it.
+ * finds what an earlier try posted by it. Ajour runs the tries of one
+ * submission one at a time, so two windows retrying the same draft don't
+ * both find nothing and both post.
  */
 const SUBMISSION_PROPERTY = "Ajour.ReviewSubmission";
 
@@ -126,21 +128,33 @@ function clientOf(config: PullRequestConfig) {
   return new AzureReposClient(config.connectionId, config.savedOrganizationUrl);
 }
 
-/** A comment, as a thread of its own: on lines when `anchor` is set, or on the whole pull request. */
+const commentIdOf = (thread: AzureThread) => `${thread.id}-${thread.comments[0]?.id ?? 1}`;
+
+/**
+ * A comment, as a thread of its own: on lines when `anchor` is set, or on
+ * the whole pull request. The thread carries the request's `submissionId`;
+ * a retry returns the user's thread that carries it and posts nothing.
+ */
 export async function postPullRequestComment(
   config: PullRequestConfig,
   request: CodeHostPostCommentRequest,
-): Promise<CodeHostCommentResult> {
+): Promise<CodeHostPostCommentResult> {
   const client = clientOf(config);
   const pullRequest = await findPullRequest(client, request);
+  const base = pullRequestPath(pullRequest);
+  if (request.submissionId && request.firstTriedAt !== undefined) {
+    const viewer = await fetchViewer(client);
+    const [earlier] = await submissionThreads(client, base, viewer.id, request.submissionId);
+    if (earlier) return { commentId: commentIdOf(earlier) };
+  }
   const iteration = request.anchor ? (await reviewedIteration(client, pullRequest, request.anchor.headSha)).id : undefined;
   const thread = await client.send<AzureThread>(
     "POST",
-    `${pullRequestPath(pullRequest)}/threads`,
+    `${base}/threads`,
     { "api-version": API_VERSION },
-    newThread(request.body, request.anchor, iteration),
+    newThread(request.body, request.anchor, iteration, request.submissionId),
   );
-  return { commentId: `${thread.id}-${thread.comments[0]?.id ?? 1}` };
+  return { commentId: commentIdOf(thread) };
 }
 
 /**
@@ -197,15 +211,18 @@ export async function submitPullRequestReview(
   return { reviewId: `${pullRequest.pullRequestId}-${viewer.id}` };
 }
 
+/** The threads the user posted for `submissionId`. */
+async function submissionThreads(client: AzureReposClient, base: string, viewerId: string, submissionId: string) {
+  const threads = (await client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION })).value;
+  return threads.filter(
+    (thread) =>
+      !thread.isDeleted &&
+      thread.properties?.[SUBMISSION_PROPERTY]?.$value === submissionId &&
+      thread.comments[0]?.author?.id?.toLowerCase() === viewerId.toLowerCase(),
+  );
+}
+
 /** The places of the threads the user posted for `submissionId`, one entry per thread. */
 async function submissionPlaces(client: AzureReposClient, base: string, viewerId: string, submissionId: string) {
-  const threads = (await client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION })).value;
-  return threads
-    .filter(
-      (thread) =>
-        !thread.isDeleted &&
-        thread.properties?.[SUBMISSION_PROPERTY]?.$value === submissionId &&
-        thread.comments[0]?.author?.id?.toLowerCase() === viewerId.toLowerCase(),
-    )
-    .map(threadPlace);
+  return (await submissionThreads(client, base, viewerId, submissionId)).map(threadPlace);
 }

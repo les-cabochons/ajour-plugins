@@ -342,13 +342,31 @@ pull requests automatically** is on, separately from **Auto sync to backlog**.
 | Comments                | Text comments in every thread. Mentions are `@<your identity id>`.                                                                                             |
 | Last push and its actor | The latest pull request iteration and who pushed it.                                                                                                           |
 | Checks                  | Build and Status policy evaluations.                                                                                                                           |
+| Approvals               | Each reviewer's vote, people and groups, except those who declined, with whether the reviewer is required.                                                     |
 | Mergeability            | The pull request's merge status.                                                                                                                               |
 
-Comment and review text is never returned to Ajour. Pull requests need the
+A sync never returns comment or review text to Ajour. Pull requests need the
 **Code (Read)** scope, and **Project and Team (Read)** to find your teams.
 Teams count, other security groups do not: the plugin never guesses
 membership. If a pull request's policy evaluations cannot be read, its checks
 read as none.
+
+### Conversation and checks, for Deck
+
+Deck's review page shows a pull request's conversation and checks:
+
+- `getPullRequestConversation` reads the pull request, its iterations and its
+  threads, with their positions tracked to the latest iteration. Each thread on
+  a file becomes a review thread on the head's lines, or the base's for lines
+  only the base has, or on the whole file; fixed, won't fix, closed and by
+  design threads are resolved. The timeline holds the opening, each iteration,
+  each vote as a review, each comment on the whole pull request and the other
+  system messages as Azure DevOps phrased them. Azure DevOps doesn't share
+  which files you marked viewed, and every merge method is offered, since a
+  branch policy that limits them refuses the merge itself.
+- `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
+  checks: approved passes, rejected and broken fail, not applicable is skipped,
+  and queued and running are pending. A build links to its last run.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

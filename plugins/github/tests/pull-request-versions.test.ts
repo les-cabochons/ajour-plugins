@@ -246,6 +246,35 @@ describe("getPullRequestVersions", () => {
     expect(versions[1]!.commits.map((entry) => entry.sha)).toEqual(["f1"]);
   });
 
+  it("makes a push after a force push a version of its own, which the review naming it reviewed", async () => {
+    versionsGitHub({
+      headRefOid: "c2",
+      timeline: {
+        "": page([
+          commit("c1", "Add the route", "2026-11-01T10:00:00Z"),
+          forcePush("c1", "f1", "2026-11-01T18:00:00Z"),
+          commit("f1", "Add the route, rebased", "2026-11-01T17:59:00Z"),
+          // Pushed on top of the force push, then reviewed.
+          commit("c2", "Fix the route", "2026-11-01T19:00:00Z"),
+          review("2026-11-01T20:00:00Z", "c2"),
+        ]),
+      },
+    });
+
+    const { versions } = await getPullRequestVersions(connection, ref);
+
+    expect(
+      versions.map(({ headSha, forced, commits }) => [headSha, forced, commits.map((entry) => entry.sha)]),
+    ).toEqual([
+      ["c1", undefined, ["c1"]],
+      ["f1", true, ["f1"]],
+      ["c2", undefined, ["c2"]],
+    ]);
+    // Pushed before the review that names it, and after the force push.
+    expect(versions[2]!.pushedAt).toBeLessThanOrEqual(Date.parse("2026-11-01T20:00:00Z"));
+    expect(versions[2]!.pushedAt).toBeGreaterThan(Date.parse("2026-11-01T18:00:00Z"));
+  });
+
   it("fails when GitHub doesn't find the pull request", async () => {
     versionsGitHub({ headRefOid: "x", timeline: {}, missing: true });
 

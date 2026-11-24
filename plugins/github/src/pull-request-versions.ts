@@ -19,8 +19,9 @@ import type {
  * A pull request's versions for Deck's versions bar (les-cabochons/ajour#787).
  * GitHub keeps no record of a plain push, so the pushes come from the
  * timeline: a force push is a version of its own, at the commit it pushed,
- * and the commits listed between two other events (a review, a comment, a
- * force push) are one push. A review names the commit it reviewed, so a push
+ * and its commits end there; the commits listed after that one, or between
+ * two other events (a review, a comment, a force push), are one push. A
+ * review names the commit it reviewed, so a push
  * ends there: GitHub lists a commit by its date, and one committed before a
  * review may have been pushed after it. A push listed after an event is dated
  * after it, so a review never covers a push that came later. The last
@@ -141,11 +142,16 @@ export async function readVersions(client: GitHubClient, ref: CodeHostPullReques
       if (at >= 0) ended = run.slice(0, at + 1);
     }
     run = run.slice(ended.length);
-    const commits = ended.map(toCommit);
-    if (forced && ended.some((commit) => commit.oid === forced!.headSha)) {
-      forced.commits.push(...commits);
-      return;
+    // The force push's own commits end at the head it pushed; the commits
+    // after that head came in a push of their own.
+    const forcedAt = forced ? ended.findIndex((commit) => commit.oid === forced!.headSha) : -1;
+    if (forced && forcedAt >= 0) {
+      forced.commits.push(...ended.slice(0, forcedAt + 1).map(toCommit));
+      ended = ended.slice(forcedAt + 1);
+      forced = undefined;
+      if (!ended.length) return;
     }
+    const commits = ended.map(toCommit);
     const committedAt = Math.max(...commits.map((commit) => commit.createdAt));
     const after = lastEventAt === undefined ? committedAt : Math.max(committedAt, lastEventAt + 1);
     addDraft({

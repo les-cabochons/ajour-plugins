@@ -447,6 +447,7 @@ export async function sendAzureDevOps(
   } catch (error) {
     throw new Error(
       `Azure DevOps request failed: ${error instanceof Error ? error.message : "Network error"}`,
+      { cause: error },
     );
   }
 }

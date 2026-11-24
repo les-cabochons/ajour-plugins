@@ -4,11 +4,14 @@ import manifestJson from "../plugin.json";
 import { deriveAddress } from "./support/azure-ajour.ts";
 import { withoutCommentsAndStrings } from "./support/code-only.ts";
 import {
+  BASE_1,
   createAzureFixture,
   EFFORT,
+  HEAD_1,
   ORIGINAL_ESTIMATE,
   OTHER_PROJECT,
   PROJECT,
+  PROJECT_ID,
   TASK_ICON_SVG,
   VIEWER,
   type AzureFixture,
@@ -350,7 +353,9 @@ describe("the source entrypoint", () => {
       "describeItemTypes",
       "editItemComment",
       "getChecks",
+      "getFileContent",
       "getLinkedTickets",
+      "getPullRequestContent",
       "getPullRequestConversation",
       "listItemComments",
       "listSettleStates",
@@ -791,6 +796,45 @@ describe.each(scenarios)(
       ]);
     });
 
+    it("reads a pull request's changes and a file's versions for Deck", async () => {
+      reset();
+
+      const content = await moduleExports.getPullRequestContent!(
+        connection(),
+        { repository: `${PROJECT}/api`, number: 12 },
+      );
+      const base = await moduleExports.getFileContent!(connection(), {
+        repository: `${PROJECT}/api`,
+        sha: BASE_1,
+        path: "docs/read me.md",
+      });
+
+      expect(content).toMatchObject({ headSha: HEAD_1, baseSha: BASE_1 });
+      expect(content.files.map((file: any) => file.path)).toEqual([
+        "src/limits.ts",
+        "src/new.ts",
+        "src/old.ts",
+        "src/after.ts",
+        "docs/guide.md",
+        "assets/logo.png",
+      ]);
+      expect(base).toEqual({ kind: "text", content: "# Read me\n" });
+      const sent = received.map((request) => new URL(request.url));
+      expect(sent.map((url) => url.origin + url.pathname)).toEqual([
+        `${current.organizationUrl}/_apis/git/pullrequests/12`,
+        `${current.organizationUrl}/${PROJECT_ID}/_apis/git/repositories/repo-1/pullRequests/12/iterations`,
+        `${current.organizationUrl}/${PROJECT_ID}/_apis/git/repositories/repo-1/pullRequests/12/iterations/1/changes`,
+        `${current.organizationUrl}/${PROJECT}/_apis/git/repositories/api/items`,
+      ]);
+      expect(Object.fromEntries(sent[3]!.searchParams)).toEqual({
+        path: "/docs/read me.md",
+        "versionDescriptor.version": BASE_1,
+        "versionDescriptor.versionType": "commit",
+        "api-version": "7.1",
+      });
+      expect(received[3]!.headers.accept).toBe("application/octet-stream");
+    });
+
     it("lets a read-only connection read, WIQL and batch included, and refuses every write before it is sent", async () => {
       reset([]);
 
@@ -843,6 +887,19 @@ describe.each(scenarios)(
           connection({ includeTeamReviewRequests: false }),
           { tracked: [] },
         ),
+      ).rejects.toThrow(/pullRequests/);
+      await expect(
+        moduleExports.getPullRequestContent!(connection(), {
+          repository: `${PROJECT}/api`,
+          number: 12,
+        }),
+      ).rejects.toThrow(/pullRequests/);
+      await expect(
+        moduleExports.getFileContent!(connection(), {
+          repository: `${PROJECT}/api`,
+          sha: BASE_1,
+          path: "src/limits.ts",
+        }),
       ).rejects.toThrow(/pullRequests/);
       const people = await moduleExports.searchItemPeople!(connection(), {
         sourceId: sourceId(42),

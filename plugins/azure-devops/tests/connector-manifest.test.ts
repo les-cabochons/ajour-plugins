@@ -232,6 +232,8 @@ describe("network declaration", () => {
       "GET /*/_apis/git/repositories/*/pullRequests/*/threads [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/workitems [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
+      "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
+      "GET /*/_apis/git/repositories/*/items [pullRequests]",
       "GET /*/_apis/policy/evaluations [pullRequests]",
       "GET /_apis/teams [pullRequests]",
     ]);
@@ -469,6 +471,31 @@ describe("connection access", () => {
       "searchAssignees",
     ]);
     expect(choice("readBacklog").operations).toEqual([]);
+  });
+
+  it("reads a pull request's changes for Deck only through GET endpoints behind the read-only Pull requests choice", () => {
+    const choice = validManifest.connectionAccess.find(
+      (candidate: any) => candidate.id === "pullRequests",
+    );
+    expect(choice.operations).toEqual(
+      expect.arrayContaining(["getPullRequestContent", "getFileContent"]),
+    );
+    const contentReads = [
+      ...validManifest.network.endpoints,
+      ...validManifest.network.derivedHosts.flatMap(
+        (host: any) => host.endpoints,
+      ),
+    ].filter((endpoint: any) =>
+      /\/iterations\/\*\/changes$|\/items$/.test(endpoint.path),
+    );
+    expect(endpointsOf(contentReads)).toEqual([
+      "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
+      "GET /*/_apis/git/repositories/*/items [pullRequests]",
+      "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
+      "GET /*/_apis/git/repositories/*/items [pullRequests]",
+      "GET /*/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
+      "GET /*/*/_apis/git/repositories/*/items [pullRequests]",
+    ]);
   });
 
   it.each([

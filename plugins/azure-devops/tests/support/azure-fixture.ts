@@ -1,15 +1,23 @@
 /*
  * A small Azure DevOps service for tests: one organization with a project,
  * work items and their comments, the viewer, an identity directory and one
- * pull request. It answers a request by its method, its path under the
- * organization (or collection) and its query, as the real service lays its
- * REST API out, and keeps what writes change, so a test can read it back.
+ * pull request with its iterations, their changes and the repository's
+ * files at each commit. It answers a request by its method, its path under
+ * the organization (or collection) and its query, as the real service lays
+ * its REST API out, and keeps what writes and pushes change, so a test can
+ * read it back.
  */
 
 export const VIEWER = "11111111-1111-1111-1111-111111111111";
 export const ALBA = "44444444-4444-4444-4444-444444444444";
 export const PROJECT = "Mercury";
 export const PROJECT_ID = "99999999-9999-9999-9999-999999999999";
+
+/** The pull request's commits: each iteration's head, and the common commit it is compared with. */
+export const BASE_1 = "c0ffee00000000000000000000000000000000b1";
+export const HEAD_1 = "c0ffee00000000000000000000000000000000a1";
+export const BASE_2 = "c0ffee00000000000000000000000000000000b2";
+export const HEAD_2 = "c0ffee00000000000000000000000000000000a2";
 
 export const ORIGINAL_ESTIMATE = "Microsoft.VSTS.Scheduling.OriginalEstimate";
 export const EFFORT = "Microsoft.VSTS.Scheduling.Effort";
@@ -31,6 +39,24 @@ export interface FixtureComment {
   modifiedDate?: string;
   isDeleted?: boolean;
   reactions: { type: string; count: number; isCurrentUserEngaged: boolean }[];
+}
+
+/** A change of an iteration, as Azure DevOps lists it: `changeType` is a list of flags such as "edit, rename". */
+export interface FixtureChange {
+  changeTrackingId: number;
+  changeId: number;
+  item: { objectId?: string; originalObjectId?: string; path: string; gitObjectType?: string; isFolder?: boolean };
+  changeType: string;
+  originalPath?: string;
+}
+
+export interface FixtureIteration {
+  id: number;
+  createdDate: string;
+  author: { id: string; displayName: string; uniqueName?: string };
+  sourceRefCommit: { commitId: string };
+  commonRefCommit?: { commitId: string };
+  targetRefCommit: { commitId: string };
 }
 
 export interface FixtureAnswer {
@@ -127,6 +153,29 @@ const OTHER_PROJECT_TYPES = [
 const viewer = { id: VIEWER, displayName: "Ada Lovelace", uniqueName: "ada@contoso.com" };
 const alba = { id: ALBA, displayName: "Alba Reyes", uniqueName: "alba@contoso.com" };
 
+/** A file of 40 lines, so a change near its top and one near its end make two hunks. */
+const LIMITS_BASE = Array.from({ length: 40 }, (_, index) =>
+  index === 1 ? "export const limit = 10;\n" : `// line ${index + 1}\n`,
+).join("");
+export const LIMITS_HEAD_1 = LIMITS_BASE.replace("limit = 10;", "limit = 20;").replace("// line 39\n", "// line thirty-nine\n");
+
+/** A change of a file, with blob ids as Azure DevOps names them: only the sides the change has. */
+export function change(changeTrackingId: number, path: string, changeType: string, originalPath?: string): FixtureChange {
+  const flags = changeType.split(",").map((flag) => flag.trim());
+  return {
+    changeTrackingId,
+    changeId: changeTrackingId,
+    item: {
+      ...(flags.includes("delete") ? {} : { objectId: `blob-new-${changeTrackingId}` }),
+      ...(flags.includes("add") ? {} : { originalObjectId: `blob-old-${changeTrackingId}` }),
+      path,
+      gitObjectType: "blob",
+    },
+    changeType,
+    ...(originalPath ? { originalPath } : {}),
+  };
+}
+
 function json(body: unknown, status = 200): FixtureAnswer {
   return { status, json: body };
 }
@@ -217,10 +266,68 @@ export function createAzureFixture(organizationUrl: string) {
     createdBy: alba,
     reviewers: [{ ...viewer, vote: 0 }],
     mergeStatus: "succeeded",
-    lastMergeSourceCommit: { commitId: "abc123" },
+    lastMergeSourceCommit: { commitId: HEAD_1 },
     repository: { id: "repo-1", name: "api", project: { id: PROJECT_ID, name: PROJECT } },
   };
+  /** The repository's files at each commit, by `commit:path`. A binary file holds a NUL. */
+  const files = new Map<string, string>([
+    [`${BASE_1}:src/limits.ts`, LIMITS_BASE],
+    [`${HEAD_1}:src/limits.ts`, LIMITS_HEAD_1],
+    [`${HEAD_1}:src/new.ts`, "export const added = true;\n"],
+    [`${BASE_1}:src/old.ts`, "export const removed = true;\n"],
+    [`${BASE_1}:src/before.ts`, "export const moved = 1;\nexport const kept = 2;\n"],
+    [`${HEAD_1}:src/after.ts`, "export const moved = 3;\nexport const kept = 2;\n"],
+    [`${BASE_1}:docs/read me.md`, "# Read me\n"],
+    [`${HEAD_1}:docs/guide.md`, "# Read me\n"],
+    [`${BASE_1}:assets/logo.png`, "\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR"],
+    [`${HEAD_1}:assets/logo.png`, "\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR2"],
+  ]);
+  const iterations: FixtureIteration[] = [
+    {
+      id: 1,
+      createdDate: "2026-10-02T09:00:00Z",
+      author: alba,
+      sourceRefCommit: { commitId: HEAD_1 },
+      commonRefCommit: { commitId: BASE_1 },
+      targetRefCommit: { commitId: BASE_1 },
+    },
+  ];
+  /** Each iteration's changes against its common commit, as `$compareTo=0` lists them. */
+  const changes = new Map<number, FixtureChange[]>([
+    [
+      1,
+      [
+        { changeTrackingId: 1, changeId: 1, item: { path: "/src", gitObjectType: "tree", isFolder: true }, changeType: "edit" },
+        change(2, "/src/limits.ts", "edit"),
+        change(3, "/src/new.ts", "add"),
+        change(4, "/src/old.ts", "delete"),
+        change(5, "/src/after.ts", "edit, rename", "/src/before.ts"),
+        change(6, "/docs/guide.md", "rename", "/docs/read me.md"),
+        change(7, "/assets/logo.png", "edit"),
+      ],
+    ],
+  ]);
   let nextCommentId = 100;
+
+  /**
+   * A push: a new iteration with its head and common commit, its changes
+   * against that commit, and the files it adds to the repository.
+   */
+  function push(head: string, common: string, iterationChanges: FixtureChange[], added: Record<string, string> = {}) {
+    const id = iterations.length + 1;
+    iterations.push({
+      id,
+      createdDate: `2026-10-0${id + 1}T09:00:00Z`,
+      author: alba,
+      sourceRefCommit: { commitId: head },
+      commonRefCommit: { commitId: common },
+      targetRefCommit: { commitId: common },
+    });
+    changes.set(id, iterationChanges);
+    for (const [key, text] of Object.entries(added)) files.set(key, text);
+    pullRequest.lastMergeSourceCommit = { commitId: head };
+    return id;
+  }
 
   function workItemJson(item: FixtureWorkItem, fieldNames?: string[], relations = false) {
     const fields = fieldNames
@@ -409,8 +516,51 @@ export function createAzureFixture(organizationUrl: string) {
                   ],
                 },
               ]
-            : [{ id: 1, createdDate: "2026-10-02T09:00:00Z", author: alba, sourceRefCommit: { commitId: "abc123" } }],
+            : iterations,
       });
+    }
+    // An iteration's changes, a page at a time: 100 unless `$top` says, at most 2,000.
+    const iterationChanges = new RegExp(
+      `^/${PROJECT_ID}/_apis/git/repositories/repo-1/pullRequests/12/iterations/(\\d+)/changes$`,
+    ).exec(path);
+    if (iterationChanges && method === "GET") {
+      const entries = changes.get(Number(iterationChanges[1]));
+      if (!entries) return json({ message: "TF401178: The requested pull request iteration was not found." }, 404);
+      if ((query.get("$compareTo") ?? "0") !== "0") return json({ message: "No fixture compares two iterations." }, 400);
+      const top = Math.min(Number(query.get("$top") ?? 100), 2000);
+      const skip = Number(query.get("$skip") ?? 0);
+      const more = skip + top < entries.length;
+      return json({
+        changeEntries: entries.slice(skip, skip + top),
+        ...(more ? { nextSkip: skip + top, nextTop: top } : {}),
+      });
+    }
+    // A file at a commit, raw.
+    const itemRoute = /^\/([^/]+)\/_apis\/git\/repositories\/([^/]+)\/items$/.exec(path);
+    if (itemRoute && method === "GET") {
+      if (decodeURIComponent(itemRoute[1]!) !== PROJECT || decodeURIComponent(itemRoute[2]!) !== "api") {
+        return json(
+          {
+            message: `TF401019: The Git repository with name or identifier ${decodeURIComponent(itemRoute[2]!)} does not exist or you do not have permissions for the operation you are attempting.`,
+            typeKey: "GitRepositoryNotFoundException",
+          },
+          404,
+        );
+      }
+      if (query.get("versionDescriptor.versionType") !== "commit") return json({ message: "No fixture reads a branch." }, 400);
+      const itemPath = query.get("path") ?? "";
+      const version = query.get("versionDescriptor.version") ?? "";
+      const text = files.get(`${version}:${itemPath.replace(/^\//, "")}`);
+      if (text === undefined) {
+        return json(
+          {
+            message: `TF401174: The item '${itemPath}' could not be found in the repository 'api' at the version specified by '<Commit: ${version}>'.`,
+            typeKey: "GitItemNotFoundException",
+          },
+          404,
+        );
+      }
+      return { status: 200, headers: { "content-type": "application/octet-stream" }, body: text };
     }
     if (method === "GET" && path === `/${PROJECT_ID}/_apis/policy/evaluations`) {
       return json({ value: [{ status: "approved", configuration: { type: { id: "0609b952-1397-4640-95ec-e00a01b2c241" } } }] });
@@ -418,7 +568,7 @@ export function createAzureFixture(organizationUrl: string) {
     return json({ message: `No fixture answers ${method} ${path}.` }, 404);
   }
 
-  return { items, comments, pullRequest, answer };
+  return { items, comments, pullRequest, files, iterations, changes, push, answer };
 }
 
 export type AzureFixture = ReturnType<typeof createAzureFixture>;

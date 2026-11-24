@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -376,6 +376,16 @@
       },
       {
         "method": "GET",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes",
+        "access": "pullRequests"
+      },
+      {
+        "method": "GET",
+        "path": "/*/_apis/git/repositories/*/items",
+        "access": "pullRequests"
+      },
+      {
+        "method": "GET",
         "path": "/*/_apis/policy/evaluations",
         "access": "pullRequests"
       },
@@ -558,6 +568,16 @@
           },
           {
             "method": "GET",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/git/repositories/*/items",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
             "path": "/*/_apis/policy/evaluations",
             "access": "pullRequests"
           },
@@ -683,6 +703,16 @@
           {
             "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/items",
             "access": "pullRequests"
           },
           {

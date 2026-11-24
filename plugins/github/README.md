@@ -67,6 +67,15 @@ its checks:
 - `syncPullRequests` adds each reviewer's vote: their latest approval or
   change request, then each person or team asked who hasn't given one.
 
+### Linked tickets, for Deck's summary
+
+`getLinkedTickets` reads, in one GraphQL query, the issues the pull request
+closes or is linked to, as GitHub lists them under Development: by a closing
+keyword or a link added by hand. It returns at most 50, each with its number,
+repository, title, body (cut at 65,536 characters), link and state, "Open" or
+"Closed". Deck heads the pull request's summary with the first one's title.
+An issue the token can't read is left out.
+
 Writes (comments, reviews, merge) come in later versions.
 
 ## Issues

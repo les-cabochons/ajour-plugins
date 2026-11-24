@@ -37,7 +37,7 @@ import {
   fetchViewer,
   syncPullRequests as syncAzurePullRequests,
 } from "./pull-requests.ts";
-import { readChecks, readConversation } from "./pull-request-review.ts";
+import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
@@ -404,6 +404,12 @@ export const getChecks: NonNullable<PluginModule["getChecks"]> = async (
   connection,
   request,
 ) => await readChecks(buildPullRequestConfig(connection), request);
+
+/** The work items the pull request is linked to, for the summary Deck shows above its guide. */
+export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = async (
+  connection,
+  request,
+) => await readLinkedTickets(buildPullRequestConfig(connection), request);
 
 /** People to assign the item to, by uniqueName, for the settle dialog. */
 export const searchAssignees: NonNullable<

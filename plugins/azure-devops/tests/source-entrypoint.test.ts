@@ -350,6 +350,7 @@ describe("the source entrypoint", () => {
       "describeItemTypes",
       "editItemComment",
       "getChecks",
+      "getLinkedTickets",
       "getPullRequestConversation",
       "listItemComments",
       "listSettleStates",

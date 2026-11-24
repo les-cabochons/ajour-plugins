@@ -205,6 +205,28 @@ export interface CodeHostChecksResult {
   checks: CodeHostCheck[];
 }
 
+/** A ticket the pull request is linked to: an issue it closes or is linked to. */
+export interface CodeHostLinkedTicket {
+  number: number;
+  /** The issue's repository, such as `acme/api`. */
+  repository?: string;
+  /** 1 to 1,000 characters. */
+  title: string;
+  /** Markdown, at most 65,536 characters. */
+  body: string;
+  /** An http or https URL, at most 2,000 characters. */
+  url: string;
+  /** GitHub's name for its state, "Open" or "Closed". 1 to 100 characters. */
+  state: string;
+}
+
+export type CodeHostLinkedTicketsRequest = CodeHostPullRequestRef;
+
+/** At most 50, in GitHub's order. */
+export interface CodeHostLinkedTicketsResult {
+  tickets: CodeHostLinkedTicket[];
+}
+
 /** A changed file. Deck reads only its path, previous path and status. */
 export interface CodeHostChangedFile {
   path: string;

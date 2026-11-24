@@ -121,7 +121,7 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | GET           | `/_apis/connectionData`                                                                                        | any                                   |
 | POST          | `/_apis/wit/wiql`, `/*/_apis/wit/wiql`                                                                         | Read the backlog                      |
 | POST          | `/_apis/wit/workitemsbatch`                                                                                    | Read the backlog                      |
-| GET           | `/_apis/wit/fields`, `/_apis/wit/workitems/*`                                                                  | Read the backlog                      |
+| GET           | `/_apis/wit/fields`, `/_apis/wit/workitems`, `/_apis/wit/workitems/*`                                          | Read the backlog                      |
 | GET           | `/*/_apis/wit/workitemtypes/*/states`, `/*/_apis/wit/workitemtypes/*/fields`                                   | Read the backlog                      |
 | GET           | `/*/_apis/wit/workitemtypes`, `/_apis/wit/workitemicons/*` (as `image/svg+xml`)                                | Read the backlog                      |
 | GET           | `/*/_apis/wit/workItems/*/comments`, `/*/_apis/wit/workItems/*/comments/*`                                     | Read the backlog                      |
@@ -130,7 +130,7 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | PATCH, DELETE | `/*/_apis/wit/workItems/*/comments/*`                                                                          | Edit work items                       |
 | PUT, DELETE   | `/*/_apis/wit/workItems/*/comments/*/reactions/*`                                                              | Edit work items                       |
 | GET           | `/_apis/git/repositories`, `/_apis/git/pullrequests`, `/*/_apis/git/pullrequests`, `/_apis/git/pullrequests/*` | Pull requests                         |
-| GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`                                         | Pull requests                         |
+| GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`, `.../workitems`                        | Pull requests                         |
 | GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
 | GET           | `/_apis/identities` on the `identities` host                                                                   | Search people across the organisation |
 
@@ -365,6 +365,13 @@ Deck's review page shows a pull request's conversation and checks:
 - `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
   checks: approved passes, rejected and broken fail, not applicable is skipped,
   and queued and running are pending. A build links to its last run.
+- `getLinkedTickets` reads the pull request's work item refs, then up to 50 of
+  those work items in one read, with their title, state, description (as
+  HTML, cut at 65,536 characters) and project, for the link to each one. They
+  keep the pull request's order, and one the token can't read is left out.
+  Deck heads the pull request's summary with the first one's title. The read
+  needs Work Items (Read): with a token that has only Code (Read), it fails,
+  and Deck says the linked tickets couldn't be read.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -271,6 +271,11 @@
       },
       {
         "method": "GET",
+        "path": "/_apis/wit/workitems",
+        "access": "readBacklog"
+      },
+      {
+        "method": "GET",
         "path": "/_apis/wit/workitems/*",
         "access": "readBacklog"
       },
@@ -361,6 +366,11 @@
       },
       {
         "method": "GET",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
+        "access": "pullRequests"
+      },
+      {
+        "method": "GET",
         "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
         "access": "pullRequests"
       },
@@ -439,6 +449,11 @@
           {
             "method": "GET",
             "path": "/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/wit/workitems",
             "access": "readBacklog"
           },
           {
@@ -533,6 +548,11 @@
           },
           {
             "method": "GET",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
             "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
           },
@@ -563,6 +583,11 @@
           {
             "method": "GET",
             "path": "/*/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workitems",
             "access": "readBacklog"
           },
           {
@@ -652,6 +677,11 @@
           },
           {
             "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/workitems",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
           },
@@ -725,6 +755,7 @@
         "getFileContent",
         "getPullRequestConversation",
         "getChecks",
+        "getLinkedTickets",
         "browsePullRequests",
         "submitReview",
         "postComment",

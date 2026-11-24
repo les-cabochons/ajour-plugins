@@ -277,6 +277,7 @@ describe("the source entrypoint", () => {
     expect(Object.keys(moduleExports).sort()).toEqual([
       "getChecks",
       "getFileContent",
+      "getLinkedTickets",
       "getPullRequestContent",
       "getPullRequestConversation",
       "listSettleStates",

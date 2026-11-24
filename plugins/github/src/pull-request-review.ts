@@ -21,6 +21,7 @@ import type {
 const PAGE_SIZE = 100;
 const MAX_TIMELINE = 5_000;
 const MAX_THREADS = 2_000;
+const MAX_THREAD_COMMENTS = 500;
 const MAX_VIEWED = 3_000;
 const MAX_CHECKS = 500;
 /** Ajour's limits on a body and on an event's text. */
@@ -46,8 +47,20 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $af
         pageInfo { hasNextPage endCursor }
         nodes {
           id path diffSide line startLine isResolved isOutdated
-          comments(first: ${PAGE_SIZE}) { nodes { ${COMMENT_FIELDS} } }
+          comments(first: ${PAGE_SIZE}) { pageInfo { hasNextPage endCursor } nodes { ${COMMENT_FIELDS} } }
         }
+      }
+    }
+  }
+}`;
+
+/** The rest of a long thread's comments, after its first page. */
+const THREAD_COMMENTS_QUERY = `query($id: ID!, $after: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: ${PAGE_SIZE}, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { ${COMMENT_FIELDS} }
       }
     }
   }
@@ -134,7 +147,7 @@ interface GitHubThread {
   startLine: number | null;
   isResolved: boolean;
   isOutdated: boolean;
-  comments: { nodes: GitHubThreadComment[] };
+  comments: Connection<GitHubThreadComment>;
 }
 
 type GitHubReviewer =
@@ -304,6 +317,21 @@ function toTimelineEvent(item: GitHubTimelineItem): CodeHostTimelineEvent[] {
   }
 }
 
+/** A thread with the comments past its first page too, up to Ajour's 500. */
+async function withAllComments(client: GitHubClient, thread: GitHubThread): Promise<GitHubThread> {
+  if (!thread.comments.pageInfo?.hasNextPage) return thread;
+  const first = thread.comments.nodes;
+  const rest = await readAll(MAX_THREAD_COMMENTS - first.length, async (after) =>
+    (
+      await client.query<{ node: { comments?: Connection<GitHubThreadComment> } | null }>(THREAD_COMMENTS_QUERY, {
+        id: thread.id,
+        after: after ?? thread.comments.pageInfo.endCursor,
+      })
+    ).node?.comments,
+  );
+  return { ...thread, comments: { ...thread.comments, nodes: [...first, ...rest] } };
+}
+
 /**
  * The pull request's conversation: its description, its timeline oldest
  * first, opening with the pull request itself, its review threads, the files
@@ -345,7 +373,7 @@ export async function readConversation(
   return {
     description: clip(pullRequest.body ?? "", MAX_BODY),
     timeline: [opened, ...items.flatMap(toTimelineEvent)].sort((left, right) => left.createdAt - right.createdAt),
-    threads: threads.flatMap(toThread),
+    threads: (await Promise.all(threads.map((thread) => withAllComments(client, thread)))).flatMap(toThread),
     viewedPaths: files.filter((file) => file.viewerViewedState === "VIEWED" && file.path.length <= 1_000).map((file) => file.path),
     mergeMethods: [
       ...(repository.mergeCommitAllowed ? (["merge"] as const) : []),

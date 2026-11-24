@@ -54,7 +54,7 @@ its checks:
 
 - `getPullRequestConversation` reads, through GraphQL and page by page, the
   description, the review threads with their path, side, lines, resolved and
-  outdated marks and comments (100 per thread), the timeline (comments,
+  outdated marks and comments (up to 500 per thread), the timeline (comments,
   reviews, commits, force pushes, renames, review requests, draft and ready
   changes, merges, closes and reopens, after an "opened" event), the files you
   marked viewed and the merge methods the repository allows. It keeps Ajour's

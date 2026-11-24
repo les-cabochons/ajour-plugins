@@ -167,6 +167,75 @@ describe("getPullRequestConversation", () => {
     expect(calls[0]?.variables).toEqual({ owner: "acme", name: "api", number: 7 });
   });
 
+  it("reads the comments of a long thread past its first page, up to 500", async () => {
+    const comment = (index: number) => ({
+      id: `C_${index}`,
+      body: `Comment ${index}`,
+      createdAt: "2026-11-01T12:00:00Z",
+      lastEditedAt: null,
+      author: bob,
+    });
+    const range = (from: number, count: number) => Array.from({ length: count }, (_, index) => comment(from + index));
+    const { calls } = stubGitHub((call: GraphQLCall) => {
+      if (call.query.includes("node(id:")) {
+        const after = String(call.variables.after);
+        const pages: Record<string, unknown> = {
+          "comments-1": page(range(100, 100), "comments-2"),
+          "comments-2": page(range(200, 100), "comments-3"),
+          "comments-3": page(range(300, 100), "comments-4"),
+          "comments-4": page(range(400, 100), "comments-5"),
+          "comments-5": page(range(500, 100), "comments-6"),
+        };
+        return { node: { comments: pages[after] } };
+      }
+      if (call.query.includes("reviewThreads(")) {
+        return {
+          repository: {
+            pullRequest: {
+              reviewThreads: page([
+                {
+                  id: "T_long",
+                  path: "src/retry.ts",
+                  diffSide: "RIGHT",
+                  line: 3,
+                  startLine: null,
+                  isResolved: false,
+                  isOutdated: false,
+                  comments: page(range(0, 100), "comments-1"),
+                },
+              ]),
+            },
+          },
+        };
+      }
+      if (call.query.includes("timelineItems(")) return { repository: { pullRequest: { timelineItems: page([]) } } };
+      if (call.query.includes("files(")) return { repository: { pullRequest: { files: page([]) } } };
+      return {
+        repository: {
+          mergeCommitAllowed: true,
+          squashMergeAllowed: false,
+          rebaseMergeAllowed: false,
+          pullRequest: { body: "", createdAt: "2026-11-01T10:00:00Z", author: alice },
+        },
+      };
+    });
+
+    const conversation = await getPullRequestConversation(connection, ref);
+
+    const comments = conversation.threads[0]!.comments;
+    expect(comments).toHaveLength(500);
+    expect(comments[100]?.body).toBe("Comment 100");
+    expect(comments.at(-1)?.body).toBe("Comment 499");
+    expect(
+      calls.filter((call) => call.query.includes("node(id:")).map((call) => [call.variables.id, call.variables.after]),
+    ).toEqual([
+      ["T_long", "comments-1"],
+      ["T_long", "comments-2"],
+      ["T_long", "comments-3"],
+      ["T_long", "comments-4"],
+    ]);
+  });
+
   it("fails when GitHub doesn't find the pull request", async () => {
     conversationGitHub({ pullRequest: null });
 

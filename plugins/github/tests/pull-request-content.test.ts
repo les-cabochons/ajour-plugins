@@ -85,10 +85,54 @@ describe("getPullRequestContent", () => {
     expect(requests.filter((request) => request.path.endsWith("/files")).map((request) => request.query?.page)).toEqual([1, 2, 3]);
   });
 
-  it("starts from the base branch's tip when GitHub names no merge base", async () => {
+  it("fails when GitHub names no merge base, rather than diff from the base branch's tip", async () => {
     installAjour(pullRequestRoutes([[file({ filename: "src/api.ts" })]], null));
 
-    await expect(getPullRequestContent(connection, ref)).resolves.toMatchObject({ baseSha: "base-tip" });
+    await expect(getPullRequestContent(connection, ref)).rejects.toThrow(
+      "GitHub didn't name where this pull request's branch started.",
+    );
+  });
+
+  it("fails with GitHub's message when the comparison is refused", async () => {
+    installAjour((request) =>
+      request.path.includes("/compare/")
+        ? json({ message: "Server Error" }, 500)
+        : pullRequestRoutes([[file({ filename: "src/api.ts" })]])(request),
+    );
+
+    await expect(getPullRequestContent(connection, ref)).rejects.toThrow("GitHub request failed (500): Server Error.");
+  });
+
+  it("stops at 3,000 files", async () => {
+    const page = (start: number) =>
+      Array.from({ length: 100 }, (_, index) => file({ filename: `src/f${start + index}.ts` }));
+    const { requests } = installAjour(
+      pullRequestRoutes(Array.from({ length: 31 }, (_, index) => page(index * 100))),
+    );
+
+    const content = await getPullRequestContent(connection, ref);
+
+    expect(content.files).toHaveLength(3_000);
+    expect(requests.filter((request) => request.path.endsWith("/files"))).toHaveLength(30);
+  });
+
+  it("names a copied file's source, reads a renamed-only file as modified, and leaves out a path longer than Ajour reads", async () => {
+    installAjour(
+      pullRequestRoutes([
+        [
+          file({ filename: "src/copy.ts", previous_filename: "src/source.ts", status: "copied", deletions: 0 }),
+          file({ filename: "src/same.ts", status: "unchanged", additions: 0, deletions: 0, patch: undefined }),
+          file({ filename: `src/${"a".repeat(1_000)}.ts` }),
+        ],
+      ]),
+    );
+
+    await expect(getPullRequestContent(connection, ref)).resolves.toMatchObject({
+      files: [
+        { path: "src/copy.ts", previousPath: "src/source.ts", status: "copied" },
+        { path: "src/same.ts", status: "modified", binary: false },
+      ],
+    });
   });
 
   it("names the repository segments encoded, and fails with GitHub's message when the pull request is gone", async () => {
@@ -137,6 +181,45 @@ describe("getFileContent", () => {
     await expect(
       getFileContent(connection, { repository: "acme/api", sha: "head-sha", path: "data/big.csv" }),
     ).resolves.toEqual({ kind: "binary" });
+  });
+
+  it("encodes a `*` the broker would read as a wildcard", async () => {
+    const { requests } = contents(() => ({ status: 200, body: "x" }));
+
+    await expect(
+      getFileContent(connection, { repository: "acme/api", sha: "head-sha", path: "docs/a*b.md" }),
+    ).resolves.toEqual({ kind: "text", content: "x" });
+    expect(requests[0]?.path).toBe("/repos/acme/api/contents/docs/a%2Ab.md");
+  });
+
+  it.each(["docs/50%.md", "docs/a;b.md", "docs/a\\b.md"])(
+    "answers binary, without a request, for %s, which the broker can't request",
+    async (path) => {
+      const { requests } = contents(() => ({ status: 200, body: "x" }));
+
+      await expect(getFileContent(connection, { repository: "acme/api", sha: "head-sha", path })).resolves.toEqual({
+        kind: "binary",
+      });
+      expect(requests).toHaveLength(0);
+    },
+  );
+
+  it("answers binary when the broker refuses an answer over its size limit", async () => {
+    contents(() => {
+      throw Object.assign(new Error("The answer is larger than 8 MB."), { name: "AjourRequestError", code: "limit" });
+    });
+
+    await expect(
+      getFileContent(connection, { repository: "acme/api", sha: "head-sha", path: "data/huge.json" }),
+    ).resolves.toEqual({ kind: "binary" });
+  });
+
+  it("fails with GitHub's status for any other refusal", async () => {
+    contents(() => json({ message: "Server Error" }, 500));
+
+    await expect(
+      getFileContent(connection, { repository: "acme/api", sha: "head-sha", path: "src/a.ts" }),
+    ).rejects.toThrow("GitHub request failed (500): Server Error.");
   });
 
   it("answers missing when the file is not at that commit", async () => {

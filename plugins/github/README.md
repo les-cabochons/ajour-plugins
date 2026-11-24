@@ -34,12 +34,16 @@ file, so its hunks match Review Deck's. The plugin gives it what it needs:
   head. It reads the pull request, then the second page of the comparison
   of its base and head, which names the merge base without any file's
   patch: `base.sha` is the base branch's tip when the pull request last
-  changed, not where the head branched off. The patches GitHub sends with
-  the file list are left out. A file with no patch and no line counted is
-  marked binary, as a guess.
-- `getFileContent` reads one file at a commit, raw. A file with a NUL byte,
-  or longer than 5,000,000 characters, is binary. A file that is not at that
-  commit is missing.
+  changed, not where the head branched off. Without a merge base it fails
+  rather than diff from the tip. The patches GitHub sends with the file list
+  are left out. A file with no patch and no line counted is marked binary,
+  as a guess. A file whose path is longer than Ajour's 1,000 characters is
+  left out.
+- `getFileContent` reads one file at a commit, raw. A file Ajour can't read
+  whole is answered as binary, so Deck shows it without its lines: one with
+  a NUL byte, one longer than 5,000,000 characters or over the broker's
+  8 MB answer limit, and one whose name the broker can't request (a `%`,
+  `;` or `\` in it). A file that is not at that commit is missing.
 
 Writes (comments, reviews, merge) come in later versions.
 

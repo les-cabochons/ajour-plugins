@@ -70,7 +70,7 @@ export class GitHubClient {
         ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
       });
     } catch (error) {
-      throw new Error(`GitHub request failed: ${error instanceof Error ? error.message : "Network error"}`);
+      throw new Error(`GitHub request failed: ${error instanceof Error ? error.message : "Network error"}`, { cause: error });
     }
   }
 
@@ -78,7 +78,7 @@ export class GitHubClient {
     try {
       const response = await this.send("rest", {
         method: "GET",
-        path: `/repos/${repository.split("/").map(encodeURIComponent).join("/")}/activity`,
+        path: `/repos/${pathSegments(repository)}/activity`,
         query: { ref: `refs/heads/${ref}`, per_page: 100, direction: "desc" },
       });
       if (!response.ok) return undefined;
@@ -113,19 +113,30 @@ export class GitHubClient {
   }
 
   /**
-   * A file's raw bytes at a commit, as text, or `undefined` when the file is
-   * not there. GitHub serves files up to 100 MB raw.
+   * A file's raw bytes at a commit, as text; `missing` when the file is not
+   * there, and `too large` when the broker refused an answer over its size
+   * limit (8 MB). GitHub serves files up to 100 MB raw.
    */
-  async rawFile(path: string, ref: string): Promise<string | undefined> {
-    const response = await this.send("rest", {
-      method: "GET",
-      path,
-      query: { ref },
-      accept: "application/vnd.github.raw+json",
-    });
-    if (response.status === 404) return undefined;
+  async rawFile(
+    path: string,
+    ref: string,
+  ): Promise<{ kind: "text"; text: string } | { kind: "missing" } | { kind: "too large" }> {
+    let response: GitHubResponse;
+    try {
+      response = await this.send("rest", {
+        method: "GET",
+        path,
+        query: { ref },
+        accept: "application/vnd.github.raw+json",
+      });
+    } catch (error) {
+      const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined;
+      if (cause?.code === "limit") return { kind: "too large" };
+      throw error;
+    }
+    if (response.status === 404) return { kind: "missing" };
     await refuseUnlessOk(response);
-    return await response.text();
+    return { kind: "text", text: await response.text() };
   }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
@@ -322,6 +333,17 @@ function toUser(actor: GitHubActor | null): CodeHostUser {
     isBot: actor.__typename === "Bot" || actor.login.endsWith("[bot]"),
     ...(actor.avatarUrl ? { avatarUrl: actor.avatarUrl } : {}),
   };
+}
+
+/**
+ * A path as REST path segments, each encoded. `*` is encoded too: the broker
+ * reads a bare `*` as a wildcard and refuses it.
+ */
+export function pathSegments(path: string) {
+  return path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment).replaceAll("*", "%2A"))
+    .join("/");
 }
 
 /** "owner/name" as its two parts, empty when missing. */

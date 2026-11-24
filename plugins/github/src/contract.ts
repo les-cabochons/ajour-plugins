@@ -1,4 +1,4 @@
-// Ajour plugin API version 3. These types mirror packages/shared/code-host.ts
+// Ajour plugin API version 4. These types mirror packages/shared/code-host.ts
 // and packages/shared/connectors.ts in les-cabochons/ajour. Times are Unix
 // milliseconds and a repository is its full name, such as "acme/api".
 

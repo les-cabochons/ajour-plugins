@@ -4,7 +4,7 @@ import { buildGitHubConfig } from "./config.ts";
 import { readIssueDescription, writeIssueDescription } from "./description-source.ts";
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
-import { getFileContent as readFileContent, getPullRequestContent as readPullRequestContent } from "./pull-request-content.ts";
+import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
@@ -43,11 +43,11 @@ export const syncPullRequests: NonNullable<PluginModule["syncPullRequests"]> = a
 
 /** A pull request's changed files and their statuses, for Deck to build its diff. */
 export const getPullRequestContent: NonNullable<PluginModule["getPullRequestContent"]> = async (connection, request) =>
-  await readPullRequestContent(new GitHubClient(buildGitHubConfig(connection).connectionId), request);
+  await readPullRequestFiles(new GitHubClient(connection.id), request);
 
 /** One file's text at a commit, for Deck to build a pull request's diff. */
 export const getFileContent: NonNullable<PluginModule["getFileContent"]> = async (connection, request) =>
-  await readFileContent(new GitHubClient(buildGitHubConfig(connection).connectionId), request);
+  await readFileAtCommit(new GitHubClient(connection.id), request);
 
 /** Issues assigned to you, as backlog items. */
 export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>

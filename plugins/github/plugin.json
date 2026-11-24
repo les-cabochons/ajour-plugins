@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "apiVersion": 4,
   "displayName": "GitHub",
   "description": "Brings your GitHub issues into the backlog, and the pull requests you wrote or were asked to review.",
@@ -112,11 +112,19 @@
         ],
         "endpoints": [
           { "method": "GET", "path": "/repos/*/*/activity" },
+          { "method": "GET", "path": "/repos/*/*/compare/*" },
+          { "method": "GET", "path": "/repos/*/*/contents/**" },
           { "method": "GET", "path": "/repos/*/*/issues/*" },
           { "method": "PATCH", "path": "/repos/*/*/issues/*" },
+          { "method": "GET", "path": "/repos/*/*/pulls/*" },
+          { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
           { "method": "GET", "path": "/repositories/*/activity" },
+          { "method": "GET", "path": "/repositories/*/compare/*" },
+          { "method": "GET", "path": "/repositories/*/contents/**" },
           { "method": "GET", "path": "/repositories/*/issues/*" },
-          { "method": "PATCH", "path": "/repositories/*/issues/*" }
+          { "method": "PATCH", "path": "/repositories/*/issues/*" },
+          { "method": "GET", "path": "/repositories/*/pulls/*" },
+          { "method": "GET", "path": "/repositories/*/pulls/*/files" }
         ]
       },
       {

@@ -44,7 +44,7 @@ describe("the code check", () => {
 describe("the plugin source", () => {
   it("finds the source files", () => {
     expect(files).toContain("plugin.ts");
-    expect(files).toHaveLength(7);
+    expect(files).toHaveLength(8);
   });
 
   describe.each(files)("%s", (file) => {

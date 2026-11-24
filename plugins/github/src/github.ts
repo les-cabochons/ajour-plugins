@@ -49,6 +49,8 @@ export class GitHubClient {
       path: string;
       query?: Record<string, string | number>;
       body?: unknown;
+      /** GitHub's media type. JSON unless the call reads a raw file. */
+      accept?: string;
     },
   ): Promise<GitHubResponse> {
     const hasBody = request.body !== undefined;
@@ -60,7 +62,7 @@ export class GitHubClient {
         path: request.path,
         ...(request.query ? { query: request.query } : {}),
         headers: {
-          Accept: "application/vnd.github+json",
+          Accept: request.accept ?? "application/vnd.github+json",
           "User-Agent": USER_AGENT,
           ...(host === "rest" ? { "X-GitHub-Api-Version": API_VERSION } : {}),
           ...(hasBody ? { "Content-Type": "application/json" } : {}),
@@ -96,22 +98,34 @@ export class GitHubClient {
   }
 
   /** A REST call. A refusal throws with GitHub's status and message. */
-  async rest<T>(path: string, init: { method?: "GET" | "PATCH"; body?: unknown } = {}): Promise<T> {
+  async rest<T>(
+    path: string,
+    init: { method?: "GET" | "PATCH"; body?: unknown; query?: Record<string, string | number> } = {},
+  ): Promise<T> {
     const response = await this.send("rest", {
       method: init.method ?? "GET",
       path,
+      ...(init.query ? { query: init.query } : {}),
       ...(init.body === undefined ? {} : { body: init.body }),
     });
-
-    if (response.status === 401) {
-      throw new Error("GitHub rejected the token. Check that it is valid and not expired.");
-    }
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
-      const message = typeof payload?.message === "string" ? `: ${payload.message}` : "";
-      throw new Error(`GitHub request failed (${response.status})${message}.`);
-    }
+    await refuseUnlessOk(response);
     return (await response.json()) as T;
+  }
+
+  /**
+   * A file's raw bytes at a commit, as text, or `undefined` when the file is
+   * not there. GitHub serves files up to 100 MB raw.
+   */
+  async rawFile(path: string, ref: string): Promise<string | undefined> {
+    const response = await this.send("rest", {
+      method: "GET",
+      path,
+      query: { ref },
+      accept: "application/vnd.github.raw+json",
+    });
+    if (response.status === 404) return undefined;
+    await refuseUnlessOk(response);
+    return await response.text();
   }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
@@ -132,6 +146,18 @@ export class GitHubClient {
       throw new Error("GitHub returned no data.");
     }
     return payload.data;
+  }
+}
+
+/** Throws for a refusal, with GitHub's status and message. */
+async function refuseUnlessOk(response: GitHubResponse) {
+  if (response.status === 401) {
+    throw new Error("GitHub rejected the token. Check that it is valid and not expired.");
+  }
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof payload?.message === "string" ? `: ${payload.message}` : "";
+    throw new Error(`GitHub request failed (${response.status})${message}.`);
   }
 }
 

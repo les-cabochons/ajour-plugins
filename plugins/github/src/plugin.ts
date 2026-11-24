@@ -5,8 +5,7 @@ import { readIssueDescription, writeIssueDescription } from "./description-sourc
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
-import { readChecks, readConversation } from "./pull-request-review.ts";
-import { readLinkedTickets } from "./linked-tickets.ts";
+import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker

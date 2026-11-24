@@ -270,7 +270,12 @@ export async function readChecks(config: PullRequestConfig, ref: CodeHostPullReq
 const MAX_TICKETS = 50;
 const MAX_TITLE = 1_000;
 const MAX_STATE = 100;
-/** The fields a linked work item is read with: Work Items (Read), which every connection has. */
+/**
+ * The fields a linked work item is read with. The read is behind Read the
+ * backlog, which is always on, and needs the token's Work Items (Read): a
+ * token with only Code (Read) fails it, and Deck says the tickets couldn't
+ * be read.
+ */
 const TICKET_FIELDS = ["System.Title", "System.State", "System.Description", "System.TeamProject"];
 
 interface AzureWorkItem {

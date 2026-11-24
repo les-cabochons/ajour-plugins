@@ -101,7 +101,7 @@ export class GitHubClient {
   /** A REST call. A refusal throws with GitHub's status and message. */
   async rest<T>(
     path: string,
-    init: { method?: "GET" | "PATCH"; body?: unknown; query?: Record<string, string | number> } = {},
+    init: { method?: "GET" | "POST" | "PATCH"; body?: unknown; query?: Record<string, string | number> } = {},
   ): Promise<T> {
     const response = await this.send("rest", {
       method: init.method ?? "GET",

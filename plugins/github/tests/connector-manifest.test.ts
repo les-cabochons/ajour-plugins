@@ -130,15 +130,34 @@ describe("network declaration", () => {
       "GET /repos/*/*/contents/**",
       "GET /repos/*/*/issues/*",
       "PATCH /repos/*/*/issues/*",
+      "POST /repos/*/*/issues/*/comments",
       "GET /repos/*/*/pulls/*",
+      "POST /repos/*/*/pulls/*/comments",
       "GET /repos/*/*/pulls/*/files",
+      "POST /repos/*/*/pulls/*/reviews",
       "GET /repositories/*/activity",
       "GET /repositories/*/compare/*",
       "GET /repositories/*/contents/**",
       "GET /repositories/*/issues/*",
       "PATCH /repositories/*/issues/*",
+      "POST /repositories/*/issues/*/comments",
       "GET /repositories/*/pulls/*",
+      "POST /repositories/*/pulls/*/comments",
       "GET /repositories/*/pulls/*/files",
+      "POST /repositories/*/pulls/*/reviews",
+    ]);
+    // The writes of Deck's draft review, and only they, wait for Review pull requests.
+    expect(
+      rest.endpoints
+        .filter((endpoint: { access?: string }) => endpoint.access)
+        .map((endpoint: { method: string; path: string; access: string }) => `${endpoint.access}: ${endpoint.method} ${endpoint.path}`),
+    ).toEqual([
+      "reviewPullRequests: POST /repos/*/*/issues/*/comments",
+      "reviewPullRequests: POST /repos/*/*/pulls/*/comments",
+      "reviewPullRequests: POST /repos/*/*/pulls/*/reviews",
+      "reviewPullRequests: POST /repositories/*/issues/*/comments",
+      "reviewPullRequests: POST /repositories/*/pulls/*/comments",
+      "reviewPullRequests: POST /repositories/*/pulls/*/reviews",
     ]);
   });
 
@@ -161,7 +180,26 @@ describe("network declaration", () => {
 
   it("loads the plugin when needed", () => {
     expect(validManifest.runtime).toEqual({ start: "whenNeeded" });
-    expect(validManifest.connectionAccess).toBeUndefined();
+  });
+
+  it("puts reviewing pull requests behind one access choice, off until the user turns it on", () => {
+    expect(validManifest.connectionAccess).toEqual([
+      {
+        id: "reviewPullRequests",
+        label: "Review pull requests",
+        description: "Comment on pull requests and submit your reviews from Deck.",
+        tokenScope: "Pull requests (Read and write)",
+        operations: [
+          "submitReview",
+          "postComment",
+          "replyToThread",
+          "setThreadResolved",
+          "setFileViewed",
+          "updatePullRequest",
+          "mergePullRequest",
+        ],
+      },
+    ]);
   });
 
   it("requires a network declaration", () => {

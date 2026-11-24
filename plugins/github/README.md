@@ -67,7 +67,28 @@ its checks:
 - `syncPullRequests` adds each reviewer's vote: their latest approval or
   change request, then each person or team asked who hasn't given one.
 
-Writes (comments, reviews, merge) come in later versions.
+### Reviewing, from Deck
+
+Deck's draft review writes through two operations, each at once (Ajour's
+ADR 0002):
+
+- `postComment` posts one comment: on lines of the diff at the commit you
+  reviewed (`POST /repos/{owner}/{repo}/pulls/{number}/comments`, the head's
+  lines on the right side and the base's on the left, from the first line of
+  a range), or on the conversation without an anchor (`POST
+  /repos/{owner}/{repo}/issues/{number}/comments`).
+- `submitReview` submits a review in one call (`POST
+  /repos/{owner}/{repo}/pulls/{number}/reviews`): its verdict as `APPROVE`,
+  `REQUEST_CHANGES` or `COMMENT`, its summary when there is one, and every
+  line comment of the draft. GitHub holds no pending review.
+
+These endpoints sit behind the connection's **Review pull requests** access
+choice, which also covers the replies, resolving, viewed files, title and
+draft changes and merges of later versions. It starts off, and an update that
+adds it asks for consent once. While it's off, Ajour refuses the operations
+before the plugin runs, and its broker refuses the endpoints. GitHub's GraphQL
+endpoint is allowed as a whole, so the token's own permissions stay the real
+limit: give it write access to pull requests only if you review from Ajour.
 
 ## Issues
 
@@ -170,8 +191,9 @@ open **Settings → Plugins**, choose **Install from file**, and select
 `plugins/github/package/github-<version>.ajour-connector`.
 
 The connection needs a personal access token. A fine-grained token needs the
-Issues permission set to Read and write for issues, and read and write access
-to pull requests and read access to contents on the repositories you want,
+Issues permission set to Read and write for issues, read access to pull
+requests (read and write to review them from Deck) and read access to contents
+on the repositories you want,
 plus organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
 be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs

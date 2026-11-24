@@ -755,6 +755,7 @@
         "getFileContent",
         "getPullRequestConversation",
         "getChecks",
+        "getPullRequestVersions",
         "browsePullRequests",
         "submitReview",
         "postComment",

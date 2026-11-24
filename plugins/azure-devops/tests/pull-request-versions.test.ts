@@ -81,12 +81,13 @@ describe("getPullRequestVersions", () => {
     expect(versions[1]).toMatchObject({ number: 2, pushedAt: Date.parse("2026-10-03T09:00:00Z"), forced: true, commits: [] });
   });
 
-  it("reads them with read-only pull request access", async () => {
-    serveFixture(createAzureFixture(ORGANIZATION));
+  it("is refused while the connection's Pull requests access is off", async () => {
+    const { requests } = serveFixture(createAzureFixture(ORGANIZATION), { access: READ_ONLY_ACCESS });
 
-    const { versions } = await getPullRequestVersions(pluginConnection({}, { access: READ_ONLY_ACCESS }), ref);
-
-    expect(versions.map((version) => version.headSha)).toEqual([HEAD_1]);
+    await expect(getPullRequestVersions(pluginConnection({}, { access: READ_ONLY_ACCESS }), ref)).rejects.toThrow(
+      /"pullRequests"/,
+    );
+    expect(requests.map(label)).toEqual(["GET /_apis/git/pullrequests/12"]);
   });
 
   it("fails when Azure DevOps doesn't find the pull request", async () => {

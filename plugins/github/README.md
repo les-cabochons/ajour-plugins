@@ -76,8 +76,10 @@ of a plain push, so `getPullRequestVersions` reads them from the timeline,
 through GraphQL and page by page: each force push is a version at the
 commit it pushed, with the commits the timeline lists after it, and the
 commits listed between two other events (a review, a comment, a force push)
-are one push. A push is dated by its last commit, never before the event it
-follows nor after the one that closed it. The last version is always the
+are one push. A review names the commit it reviewed, so the push ends
+there: GitHub lists a commit by its date, and one committed before a review
+may have been pushed after it. A push is dated by its last commit, after the
+event it follows and never after the one that closed it. The last version is always the
 pull request's head; after a force push, or a push the timeline doesn't
 list, it brings the head's commits no earlier version had. GitHub doesn't
 say where an older head met the base branch, so the versions carry no base,

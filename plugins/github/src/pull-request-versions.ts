@@ -20,7 +20,11 @@ import type {
  * GitHub keeps no record of a plain push, so the pushes come from the
  * timeline: a force push is a version of its own, at the commit it pushed,
  * and the commits listed between two other events (a review, a comment, a
- * force push) are one push. The last version is always the pull request's
+ * force push) are one push. A review names the commit it reviewed, so a push
+ * ends there: GitHub lists a commit by its date, and one committed before a
+ * review may have been pushed after it. A push listed after an event is dated
+ * after it, so a review never covers a push that came later. The last
+ * version is always the pull request's
  * head. GitHub doesn't say where an older head met the base branch, so the
  * versions carry no base: Deck reads an older version against the head's.
  */
@@ -44,7 +48,7 @@ const TIMELINE_QUERY = `query($owner: String!, $name: String!, $number: Int!, $a
           __typename
           ... on PullRequestCommit { commit { ${COMMIT_FIELDS} } }
           ... on HeadRefForcePushedEvent { createdAt beforeCommit { oid } afterCommit { oid } }
-          ... on PullRequestReview { submittedAt }
+          ... on PullRequestReview { submittedAt commit { oid } }
           ... on IssueComment { createdAt }
         }
       }
@@ -77,7 +81,7 @@ type TimelineItem =
       beforeCommit: { oid: string } | null;
       afterCommit: { oid: string } | null;
     }
-  | { __typename: "PullRequestReview"; submittedAt: string | null }
+  | { __typename: "PullRequestReview"; submittedAt: string | null; commit: { oid: string } | null }
   | { __typename: "IssueComment"; createdAt: string };
 
 const toCommit = (commit: GitHubCommit): CodeHostVersionCommit => ({
@@ -110,29 +114,50 @@ export async function readVersions(client: GitHubClient, ref: CodeHostPullReques
   /** The commits listed since the last event, pushed together. */
   let run: GitHubCommit[] = [];
   /** When the last event happened: a push listed after it came later. */
-  let lastEventAt = 0;
+  let lastEventAt: number | undefined;
   /** A force push no other event followed yet, which claims the commits it lists after it. */
   let forced: Draft | undefined;
-  const closeRun = (closedAt?: number) => {
-    if (!run.length) return;
-    const commits = run.map(toCommit);
-    if (forced && run.some((commit) => commit.oid === forced!.headSha)) {
-      forced.commits.push(...commits);
-    } else {
-      const committedAt = Math.max(...commits.map((commit) => commit.createdAt));
-      const pushedAt = Math.max(committedAt, lastEventAt);
-      drafts.push({
-        headSha: run.at(-1)!.oid,
-        pushedAt: closedAt === undefined ? pushedAt : Math.min(pushedAt, closedAt),
-        commits,
-      });
+  /** Adds a version, or more commits to the last one when it ends on the same head. */
+  const addDraft = (draft: Draft) => {
+    const last = drafts.at(-1);
+    if (last?.headSha === draft.headSha) {
+      last.commits.push(...draft.commits);
+      return last;
     }
-    run = [];
+    drafts.push(draft);
+    return draft;
   };
-  const event = (at: number) => {
-    closeRun(at);
+  /**
+   * Ends the run's push at `closedAt`: all of it, or up to `reviewed`, the
+   * commit a review names, when the run holds it. A run after that commit,
+   * or one whose commits all came after the commit reviewed, stays open.
+   */
+  const closeRun = (closedAt?: number, reviewed?: string) => {
+    if (!run.length) return;
+    let ended = run;
+    if (reviewed !== undefined) {
+      const at = run.findIndex((commit) => commit.oid === reviewed);
+      if (at < 0 && drafts.some((draft) => draft.headSha === reviewed)) return;
+      if (at >= 0) ended = run.slice(0, at + 1);
+    }
+    run = run.slice(ended.length);
+    const commits = ended.map(toCommit);
+    if (forced && ended.some((commit) => commit.oid === forced!.headSha)) {
+      forced.commits.push(...commits);
+      return;
+    }
+    const committedAt = Math.max(...commits.map((commit) => commit.createdAt));
+    const after = lastEventAt === undefined ? committedAt : Math.max(committedAt, lastEventAt + 1);
+    addDraft({
+      headSha: ended.at(-1)!.oid,
+      pushedAt: closedAt === undefined ? after : Math.min(after, closedAt),
+      commits,
+    });
+  };
+  const event = (at: number, reviewed?: string) => {
+    closeRun(at, reviewed);
     forced = undefined;
-    lastEventAt = Math.max(lastEventAt, at);
+    lastEventAt = Math.max(lastEventAt ?? at, at);
   };
   for (const item of items) {
     switch (item.__typename) {
@@ -141,7 +166,7 @@ export async function readVersions(client: GitHubClient, ref: CodeHostPullReques
         break;
       case "PullRequestReview":
         // A pending review is a draft nobody else sees.
-        if (item.submittedAt) event(time(item.submittedAt));
+        if (item.submittedAt) event(time(item.submittedAt), item.commit?.oid);
         break;
       case "IssueComment":
         event(time(item.createdAt));
@@ -150,8 +175,11 @@ export async function readVersions(client: GitHubClient, ref: CodeHostPullReques
         const at = time(item.createdAt);
         event(at);
         if (!item.afterCommit) break;
-        forced = { headSha: item.afterCommit.oid, pushedAt: at, forced: true, commits: [] };
-        drafts.push(forced);
+        // A rebased commit GitHub listed before its force push, by its date, is the same version.
+        const pushed = addDraft({ headSha: item.afterCommit.oid, pushedAt: at, forced: true, commits: [] });
+        pushed.forced = true;
+        pushed.pushedAt = at;
+        forced = pushed;
         break;
       }
     }
@@ -165,7 +193,11 @@ export async function readVersions(client: GitHubClient, ref: CodeHostPullReques
   if (!last || last.headSha !== pullRequest.headRefOid) {
     drafts.push({
       headSha: pullRequest.headRefOid,
-      pushedAt: Math.max(lastEventAt, last?.pushedAt ?? 0, ...unseen.map((commit) => commit.createdAt)),
+      pushedAt: Math.max(
+        lastEventAt === undefined ? 0 : lastEventAt + 1,
+        last?.pushedAt ?? 0,
+        ...unseen.map((commit) => commit.createdAt),
+      ),
       commits: unseen,
     });
   } else if (last.forced && !last.commits.length) {

@@ -24,7 +24,11 @@ const commit = (oid: string, headline: string, committedDate: string) => ({
   __typename: "PullRequestCommit",
   commit: { oid, messageHeadline: headline, committedDate, author: { name: "Alice" } },
 });
-const review = (submittedAt: string | null) => ({ __typename: "PullRequestReview", submittedAt });
+const review = (submittedAt: string | null, oid?: string) => ({
+  __typename: "PullRequestReview",
+  submittedAt,
+  commit: oid ? { oid } : null,
+});
 const comment = (createdAt: string) => ({ __typename: "IssueComment", createdAt });
 const forcePush = (before: string, after: string, createdAt: string) => ({
   __typename: "HeadRefForcePushedEvent",
@@ -170,10 +174,76 @@ describe("getPullRequestVersions", () => {
 
     const { versions } = await getPullRequestVersions(connection, ref);
 
+    // Listed after the comment, it was pushed after it.
     expect(versions.map((version) => version.pushedAt)).toEqual([
       Date.parse("2026-11-01T12:00:00Z"),
-      Date.parse("2026-11-01T13:00:00Z"),
+      Date.parse("2026-11-01T13:00:00Z") + 1,
     ]);
+  });
+
+  it("ends the reviewed push at the commit a review names, when a later commit is listed before the review", async () => {
+    versionsGitHub({
+      headRefOid: "c3",
+      timeline: {
+        "": page([
+          commit("c1", "Add the route", "2026-11-01T10:00:00Z"),
+          // Committed before the review, pushed after it: GitHub lists it by its date.
+          commit("c2", "Fix the route", "2026-11-01T11:00:00Z"),
+          review("2026-11-01T12:00:00Z", "c1"),
+          commit("c3", "Test the route", "2026-11-01T15:00:00Z"),
+        ]),
+      },
+    });
+
+    const { versions } = await getPullRequestVersions(connection, ref);
+
+    expect(versions.map((version) => [version.headSha, version.commits.map((entry) => entry.sha)])).toEqual([
+      ["c1", ["c1"]],
+      ["c3", ["c2", "c3"]],
+    ]);
+    // Pushed after the review, never at or before it.
+    expect(versions[1]!.pushedAt).toBeGreaterThan(Date.parse("2026-11-01T12:00:00Z"));
+  });
+
+  it("keeps a review's commits waiting when it reviewed an earlier push", async () => {
+    versionsGitHub({
+      headRefOid: "c2",
+      timeline: {
+        "": page([
+          commit("c1", "Add the route", "2026-11-01T10:00:00Z"),
+          comment("2026-11-01T11:00:00Z"),
+          commit("c2", "Fix the route", "2026-11-01T11:30:00Z"),
+          review("2026-11-01T12:00:00Z", "c1"),
+        ]),
+      },
+    });
+
+    const { versions } = await getPullRequestVersions(connection, ref);
+
+    expect(versions.map((version) => version.headSha)).toEqual(["c1", "c2"]);
+    expect(versions[1]!.pushedAt).toBeGreaterThan(Date.parse("2026-11-01T12:00:00Z"));
+  });
+
+  it("makes one version of a rebased commit listed before its force push", async () => {
+    versionsGitHub({
+      headRefOid: "f1",
+      timeline: {
+        "": page([
+          commit("c1", "Add the route", "2026-11-01T10:00:00Z"),
+          review("2026-11-01T12:00:00Z", "c1"),
+          commit("f1", "Add the route, rebased", "2026-11-01T17:59:00Z"),
+          forcePush("c1", "f1", "2026-11-01T18:00:00Z"),
+        ]),
+      },
+    });
+
+    const { versions } = await getPullRequestVersions(connection, ref);
+
+    expect(versions.map(({ number, headSha, forced, pushedAt }) => ({ number, headSha, forced, pushedAt }))).toEqual([
+      { number: 1, headSha: "c1", forced: undefined, pushedAt: Date.parse("2026-11-01T10:00:00Z") },
+      { number: 2, headSha: "f1", forced: true, pushedAt: Date.parse("2026-11-01T18:00:00Z") },
+    ]);
+    expect(versions[1]!.commits.map((entry) => entry.sha)).toEqual(["f1"]);
   });
 
   it("fails when GitHub doesn't find the pull request", async () => {

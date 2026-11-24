@@ -541,6 +541,12 @@ describe("where a pull request's repository is cloned from", () => {
     ).toEqual(["https://tfs.contoso.com/tfs/DefaultCollection/Fabrikam%20Web/_git/api"]);
   });
 
+  it("gives no SSH address for an organization address it can't read, rather than failing", () => {
+    expect(toRepositoryIdentity(azurePullRequest(), "not a url").cloneUrls).toEqual([
+      "not a url/Fabrikam%20Web/_git/api",
+    ]);
+  });
+
   it("names the fork a pull request comes from, never the repository itself", () => {
     const fork = { id: "repo-2", name: "api-fork", project: { id: "p2", name: "Alice" } };
     expect(

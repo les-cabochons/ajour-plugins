@@ -428,8 +428,9 @@ function cloneUrlsOf(organizationUrl: string, repository: AzureRepository): stri
     repository.remoteUrl ??
     `${organizationUrl.replace(/\/+$/, "")}/${encodeURIComponent(repository.project.name)}/_git/${encodeURIComponent(repository.name)}`;
   let ssh = repository.sshUrl;
-  if (!ssh) {
-    const url = new URL(organizationUrl);
+  // An address that doesn't parse gives no SSH address, and no failed sync.
+  const url = URL.canParse(organizationUrl) ? new URL(organizationUrl) : undefined;
+  if (!ssh && url) {
     const path = `${encodeURIComponent(repository.project.name)}/${encodeURIComponent(repository.name)}`;
     const organization = url.pathname.split("/").filter(Boolean)[0];
     const services = /^([a-z0-9-]+)\.visualstudio\.com$/i.exec(url.hostname);

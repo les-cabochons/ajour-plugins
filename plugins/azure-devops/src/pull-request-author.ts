@@ -19,9 +19,15 @@ import type {
  * reads the pull request: one already completed at that head is the answer
  * to a retry whose first answer was lost, and completes nothing again. Then
  * it completes it with `lastMergeSourceCommit` set to that head, which Azure
- * DevOps refuses if a push landed since. When the completion fails, it reads
- * the pull request again, since Azure DevOps may have completed it before
- * its answer was lost.
+ * DevOps refuses if a push landed since. A completion Azure DevOps already
+ * took and is still merging is answered as still completing, and isn't sent
+ * again.
+ *
+ * When the completion fails, it reads the pull request again, since Azure
+ * DevOps may have completed it, or taken it, before its answer was lost.
+ * Only a completed pull request or a newer `completionQueueTime` proves
+ * that: `mergeStatus: "queued"` alone doesn't, since Azure DevOps also says
+ * it while it works out mergeability in the background.
  */
 
 const STRATEGIES: Record<CodeHostMergeRequest["method"], string> = {
@@ -67,6 +73,22 @@ const mergeOf = (pullRequest: AzurePullRequest): CodeHostMergeResult =>
 
 const headOf = (pullRequest: AzurePullRequest) => pullRequest.lastMergeSourceCommit?.commitId;
 
+const failureOf = (pullRequest: AzurePullRequest) =>
+  pullRequest.mergeStatus ? FAILED[pullRequest.mergeStatus] : undefined;
+
+/** A completion Azure DevOps took and is still merging. */
+const completing = (pullRequest: AzurePullRequest) =>
+  pullRequest.status === "active" &&
+  pullRequest.completionQueueTime !== undefined &&
+  pullRequest.mergeStatus === "queued";
+
+/** Whether `after` holds a completion Azure DevOps took since `before` was read. */
+function tookCompletion(before: AzurePullRequest, after: AzurePullRequest) {
+  if (!after.completionQueueTime) return false;
+  if (!before.completionQueueTime) return true;
+  return Date.parse(after.completionQueueTime) > Date.parse(before.completionQueueTime);
+}
+
 /**
  * The merge an earlier try made, when the pull request completed at the
  * head the user saw. Throws when it can't complete it: merged at another
@@ -102,6 +124,8 @@ export async function mergeAzurePullRequest(
   const pullRequest = await findPullRequest(client, request);
   const earlier = mergeableOrEarlier(pullRequest, request);
   if (earlier) return earlier;
+  // Still completing an earlier try: no merge commit yet, and nothing to send again.
+  if (completing(pullRequest)) return {};
   const message = commitMessage(request);
   try {
     const completed = await client.send<AzurePullRequest>(
@@ -118,16 +142,20 @@ export async function mergeAzurePullRequest(
       },
     );
     if (completed.status === "completed") return mergeOf(completed);
-    const failed = completed.mergeStatus ? FAILED[completed.mergeStatus] : undefined;
+    const failed = failureOf(completed);
     if (failed) throw new Error(failed);
     // Azure DevOps is still completing it: no merge commit yet.
     return {};
   } catch (error) {
-    // Azure DevOps may have completed it, or begun to, before its answer was lost.
+    // Azure DevOps may have completed it, or taken it, before its answer was lost.
     const after = await findPullRequest(client, request).catch(() => undefined);
     if (after && headOf(after) === request.headSha) {
       if (after.status === "completed") return mergeOf(after);
-      if (after.status === "active" && after.mergeStatus === "queued") return {};
+      if (after.status === "active" && tookCompletion(pullRequest, after)) {
+        const failed = failureOf(after);
+        if (failed) throw new Error(failed);
+        return {};
+      }
     }
     throw error;
   }

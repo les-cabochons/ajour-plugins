@@ -222,6 +222,11 @@ export interface AzurePullRequest {
   createdBy: AzureIdentity;
   reviewers?: AzureReviewer[];
   mergeStatus?: string;
+  /**
+   * When Azure DevOps last took a completion of the pull request. It can stay
+   * after that completion failed, so only a newer one proves a new try.
+   */
+  completionQueueTime?: string;
   lastMergeSourceCommit?: { commitId: string };
   /** The merge commit, once the pull request completed. */
   lastMergeCommit?: { commitId: string };

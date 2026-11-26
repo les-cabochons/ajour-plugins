@@ -59,8 +59,10 @@ interface Pull {
   title: string;
   head: string;
   mergeCommit?: string;
-  /** Azure DevOps took the completion and is still merging. */
+  /** Azure DevOps is calculating the merge: for a completion it took, or in the background. */
   queued?: boolean;
+  /** When Azure DevOps last took a completion of the pull request. */
+  completionQueueTime?: string;
 }
 
 /**
@@ -74,6 +76,8 @@ function azure(
     access?: string[];
     policies?: unknown[] | "refused";
     complete?: (pull: Pull, body: any) => Response;
+    /** Changes what a read of the pull request answers. */
+    read?: (answer: Record<string, unknown>) => Record<string, unknown>;
   } = {},
 ) {
   const pull: Pull = { status: "active", isDraft: false, title: "Stop retries on 410", head: "abc123", ...start };
@@ -90,6 +94,7 @@ function azure(
     lastMergeSourceCommit: { commitId: pull.head },
     ...(pull.mergeCommit ? { lastMergeCommit: { commitId: pull.mergeCommit } } : {}),
     ...(pull.queued ? { mergeStatus: "queued" } : {}),
+    ...(pull.completionQueueTime ? { completionQueueTime: pull.completionQueueTime } : {}),
     repository,
   });
   stubAzureFetch(
@@ -105,7 +110,7 @@ function azure(
         ...(body !== undefined ? { body } : {}),
       });
       if (url.endsWith("/_apis/connectionData")) return json(connectionData);
-      if (url.endsWith("/_apis/git/pullrequests/7")) return json(answer());
+      if (url.endsWith("/_apis/git/pullrequests/7")) return json(options.read ? options.read(answer()) : answer());
       if (url === `${BASE}/threads`) return json({ value: [] });
       if (url === `${BASE}/iterations`) return json({ value: [] });
       if (url === POLICIES) {
@@ -242,11 +247,71 @@ describe("mergePullRequest", () => {
     azure({}, {
       complete: (current) => {
         current.queued = true;
+        current.completionQueueTime = "2026-11-26T10:00:00Z";
         return json({ message: "TF400898: An internal error occurred." }, 500);
       },
     });
 
     await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).resolves.toEqual({});
+  });
+
+  it("keeps a refused completion's error while Azure DevOps calculates the merge in the background", async () => {
+    // Azure DevOps also says queued while it works out mergeability, which proves no completion started.
+    azure({}, {
+      complete: (current) => {
+        current.queued = true;
+        return json({ message: "TF401027: You need the Git 'Contribute to pull requests' permission." }, 403);
+      },
+    });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).rejects.toThrow(
+      "TF401027: You need the Git 'Contribute to pull requests' permission.",
+    );
+  });
+
+  it("keeps a refused completion's error when the queue time is an earlier try's", async () => {
+    azure({ completionQueueTime: "2026-11-25T09:00:00Z" }, {
+      complete: (current) => {
+        current.queued = true;
+        return json({ message: "TF401027: You need the Git 'Contribute to pull requests' permission." }, 403);
+      },
+    });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).rejects.toThrow(
+      "TF401027: You need the Git 'Contribute to pull requests' permission.",
+    );
+  });
+
+  it("says why when a completion it took after a lost answer then failed", async () => {
+    azure({}, {
+      complete: (current) => {
+        current.completionQueueTime = "2026-11-26T10:00:00Z";
+        return json({ message: "TF400898: An internal error occurred." }, 500);
+      },
+      read: (answer) => ({ ...answer, mergeStatus: "conflicts" }),
+    });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).rejects.toThrow(
+      "Azure DevOps couldn't merge it: the source and target branches conflict.",
+    );
+  });
+
+  it("answers a completion Azure DevOps already took as still completing, and completes nothing again", async () => {
+    const { sent } = azure({ queued: true, completionQueueTime: "2026-11-26T10:00:00Z" });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).resolves.toEqual({});
+    expect(writes(sent)).toEqual([]);
+  });
+
+  it("completes again after an earlier completion failed", async () => {
+    const { sent } = azure({ completionQueueTime: "2026-11-25T09:00:00Z" }, {
+      read: (answer) => (answer.status === "active" ? { ...answer, mergeStatus: "conflicts" } : answer),
+    });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).resolves.toEqual({
+      mergeCommitSha: "merge789",
+    });
+    expect(writes(sent)).toHaveLength(1);
   });
 
   it("refuses a head the pull request moved on from, and completes nothing", async () => {

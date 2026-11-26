@@ -22,6 +22,8 @@ import type {
   CodeHostCheckRunState,
   CodeHostChecksResult,
   CodeHostConversationResult,
+  CodeHostLinkedTicket,
+  CodeHostLinkedTicketsResult,
   CodeHostPullRequestRef,
   CodeHostReviewThread,
   CodeHostTimelineEvent,
@@ -30,7 +32,9 @@ import type {
 /*
  * What Deck's review page reads beside the diff (les-cabochons/ajour#783):
  * the conversation, from the pull request's threads and iterations, and its
- * checks, from the policy evaluations Azure DevOps shows as checks.
+ * checks, from the policy evaluations Azure DevOps shows as checks. And the
+ * work items it is linked to, for the summary above the guide
+ * (les-cabochons/ajour#789).
  */
 
 const MAX_TIMELINE = 5_000;
@@ -261,4 +265,72 @@ export async function readChecks(config: PullRequestConfig, ref: CodeHostPullReq
   return {
     checks: evaluations.value.flatMap((evaluation) => toCheck(config, pullRequest, evaluation)).slice(0, MAX_CHECKS),
   };
+}
+
+const MAX_TICKETS = 50;
+const MAX_TITLE = 1_000;
+const MAX_STATE = 100;
+/**
+ * The fields a linked work item is read with. The read is behind Read the
+ * backlog, which is always on, and needs the token's Work Items (Read): a
+ * token with only Code (Read) fails it, and Deck says the tickets couldn't
+ * be read.
+ */
+const TICKET_FIELDS = ["System.Title", "System.State", "System.Description", "System.TeamProject"];
+
+interface AzureWorkItem {
+  id: number;
+  fields?: Record<string, unknown>;
+}
+
+const textField = (item: AzureWorkItem, name: string) => {
+  const value = item.fields?.[name];
+  return typeof value === "string" ? value : "";
+};
+
+function toTicket(config: PullRequestConfig, item: AzureWorkItem | null): CodeHostLinkedTicket[] {
+  if (!item || !Number.isInteger(item.id) || item.id < 1) return [];
+  const title = textField(item, "System.Title").trim();
+  const state = textField(item, "System.State").trim();
+  const project = textField(item, "System.TeamProject").trim();
+  if (!title || !state || !project) return [];
+  const url = `${config.organizationUrl}/${encodeURIComponent(project)}/_workitems/edit/${item.id}`;
+  if (url.length > MAX_URL) return [];
+  return [
+    {
+      number: item.id,
+      title: clip(title, MAX_TITLE),
+      body: clip(textField(item, "System.Description"), MAX_BODY),
+      url,
+      state: clip(state, MAX_STATE),
+    },
+  ];
+}
+
+/**
+ * The work items the pull request is linked to, in its order: its work item
+ * refs, then their title, state and description in one read. A work item
+ * the token can't read is left out.
+ */
+export async function readLinkedTickets(
+  config: PullRequestConfig,
+  ref: CodeHostPullRequestRef,
+): Promise<CodeHostLinkedTicketsResult> {
+  const client = new AzureReposClient(config.connectionId, config.savedOrganizationUrl);
+  const pullRequest = await findPullRequest(client, ref);
+  const refs = await client.get<{ value: { id: string }[] }>(`${pullRequestPath(pullRequest)}/workitems`, {
+    "api-version": API_VERSION,
+  });
+  const ids = [
+    ...new Set(refs.value.map((linked) => Number(linked.id)).filter((id) => Number.isInteger(id) && id > 0)),
+  ].slice(0, MAX_TICKETS);
+  if (!ids.length) return { tickets: [] };
+  const items = await client.get<{ value: (AzureWorkItem | null)[] }>("/_apis/wit/workitems", {
+    ids: ids.join(","),
+    fields: TICKET_FIELDS.join(","),
+    errorPolicy: "omit",
+    "api-version": API_VERSION,
+  });
+  const byId = new Map(items.value.flatMap((item) => (item ? [[item.id, item] as const] : [])));
+  return { tickets: ids.flatMap((id) => toTicket(config, byId.get(id) ?? null)) };
 }

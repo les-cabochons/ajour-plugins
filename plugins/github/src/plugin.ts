@@ -5,7 +5,7 @@ import { readIssueDescription, writeIssueDescription } from "./description-sourc
 import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests } from "./github.ts";
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
-import { readChecks, readConversation } from "./pull-request-review.ts";
+import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
 import {
   postPullRequestComment,
@@ -67,6 +67,10 @@ export const getPullRequestConversation: NonNullable<PluginModule["getPullReques
 /** The checks on the pull request's head, for Deck's status line. */
 export const getChecks: NonNullable<PluginModule["getChecks"]> = async (connection, request) =>
   await readChecks(new GitHubClient(connection.id), request);
+
+/** The issues the pull request closes or is linked to, for the summary Deck shows above its guide. */
+export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = async (connection, request) =>
+  await readLinkedTickets(new GitHubClient(connection.id), request);
 
 /** A review with its verdict and line comments, sent at once from Deck's Finish review. */
 export const submitReview: NonNullable<PluginModule["submitReview"]> = async (connection, request) =>

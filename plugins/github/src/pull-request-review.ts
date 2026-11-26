@@ -6,6 +6,8 @@ import type {
   CodeHostCheckRunState,
   CodeHostChecksResult,
   CodeHostConversationResult,
+  CodeHostLinkedTicket,
+  CodeHostLinkedTicketsResult,
   CodeHostPullRequestRef,
   CodeHostReviewThread,
   CodeHostReviewVerdict,
@@ -16,7 +18,9 @@ import type {
  * What Deck's review page reads beside the diff (les-cabochons/ajour#783):
  * the conversation, its description, timeline, review threads, viewed files
  * and merge methods, and the checks on the head. Each comes from GraphQL,
- * one connection at a time, page by page, up to Ajour's limits.
+ * one connection at a time, page by page, up to Ajour's limits. And the
+ * issues the pull request closes or is linked to, for the summary above
+ * the guide (les-cabochons/ajour#789).
  */
 
 const PAGE_SIZE = 100;
@@ -451,4 +455,119 @@ export async function readChecks(client: GitHubClient, ref: CodeHostPullRequestR
     return pullRequest.commits.nodes[0]?.commit.statusCheckRollup?.contexts;
   });
   return { checks: contexts.flatMap(toCheck) };
+}
+
+const MAX_TICKETS = 50;
+const MAX_TITLE = 1_000;
+
+const ISSUE_FIELDS = `number title body url state repository { nameWithOwner }`;
+
+const LINKED_TICKETS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      body
+      closingIssuesReferences(first: ${MAX_TICKETS}) { nodes { ${ISSUE_FIELDS} } }
+    }
+  }
+}`;
+
+interface GitHubLinkedIssue {
+  number: number;
+  title: string;
+  body: string | null;
+  url: string;
+  state: string;
+  repository: { nameWithOwner: string } | null;
+}
+
+const STATES: Record<string, string> = { OPEN: "Open", CLOSED: "Closed" };
+
+function toTicket(issue: GitHubLinkedIssue | null | undefined): CodeHostLinkedTicket[] {
+  if (!issue || !Number.isInteger(issue.number) || issue.number < 1) return [];
+  const title = issue.title?.trim() ?? "";
+  const url = linkOf(issue.url);
+  if (!title || !url) return [];
+  return [
+    {
+      number: issue.number,
+      ...(issue.repository ? { repository: issue.repository.nameWithOwner } : {}),
+      title: clip(title, MAX_TITLE),
+      body: clip(issue.body ?? "", MAX_BODY),
+      url,
+      state: STATES[issue.state] ?? "Open",
+    },
+  ];
+}
+
+/**
+ * The issues a description names with a closing keyword, such as "Fixes #12"
+ * or "closes acme/web#3", in its order, at most 50.
+ */
+function closingReferences(body: string, repository: string): { repository: string; number: number }[] {
+  const keyword = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/gi;
+  const found = new Map<string, { repository: string; number: number }>();
+  for (const match of body.matchAll(keyword)) {
+    const reference = { repository: match[1] ?? repository, number: Number(match[2]) };
+    if (reference.number < 1) continue;
+    found.set(`${reference.repository.toLowerCase()}#${reference.number}`, reference);
+    if (found.size >= MAX_TICKETS) break;
+  }
+  return [...found.values()];
+}
+
+/**
+ * The issues of `references`, in their order: one GraphQL query, each issue
+ * by an alias. One that doesn't exist, or the token can't see, is left out;
+ * any other failure fails the read.
+ */
+async function readIssues(
+  client: GitHubClient,
+  references: { repository: string; number: number }[],
+): Promise<CodeHostLinkedTicket[]> {
+  const variables: Record<string, unknown> = {};
+  const parameters: string[] = [];
+  const fields = references.map((reference, index) => {
+    const [owner, name] = splitRepository(reference.repository);
+    Object.assign(variables, { [`o${index}`]: owner, [`n${index}`]: name, [`i${index}`]: reference.number });
+    parameters.push(`$o${index}: String!, $n${index}: String!, $i${index}: Int!`);
+    return `t${index}: repository(owner: $o${index}, name: $n${index}) { issueOrPullRequest(number: $i${index}) { __typename ... on Issue { ${ISSUE_FIELDS} } } }`;
+  });
+  const data = await client.queryAllowingMissing<
+    Record<string, { issueOrPullRequest: (GitHubLinkedIssue & { __typename: string }) | null } | null>
+  >(
+    `query(${parameters.join(", ")}) {\n  ${fields.join("\n  ")}\n}`,
+    variables,
+  );
+  return references.flatMap((_, index) => {
+    const issue = data[`t${index}`]?.issueOrPullRequest;
+    return issue?.__typename === "Issue" ? toTicket(issue) : [];
+  });
+}
+
+/**
+ * The issues the pull request closes or is linked to, in GitHub's order, as
+ * GitHub lists them under Development: by a closing keyword or a link added
+ * by hand. GitHub links closing keywords only for a pull request into the
+ * default branch, so for a stacked layer the issues its description names
+ * with a closing keyword are read too, after the linked ones, each once.
+ * One that doesn't exist or can't be seen is left out; a read that fails
+ * otherwise fails, so Deck says the tickets couldn't be read and asks again.
+ */
+export async function readLinkedTickets(
+  client: GitHubClient,
+  ref: CodeHostPullRequestRef,
+): Promise<CodeHostLinkedTicketsResult> {
+  const data = await client.query<
+    PullRequestOf<{ body: string | null; closingIssuesReferences: { nodes: (GitHubLinkedIssue | null)[] } | null }>
+  >(LINKED_TICKETS_QUERY, variables(ref));
+  const pullRequest = data.repository?.pullRequest;
+  if (!pullRequest) notFound();
+  const linked = (pullRequest.closingIssuesReferences?.nodes ?? []).flatMap(toTicket).slice(0, MAX_TICKETS);
+  const keyOf = (repository: string, number: number) => `${repository.toLowerCase()}#${number}`;
+  const known = new Set(linked.map((ticket) => keyOf(ticket.repository ?? ref.repository, ticket.number)));
+  const references = closingReferences(pullRequest.body ?? "", ref.repository)
+    .filter((reference) => !known.has(keyOf(reference.repository, reference.number)))
+    .slice(0, MAX_TICKETS - linked.length);
+  if (!references.length) return { tickets: linked };
+  return { tickets: [...linked, ...(await readIssues(client, references))] };
 }

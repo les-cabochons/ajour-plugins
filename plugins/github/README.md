@@ -61,8 +61,9 @@ its checks:
   limits: 2,000 threads, 5,000 timeline events and 3,000 files. Of the
   repository's merge methods, it offers only those every pull request rule
   on the target branch allows (`GET
-  /repos/{owner}/{repo}/rules/branches/{branch}`, at most 500 rules), since
-  GitHub refuses the others. When the rules can't be read, without access or
+  /repos/{owner}/{repo}/rules/branches/{branch}`, at most 500 rules), and no
+  merge commit when a rule requires a linear history, since GitHub refuses
+  the others. When the rules can't be read, without access or
   on a GitHub Enterprise Server older than rulesets, it offers the
   repository's methods, and GitHub's refusal of one says why.
 - `getChecks` reads the check runs and commit statuses on the head, at most

@@ -56,7 +56,12 @@ the `getLinkedTickets` operation to those. It was then packed from the
 and #939, for named replies: `submissionId` and `firstTriedAt` on
 `replyToThread` and its `{ uncertain: true }` answer, and the `headSha` a file
 is viewed at on `setFileViewed`. The SDK's version stays 0.4.0, so only the
-lockfile integrity changes.
+lockfile integrity changes. It was packed again from the
+`feat/deck-author-actions` branch of `les-cabochons/ajour`
+(les-cabochons/ajour#786) at `ef34c87a`, its merge of origin/main after #938
+and #939, for the author's actions, `updatePullRequest` and
+`mergePullRequest`. The SDK has declared both since #407, so that pack is
+byte for byte the one above, and the lockfile doesn't change.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

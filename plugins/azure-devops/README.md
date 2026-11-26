@@ -457,10 +457,16 @@ publishes it, and completes it after a confirmation, each at once and behind
   already completed at that head is the answer to a retry whose first answer
   was lost. It refuses a pull request that moved on, is abandoned or is a
   draft, and sends the head as `lastMergeSourceCommit`, so Azure DevOps
-  refuses the completion if a push landed since. When the completion fails,
-  it reads the pull request again, since Azure DevOps may have completed it
-  before its answer was lost. While Azure DevOps is still completing it, the
-  answer has no merge commit yet; one Azure DevOps says failed, with
+  refuses the completion if a push landed since. A completion Azure DevOps
+  already took at that head and is still merging (a `completionQueueTime`,
+  with `mergeStatus` queued) is answered as still completing, and isn't sent
+  again. When the completion fails, it reads the pull request again, since
+  Azure DevOps may have completed it, or taken it, before its answer was
+  lost: only a completed pull request or a `completionQueueTime` newer than
+  the first read's counts, since Azure DevOps also says queued while it works
+  out mergeability in the background, and otherwise the failure stands.
+  While Azure DevOps is still completing it, the answer has no merge commit
+  yet; one Azure DevOps says failed, with
   conflicts or refused by a policy, fails with its reason. It sets no other
   completion option, so the source branch stays and linked work items keep
   their state.

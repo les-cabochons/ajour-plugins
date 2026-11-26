@@ -312,6 +312,12 @@ describe("the merge methods a conversation offers", () => {
     expect((await getPullRequestConversation(connection, ref)).mergeMethods).toEqual(["squash"]);
   });
 
+  it("offers no merge commit when the branch requires a linear history", async () => {
+    mergeGitHub(() => json([{ type: "required_linear_history" }, pullRequestRule(["merge", "squash"])]));
+
+    expect((await getPullRequestConversation(connection, ref)).mergeMethods).toEqual(["squash"]);
+  });
+
   it("keeps the repository's methods when no rule limits them", async () => {
     mergeGitHub(() => json([pullRequestRule()]));
 

@@ -359,7 +359,8 @@ const MAX_BRANCH_RULE_PAGES = 5;
  * The merge methods the rules on `branch` allow, or undefined when none
  * limits them. Each ruleset's pull request rule may name its methods, and
  * GitHub refuses a merge that any of them doesn't allow, so the answer is
- * what every one allows. Rules that can't be read, without access or on a
+ * what every one allows. A rule requiring a linear history allows no merge
+ * commit. Rules that can't be read, without access or on a
  * GitHub Enterprise Server older than rulesets, limit nothing: GitHub
  * still refuses a merge they don't allow, with its reason.
  */
@@ -377,6 +378,10 @@ async function branchRuleMethods(
       );
       if (!Array.isArray(rules)) return undefined;
       for (const rule of rules) {
+        if (rule?.type === "required_linear_history") {
+          allowed = new Set([...(allowed ?? MERGE_METHODS)].filter((method) => method !== "merge"));
+          continue;
+        }
         const methods: unknown = rule?.type === "pull_request" ? rule.parameters?.allowed_merge_methods : undefined;
         if (!Array.isArray(methods)) continue;
         const named = new Set(MERGE_METHODS.filter((method) => methods.includes(method)));

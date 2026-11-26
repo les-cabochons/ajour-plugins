@@ -5,6 +5,7 @@ import type {
   CodeHostCommentFact,
   CodeHostPullRequestFacts,
   CodeHostPullRequestRef,
+  CodeHostRepositoryIdentity,
   CodeHostReviewFact,
   CodeHostReviewRequest,
   CodeHostReviewVerdict,
@@ -201,6 +202,15 @@ interface GitHubComment {
   author: GitHubActor | null;
 }
 
+/** A repository's name and where it is cloned from. */
+interface GitHubRepositoryAddresses {
+  nameWithOwner: string;
+  /** Its web address, such as `https://github.com/acme/api`. */
+  url?: string;
+  /** Its SSH clone address, such as `git@github.com:acme/api.git`. */
+  sshUrl?: string;
+}
+
 interface GitHubPullRequest {
   id: string;
   number: number;
@@ -215,9 +225,11 @@ interface GitHubPullRequest {
   headRefName: string;
   /** Absent in answers from before it was asked. */
   baseRefName?: string;
-  headRepository: { nameWithOwner: string } | null;
+  /** Null when the fork the pull request comes from was deleted. */
+  headRepository: GitHubRepositoryAddresses | null;
+  isCrossRepository?: boolean;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
-  repository: { nameWithOwner: string };
+  repository: GitHubRepositoryAddresses;
   author: GitHubActor | null;
   commits: {
     nodes: { commit: { statusCheckRollup: { state: string } | null } }[];
@@ -264,9 +276,9 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable
-  headRepository { nameWithOwner }
-  repository { nameWithOwner }
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable isCrossRepository
+  headRepository { nameWithOwner url sshUrl }
+  repository { nameWithOwner url sshUrl }
   author { ${ACTOR_FIELDS} }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   timelineItems(last: 1, itemTypes: [PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED_EVENT]) {
@@ -411,6 +423,34 @@ interface MappingContext {
   includeTeamRequests: boolean;
 }
 
+/** A repository's HTTPS and SSH clone addresses. */
+function cloneUrlsOf(repository: GitHubRepositoryAddresses): string[] {
+  return [
+    ...(repository.url ? [`${repository.url.replace(/\/+$/, "")}.git`] : []),
+    ...(repository.sshUrl ? [repository.sshUrl] : []),
+  ];
+}
+
+/**
+ * Where the pull request's repository is cloned from, and the fork it comes
+ * from when it isn't the repository itself, so Ajour finds the user's local
+ * clone (les-cabochons/ajour#795). Undefined without an address.
+ */
+export function toRepositoryIdentity(
+  pullRequest: GitHubPullRequest,
+): CodeHostRepositoryIdentity | undefined {
+  const cloneUrls = cloneUrlsOf(pullRequest.repository);
+  if (!cloneUrls.length) return undefined;
+  const fork = pullRequest.isCrossRepository ? pullRequest.headRepository : null;
+  const forkUrls = fork ? cloneUrlsOf(fork) : [];
+  return {
+    cloneUrls,
+    ...(fork && forkUrls.length
+      ? { source: { repository: fork.nameWithOwner, cloneUrls: forkUrls } }
+      : {}),
+  };
+}
+
 const VOTES: Record<string, CodeHostApproval["vote"]> = {
   APPROVED: "approved",
   CHANGES_REQUESTED: "changes_requested",
@@ -499,6 +539,7 @@ export function toPullRequestFacts(
     ),
   ].sort((left, right) => left.createdAt - right.createdAt);
 
+  const repositoryIdentity = toRepositoryIdentity(pullRequest);
   const lastPush = pullRequest.timelineItems.nodes[0];
   const lastPushedAt = lastPush
     ? time(lastPush.__typename === "PullRequestCommit" ? lastPush.commit.committedDate : lastPush.createdAt)
@@ -519,6 +560,8 @@ export function toPullRequestFacts(
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
     ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
+    ...(pullRequest.headRefName ? { headRef: pullRequest.headRefName } : {}),
+    ...(repositoryIdentity ? { repositoryIdentity } : {}),
     lastPushedAt,
     reviewRequests,
     reviewRequestEvents: (pullRequest.reviewRequestTimeline?.nodes ?? []).flatMap((event) => {

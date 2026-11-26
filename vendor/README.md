@@ -55,13 +55,16 @@ the `getLinkedTickets` operation to those. It was then packed from the
 (les-cabochons/ajour#785) at `3f4de3e0`, its merge of origin/main after #919
 and #939, for named replies: `submissionId` and `firstTriedAt` on
 `replyToThread` and its `{ uncertain: true }` answer, and the `headSha` a file
-is viewed at on `setFileViewed`. The SDK's version stays 0.4.0, so only the
-lockfile integrity changes. It was packed again from the
-`feat/deck-author-actions` branch of `les-cabochons/ajour`
-(les-cabochons/ajour#786) at `ef34c87a`, its merge of origin/main after #938
-and #939, for the author's actions, `updatePullRequest` and
-`mergePullRequest`. The SDK has declared both since #407, so that pack is
-byte for byte the one above, and the lockfile doesn't change.
+is viewed at on `setFileViewed`. It was then packed from the
+`feat/deck-asks-read-clone` branch of `les-cabochons/ajour`
+(les-cabochons/ajour#917, #795) at `e16de721`, its merge of origin/main after
+#938, adding the optional `headRef` and `repositoryIdentity` on pull request
+facts. The SDK's version stays 0.4.0, so only the lockfile integrity changes.
+Packed again from the `feat/deck-author-actions` branch of
+`les-cabochons/ajour` (les-cabochons/ajour#786) at `7551e8d3`, its merge of
+origin/main after #917, for the author's actions, `updatePullRequest` and
+`mergePullRequest`, which the SDK has declared since #407: that pack is byte
+for byte the one above, and the lockfile doesn't change.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

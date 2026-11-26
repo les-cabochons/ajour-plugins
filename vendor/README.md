@@ -43,11 +43,16 @@ filename stays the same and the lockfile integrity changes.
 packed again from the `feat/deck-versions` branch of `les-cabochons/ajour`
 (les-cabochons/ajour#787), after #883 and #902 merged, adding
 `getPullRequestVersions` with each version's commits and `versionName`, and
-the optional `baseRef` on pull request facts. It was then packed from the
+the optional `baseRef` on pull request facts. It was packed again from a merge
+of that branch (`26b4fb47`) with the `feat/deck-draft-review` branch
+(les-cabochons/ajour#918), for Deck's writes that name their submission:
+`submissionId` and `firstTriedAt` on `submitReview` and `postComment`, and
+their `{ uncertain: true }` answer. It was then packed from the
 `feat/deck-summary` branch of `les-cabochons/ajour` (les-cabochons/ajour#789)
-at `6283cdb3`, its merge of origin/main `21757219`, which adds the `getLinkedTickets`
-operation to those. Pack it again from origin/main once that branch merges;
-the SDK's version stays 0.4.0, so only the lockfile integrity changes.
+at `66f15ea4`, its merge of origin/main `3b8ffe65` (after #918), which adds
+the `getLinkedTickets` operation to those. Pack it again from origin/main once
+that branch merges; the SDK's version stays 0.4.0, so only the lockfile
+integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

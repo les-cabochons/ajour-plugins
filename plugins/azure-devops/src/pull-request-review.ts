@@ -53,13 +53,13 @@ const TOLD_ELSEWHERE = new Set(["VoteUpdate", "RefUpdate"]);
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** The pull request, found by its id, which is unique in the organization or collection. */
-async function findPullRequest(client: AzureReposClient, ref: CodeHostPullRequestRef) {
+export async function findPullRequest(client: AzureReposClient, ref: CodeHostPullRequestRef) {
   const pullRequest = await fetchTracked(client, ref);
   if (!pullRequest) throw new Error("Azure DevOps could not find the pull request.");
   return pullRequest;
 }
 
-function pullRequestPath(pullRequest: AzurePullRequest) {
+export function pullRequestPath(pullRequest: AzurePullRequest) {
   const { project, id: repositoryId } = pullRequest.repository;
   return `/${encodeURIComponent(project.id)}/_apis/git/repositories/${encodeURIComponent(repositoryId)}/pullRequests/${pullRequest.pullRequestId}`;
 }

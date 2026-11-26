@@ -48,6 +48,25 @@ export class AzureReposClient {
   }
 
   async get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
+    return await this.request<T>("GET", path, params);
+  }
+
+  /** A write: `body` sent as JSON, the answer read as JSON. */
+  async send<T>(
+    method: "POST" | "PUT",
+    path: string,
+    params: Record<string, string | number | boolean | undefined>,
+    body: unknown,
+  ): Promise<T> {
+    return await this.request<T>(method, path, params, body);
+  }
+
+  private async request<T>(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    params: Record<string, string | number | boolean | undefined>,
+    body?: unknown,
+  ): Promise<T> {
     const query: Record<string, string | number | boolean> = {};
     for (const [name, value] of Object.entries(params)) {
       if (value !== undefined) query[name] = value;
@@ -56,7 +75,11 @@ export class AzureReposClient {
     const response = await sendAzureDevOps(
       { id: this.connectionId, organizationUrl: this.organizationUrl },
       path,
-      Object.keys(query).length > 0 ? { query } : {},
+      {
+        ...(method === "GET" ? {} : { method }),
+        ...(Object.keys(query).length > 0 ? { query } : {}),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
     );
 
     // A rejected token gets 401, or a 203 or a redirect to the sign-in page.

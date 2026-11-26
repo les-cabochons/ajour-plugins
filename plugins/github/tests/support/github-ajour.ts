@@ -60,13 +60,19 @@ function seen(request: RecordedHttpRequest): SeenRequest {
 
 /**
  * Installs an `ajour` global that answers every endpoint of every derived host
- * the manifest declares with `respond`, and refuses the rest. `requests` lists
+ * the manifest declares with `respond`, and refuses the rest, and the ones
+ * behind an access choice the connection didn't turn on. `requests` lists
  * what the plugin sent that reached a route.
  */
-export function installAjour(respond: (request: SeenRequest) => FakeResponseInit | Promise<FakeResponseInit>) {
+export function installAjour(
+  respond: (request: SeenRequest) => FakeResponseInit | Promise<FakeResponseInit>,
+  /** The access choices the connection turned on, such as "reviewPullRequests". */
+  options: { access?: readonly string[] } = {},
+) {
   const requests: SeenRequest[] = [];
   const fake: FakeAjour = createFakeAjour({
     manifest,
+    ...(options.access ? { access: { [CONNECTION_ID]: options.access } } : {}),
     routes: (manifest.network?.derivedHosts ?? []).flatMap((host) =>
       host.endpoints.map((endpoint) => ({
         host: host.id,
@@ -105,6 +111,7 @@ export class PartialAnswer {
 export function stubGitHub(
   handler: (call: GraphQLCall) => unknown,
   rest: (request: SeenRequest) => FakeResponseInit | Promise<FakeResponseInit> = () => json([]),
+  options: { access?: readonly string[] } = {},
 ) {
   const calls: GraphQLCall[] = [];
   const installed = installAjour((request) => {
@@ -114,6 +121,6 @@ export function stubGitHub(
     const data = handler(call);
     if (data instanceof PartialAnswer) return json({ data: data.data, errors: data.errors });
     return json(data instanceof Error ? { errors: [{ message: data.message }] } : { data });
-  });
+  }, options);
   return { calls, ...installed };
 }

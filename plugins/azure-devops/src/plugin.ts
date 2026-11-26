@@ -41,6 +41,10 @@ import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.t
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
 import {
+  postPullRequestComment,
+  submitPullRequestReview,
+} from "./pull-request-writes.ts";
+import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
   PRIORITY_LEVELS,
@@ -424,6 +428,19 @@ export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = a
   connection,
   request,
 ) => await readLinkedTickets(buildPullRequestConfig(connection), request);
+
+/** A review from Deck's Finish review: its threads, then the vote. */
+export const submitReview: NonNullable<PluginModule["submitReview"]> = async (
+  connection,
+  request,
+) =>
+  await submitPullRequestReview(buildPullRequestConfig(connection), request);
+
+/** One comment from Deck's Comment now, as a thread of its own. */
+export const postComment: NonNullable<PluginModule["postComment"]> = async (
+  connection,
+  request,
+) => await postPullRequestComment(buildPullRequestConfig(connection), request);
 
 /** The pull request's iterations with their commits, for Deck's versions bar. */
 export const getPullRequestVersions: NonNullable<

@@ -1,5 +1,6 @@
 import type { GitHubClient, PageInfo } from "./github.ts";
 import { nextCursor, splitRepository, toUser, type GitHubActor } from "./github.ts";
+import { withoutSubmissionMark } from "./pull-request-writes.ts";
 import type {
   CodeHostCheck,
   CodeHostCheckRunState,
@@ -243,7 +244,8 @@ function toThread(thread: GitHubThread): CodeHostReviewThread[] {
   const comments = thread.comments.nodes.map((comment) => ({
     id: comment.id,
     author: toUser(comment.author),
-    body: clip(comment.body, MAX_BODY),
+    // Without the line naming the submission Ajour posted it as.
+    body: clip(withoutSubmissionMark(comment.body), MAX_BODY),
     createdAt: time(comment.createdAt),
     ...(comment.lastEditedAt ? { updatedAt: time(comment.lastEditedAt) } : {}),
   }));
@@ -272,12 +274,22 @@ function reviewerName(reviewer: GitHubReviewer) {
 function toTimelineEvent(item: GitHubTimelineItem): CodeHostTimelineEvent[] {
   switch (item.__typename) {
     case "IssueComment":
-      return [{ kind: "comment", id: item.id, author: toUser(item.author), body: clip(item.body, MAX_BODY), createdAt: time(item.createdAt) }];
+      return [
+        {
+          kind: "comment",
+          id: item.id,
+          author: toUser(item.author),
+          body: clip(withoutSubmissionMark(item.body), MAX_BODY),
+          createdAt: time(item.createdAt),
+        },
+      ];
     case "PullRequestReview": {
       const verdict = VERDICTS[item.state];
       // A pending review is a draft nobody else sees.
       if (!verdict || !item.submittedAt) return [];
-      return [{ kind: "review", id: item.id, author: toUser(item.author), verdict, body: clip(item.body, MAX_BODY), createdAt: time(item.submittedAt) }];
+      // Without the line naming the submission Ajour posted it as.
+      const body = clip(withoutSubmissionMark(item.body), MAX_BODY);
+      return [{ kind: "review", id: item.id, author: toUser(item.author), verdict, body, createdAt: time(item.submittedAt) }];
     }
     case "PullRequestCommit":
       return [

@@ -426,6 +426,67 @@ export interface CodeHostLinkedTicketsResult {
   tickets: CodeHostLinkedTicket[];
 }
 
+/** A comment anchored to lines of the diff at `headSha`. */
+export interface CodeHostLineAnchor {
+  path: string;
+  side: CodeHostDiffSide;
+  line: number;
+  startLine?: number;
+}
+
+/** A review, sent at once with its verdict and its line comments (at most 500). */
+export interface CodeHostSubmitReviewRequest extends CodeHostPullRequestRef, CodeHostSubmission {
+  headSha: string;
+  verdict: "approve" | "request_changes" | "comment";
+  body?: string;
+  comments: (CodeHostLineAnchor & { body: string })[];
+}
+
+/**
+ * A write's name across tries and restarts. Ajour runs the writes that share
+ * one a connection at a time.
+ */
+export interface CodeHostSubmission {
+  /**
+   * Names this post across tries and restarts. On a retry the plugin first
+   * finds what an earlier try left and sends only what the code host
+   * doesn't hold yet, so Retry after a lost answer posts nothing twice.
+   * Letters, digits, `-` and `_`, at most 100.
+   */
+  submissionId?: string;
+  /**
+   * Set on a retry only: when the first try with this `submissionId` was
+   * sent, in Unix milliseconds, by this computer's clock. A hint only, as
+   * the clocks may disagree: the plugin looks for what that try posted
+   * whatever its time, and treats an unmarked post of the user's from
+   * around then on as maybe it.
+   */
+  firstTriedAt?: number;
+}
+
+/**
+ * A retry the code host can't settle: something the user posted since the
+ * first try may be it, but nothing there names this submission. The user
+ * decides whether to post again, as a new submission.
+ */
+export interface CodeHostUncertainResult {
+  uncertain: true;
+}
+
+export type CodeHostSubmitReviewResult = { reviewId: string } | CodeHostUncertainResult;
+
+/** A single comment: on the conversation, or on lines when `anchor` is set. */
+export interface CodeHostPostCommentRequest extends CodeHostPullRequestRef, CodeHostSubmission {
+  body: string;
+  anchor?: CodeHostLineAnchor & { headSha: string };
+}
+
+export interface CodeHostCommentResult {
+  commentId: string;
+}
+
+export type CodeHostPostCommentResult = CodeHostCommentResult | CodeHostUncertainResult;
+
 /** A commit a version brought. */
 export interface CodeHostVersionCommit {
   sha: string;

@@ -211,6 +211,7 @@ describe("network declaration", () => {
       "POST /*/_apis/wit/wiql [readBacklog]",
       "POST /_apis/wit/workitemsbatch [readBacklog]",
       "GET /_apis/wit/fields [readBacklog]",
+      "GET /_apis/wit/workitems [readBacklog]",
       "GET /_apis/wit/workitems/* [readBacklog]",
       "PATCH /_apis/wit/workitems/* [editWorkItems]",
       "GET /*/_apis/wit/workitemtypes/*/states [readBacklog]",
@@ -232,6 +233,7 @@ describe("network declaration", () => {
       "POST /*/_apis/git/repositories/*/pullRequests/*/threads [reviewPullRequests]",
       "PUT /*/_apis/git/repositories/*/pullRequests/*/reviewers/* [reviewPullRequests]",
       "PATCH /*/_apis/git/repositories/*/pullRequests/* [reviewPullRequests]",
+      "GET /*/_apis/git/repositories/*/pullRequests/*/workitems [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
       "GET /*/_apis/git/repositories/*/items [pullRequests]",
@@ -477,6 +479,7 @@ describe("connection access", () => {
       "getFileContent",
       "getPullRequestConversation",
       "getChecks",
+      "getLinkedTickets",
       "getPullRequestVersions",
       "browsePullRequests",
     ]);

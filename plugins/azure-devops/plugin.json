@@ -271,6 +271,11 @@
       },
       {
         "method": "GET",
+        "path": "/_apis/wit/workitems",
+        "access": "readBacklog"
+      },
+      {
+        "method": "GET",
         "path": "/_apis/wit/workitems/*",
         "access": "readBacklog"
       },
@@ -376,6 +381,11 @@
       },
       {
         "method": "GET",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
+        "access": "pullRequests"
+      },
+      {
+        "method": "GET",
         "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
         "access": "pullRequests"
       },
@@ -469,6 +479,11 @@
           {
             "method": "GET",
             "path": "/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/_apis/wit/workitems",
             "access": "readBacklog"
           },
           {
@@ -578,6 +593,11 @@
           },
           {
             "method": "GET",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
             "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
           },
@@ -623,6 +643,11 @@
           {
             "method": "GET",
             "path": "/*/_apis/wit/fields",
+            "access": "readBacklog"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/wit/workitems",
             "access": "readBacklog"
           },
           {
@@ -727,6 +752,11 @@
           },
           {
             "method": "GET",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/workitems",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
           },
@@ -815,6 +845,7 @@
         "getFileContent",
         "getPullRequestConversation",
         "getChecks",
+        "getLinkedTickets",
         "getPullRequestVersions",
         "browsePullRequests"
       ]

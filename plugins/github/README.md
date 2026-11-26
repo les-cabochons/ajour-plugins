@@ -86,6 +86,21 @@ say where an older head met the base branch, so the versions carry no base,
 and Deck reads an older version against the head's base unless it cached
 that version before. At most 500 versions, each with at most 250 commits.
 
+### Linked tickets, for Deck's summary
+
+`getLinkedTickets` reads, in one GraphQL query, the issues the pull request
+closes or is linked to, as GitHub lists them under Development: by a closing
+keyword or a link added by hand. It returns at most 50, each with its number,
+repository, title, body (cut at 65,536 characters), link and state, "Open" or
+"Closed". Deck heads the pull request's summary with the first one's title.
+An issue the token can't read is left out. GitHub links closing keywords only
+for a pull request into the default branch, so for a stacked layer the plugin
+also reads, in a second query, the issues its description names with a
+closing keyword ("Fixes #12", "closes acme/web#3") that aren't linked
+already, after the linked ones. A named issue or repository that doesn't
+exist is left out; any other failure fails the read, so Deck says the
+tickets couldn't be read and tries again on the next open.
+
 ### Reviewing, from Deck
 
 Deck's draft review writes through two operations, each at once (Ajour's

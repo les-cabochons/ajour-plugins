@@ -95,9 +95,18 @@ export interface GraphQLCall {
   variables: Record<string, unknown>;
 }
 
+/** A GraphQL answer with both `data` and `errors`, as GitHub gives when some aliased fields fail. */
+export class PartialAnswer {
+  constructor(
+    readonly data: unknown,
+    readonly errors: { type?: string; path?: (string | number)[]; message: string }[],
+  ) {}
+}
+
 /**
- * GitHub's GraphQL endpoint answered by `handler`, which returns the `data`
- * or an Error for GraphQL `errors`. REST answers `rest` when given, or `[]`.
+ * GitHub's GraphQL endpoint answered by `handler`, which returns the `data`,
+ * an Error for GraphQL `errors`, or a `PartialAnswer`. REST answers `rest`
+ * when given, or `[]`.
  */
 export function stubGitHub(
   handler: (call: GraphQLCall) => unknown,
@@ -110,6 +119,7 @@ export function stubGitHub(
     const call = request.body as GraphQLCall;
     calls.push(call);
     const data = handler(call);
+    if (data instanceof PartialAnswer) return json({ data: data.data, errors: data.errors });
     return json(data instanceof Error ? { errors: [{ message: data.message }] } : { data });
   }, options);
   return { calls, ...installed };

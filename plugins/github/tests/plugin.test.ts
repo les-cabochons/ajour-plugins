@@ -26,6 +26,7 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     headRefOid: "abc123",
     headRefName: "change/rate-limits",
     baseRefName: "main",
+    baseRefOid: "base123",
     headRepository: { nameWithOwner: "alice/api" },
     mergeable: "MERGEABLE",
     repository: { nameWithOwner: "acme/api" },
@@ -361,6 +362,8 @@ describe("GitHub plugin", () => {
       viewerIsAuthor: false,
       headSha: "abc123",
       baseRef: "main",
+      headRef: "change/rate-limits",
+      baseSha: "base123",
       lastPushedAt: Date.parse("2026-10-01T12:00:00Z"),
       reviewRequestEvents: [],
       reviewRequests: [

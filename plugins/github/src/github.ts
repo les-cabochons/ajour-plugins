@@ -215,6 +215,8 @@ interface GitHubPullRequest {
   headRefName: string;
   /** Absent in answers from before it was asked. */
   baseRefName?: string;
+  /** The base branch's commit the pull request is based on. Absent in answers from before it was asked. */
+  baseRefOid?: string;
   headRepository: { nameWithOwner: string } | null;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   repository: { nameWithOwner: string };
@@ -264,7 +266,7 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName baseRefOid mergeable
   headRepository { nameWithOwner }
   repository { nameWithOwner }
   author { ${ACTOR_FIELDS} }
@@ -519,6 +521,9 @@ export function toPullRequestFacts(
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
     ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
+    ...(pullRequest.headRefName ? { headRef: pullRequest.headRefName.slice(0, 400) } : {}),
+    // Deck compares it with the head of the layer below in a stack (les-cabochons/ajour#788).
+    ...(pullRequest.baseRefOid ? { baseSha: pullRequest.baseRefOid } : {}),
     lastPushedAt,
     reviewRequests,
     reviewRequestEvents: (pullRequest.reviewRequestTimeline?.nodes ?? []).flatMap((event) => {

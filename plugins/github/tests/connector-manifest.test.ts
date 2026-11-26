@@ -138,6 +138,7 @@ describe("network declaration", () => {
       "GET /repos/*/*/pulls/*/files",
       "PUT /repos/*/*/pulls/*/merge",
       "POST /repos/*/*/pulls/*/reviews",
+      "GET /repos/*/*/rules/branches/**",
       "GET /repositories/*/activity",
       "GET /repositories/*/compare/*",
       "GET /repositories/*/contents/**",
@@ -151,6 +152,7 @@ describe("network declaration", () => {
       "GET /repositories/*/pulls/*/files",
       "PUT /repositories/*/pulls/*/merge",
       "POST /repositories/*/pulls/*/reviews",
+      "GET /repositories/*/rules/branches/**",
     ]);
     // The writes of Deck's draft review and the author's actions, and only they, wait for Review pull requests.
     expect(
@@ -161,14 +163,14 @@ describe("network declaration", () => {
       "reviewPullRequests: POST /repos/*/*/issues/*/comments",
       "reviewPullRequests: PATCH /repos/*/*/pulls/*",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments",
-      "reviewPullRequests: PUT /repos/*/*/pulls/*/merge",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments/*/replies",
+      "reviewPullRequests: PUT /repos/*/*/pulls/*/merge",
       "reviewPullRequests: POST /repos/*/*/pulls/*/reviews",
       "reviewPullRequests: POST /repositories/*/issues/*/comments",
       "reviewPullRequests: PATCH /repositories/*/pulls/*",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments",
-      "reviewPullRequests: PUT /repositories/*/pulls/*/merge",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments/*/replies",
+      "reviewPullRequests: PUT /repositories/*/pulls/*/merge",
       "reviewPullRequests: POST /repositories/*/pulls/*/reviews",
     ]);
   });

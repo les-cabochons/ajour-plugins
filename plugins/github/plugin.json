@@ -124,6 +124,7 @@
           { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
           { "method": "PUT", "path": "/repos/*/*/pulls/*/merge", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/reviews", "access": "reviewPullRequests" },
+          { "method": "GET", "path": "/repos/*/*/rules/branches/**" },
           { "method": "GET", "path": "/repositories/*/activity" },
           { "method": "GET", "path": "/repositories/*/compare/*" },
           { "method": "GET", "path": "/repositories/*/contents/**" },
@@ -136,7 +137,8 @@
           { "method": "POST", "path": "/repositories/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*/files" },
           { "method": "PUT", "path": "/repositories/*/pulls/*/merge", "access": "reviewPullRequests" },
-          { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" }
+          { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" },
+          { "method": "GET", "path": "/repositories/*/rules/branches/**" }
         ]
       },
       {

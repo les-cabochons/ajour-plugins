@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getChecks, getPullRequestConversation } from "../src/plugin.ts";
-import { pluginConnection, stubGitHub, type GraphQLCall } from "./support/github-ajour.ts";
+import { json, pluginConnection, stubGitHub, type GraphQLCall, type SeenRequest } from "./support/github-ajour.ts";
 
 /*
  * What Deck's review page reads beside the diff (les-cabochons/ajour#783):
@@ -259,6 +259,74 @@ function checksGitHub(pages: Record<string, unknown> | null, rollup = true) {
     };
   });
 }
+
+describe("the merge methods a conversation offers", () => {
+  /** A repository allowing every method, whose pull request merges into `release/2026`, and its branch rules from `rules`. */
+  function mergeGitHub(rules: (request: SeenRequest) => ReturnType<typeof json>) {
+    return stubGitHub(
+      (call: GraphQLCall) => {
+        if (call.query.includes("reviewThreads(")) return { repository: { pullRequest: { reviewThreads: page([]) } } };
+        if (call.query.includes("timelineItems(")) return { repository: { pullRequest: { timelineItems: page([]) } } };
+        if (call.query.includes("files(")) return { repository: { pullRequest: { files: page([]) } } };
+        return {
+          repository: {
+            mergeCommitAllowed: true,
+            squashMergeAllowed: true,
+            rebaseMergeAllowed: true,
+            pullRequest: { body: "", createdAt: "2026-11-01T10:00:00Z", author: alice, baseRefName: "release/2026" },
+          },
+        };
+      },
+      rules,
+    );
+  }
+  const pullRequestRule = (allowed?: string[]) => ({
+    type: "pull_request",
+    ruleset_source_type: "Repository",
+    ruleset_source: "acme/api",
+    ruleset_id: 1,
+    parameters: {
+      required_approving_review_count: 1,
+      ...(allowed ? { allowed_merge_methods: allowed } : {}),
+    },
+  });
+
+  it("offers only what the target branch's rules allow, among the repository's methods", async () => {
+    const { requests } = mergeGitHub((request) =>
+      request.path === "/repos/acme/api/rules/branches/release/2026"
+        ? json([{ type: "deletion" }, pullRequestRule(["squash"])])
+        : json({ message: "Not Found" }, 404),
+    );
+
+    const conversation = await getPullRequestConversation(connection, ref);
+
+    expect(conversation.mergeMethods).toEqual(["squash"]);
+    expect(requests.filter((request) => request.host === "rest").map((request) => request.label)).toEqual([
+      "GET rest /repos/acme/api/rules/branches/release/2026",
+    ]);
+  });
+
+  it("offers only what every ruleset on the branch allows", async () => {
+    mergeGitHub(() => json([pullRequestRule(["merge", "squash"]), pullRequestRule(["squash", "rebase"])]));
+
+    expect((await getPullRequestConversation(connection, ref)).mergeMethods).toEqual(["squash"]);
+  });
+
+  it("keeps the repository's methods when no rule limits them", async () => {
+    mergeGitHub(() => json([pullRequestRule()]));
+
+    expect((await getPullRequestConversation(connection, ref)).mergeMethods).toEqual(["merge", "squash", "rebase"]);
+  });
+
+  it.each([
+    ["refused", 403],
+    ["missing on an older GitHub Enterprise Server", 404],
+  ])("keeps the repository's methods when the rules are %s", async (_, status) => {
+    mergeGitHub(() => json({ message: "Resource not accessible by personal access token" }, status));
+
+    expect((await getPullRequestConversation(connection, ref)).mergeMethods).toEqual(["merge", "squash", "rebase"]);
+  });
+});
 
 describe("getChecks", () => {
   it("returns each check run and commit status with its name, state and url", async () => {

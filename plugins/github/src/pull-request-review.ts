@@ -1,5 +1,5 @@
 import type { GitHubClient, PageInfo } from "./github.ts";
-import { nextCursor, splitRepository, toUser, type GitHubActor } from "./github.ts";
+import { nextCursor, pathSegments, splitRepository, toUser, type GitHubActor } from "./github.ts";
 import { withoutSubmissionMark } from "./pull-request-writes.ts";
 import type {
   CodeHostCheck,
@@ -41,7 +41,7 @@ const COMMENT_FIELDS = `id body createdAt lastEditedAt author { ${ACTOR_FIELDS} 
 const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
-    pullRequest(number: $number) { body createdAt author { ${ACTOR_FIELDS} } }
+    pullRequest(number: $number) { body createdAt baseRefName author { ${ACTOR_FIELDS} } }
   }
 }`;
 
@@ -348,10 +348,53 @@ async function withAllComments(client: GitHubClient, thread: GitHubThread): Prom
   return { ...thread, comments: { ...thread.comments, nodes: [...first, ...rest] } };
 }
 
+type MergeMethod = CodeHostConversationResult["mergeMethods"][number];
+
+const MERGE_METHODS: readonly MergeMethod[] = ["merge", "squash", "rebase"];
+
+/** At most this many rules on one branch are read, 100 a page. */
+const MAX_BRANCH_RULE_PAGES = 5;
+
+/**
+ * The merge methods the rules on `branch` allow, or undefined when none
+ * limits them. Each ruleset's pull request rule may name its methods, and
+ * GitHub refuses a merge that any of them doesn't allow, so the answer is
+ * what every one allows. Rules that can't be read, without access or on a
+ * GitHub Enterprise Server older than rulesets, limit nothing: GitHub
+ * still refuses a merge they don't allow, with its reason.
+ */
+async function branchRuleMethods(
+  client: GitHubClient,
+  repository: string,
+  branch: string,
+): Promise<ReadonlySet<MergeMethod> | undefined> {
+  let allowed: Set<MergeMethod> | undefined;
+  try {
+    for (let page = 1; page <= MAX_BRANCH_RULE_PAGES; page += 1) {
+      const rules = await client.rest<unknown>(
+        `/repos/${pathSegments(repository)}/rules/branches/${pathSegments(branch)}`,
+        { query: { per_page: 100, page } },
+      );
+      if (!Array.isArray(rules)) return undefined;
+      for (const rule of rules) {
+        const methods: unknown = rule?.type === "pull_request" ? rule.parameters?.allowed_merge_methods : undefined;
+        if (!Array.isArray(methods)) continue;
+        const named = new Set(MERGE_METHODS.filter((method) => methods.includes(method)));
+        allowed = allowed ? new Set([...allowed].filter((method) => named.has(method))) : named;
+      }
+      if (rules.length < 100) break;
+    }
+  } catch {
+    return undefined;
+  }
+  return allowed;
+}
+
 /**
  * The pull request's conversation: its description, its timeline oldest
  * first, opening with the pull request itself, its review threads, the files
- * the user marked viewed and the repository's merge methods.
+ * the user marked viewed and the merge methods the repository's settings
+ * and its target branch's rules allow.
  */
 export async function readConversation(
   client: GitHubClient,
@@ -363,7 +406,7 @@ export async function readConversation(
       mergeCommitAllowed: boolean;
       squashMergeAllowed: boolean;
       rebaseMergeAllowed: boolean;
-      pullRequest: { body: string; createdAt: string; author: GitHubActor | null } | null;
+      pullRequest: { body: string; createdAt: string; baseRefName: string; author: GitHubActor | null } | null;
     } | null;
   }>(PULL_REQUEST_QUERY, vars);
   const repository = head.repository;
@@ -373,11 +416,17 @@ export async function readConversation(
   const page = <T, K extends string>(query: string, key: K) =>
     async (after: string | null) =>
       (await client.query<PullRequestOf<Record<K, Connection<T>>>>(query, { ...vars, after })).repository?.pullRequest?.[key];
-  const [threads, items, files] = await Promise.all([
+  const [threads, items, files, ruleMethods] = await Promise.all([
     readAll(MAX_THREADS, page<GitHubThread, "reviewThreads">(THREADS_QUERY, "reviewThreads")),
     readAll(MAX_TIMELINE - 1, page<GitHubTimelineItem, "timelineItems">(TIMELINE_QUERY, "timelineItems")),
     readAll(MAX_VIEWED, page<{ path: string; viewerViewedState: string }, "files">(FILES_QUERY, "files")),
+    branchRuleMethods(client, ref.repository, pullRequest.baseRefName),
   ]);
+  const repositoryAllows: Record<MergeMethod, boolean> = {
+    merge: repository.mergeCommitAllowed,
+    squash: repository.squashMergeAllowed,
+    rebase: repository.rebaseMergeAllowed,
+  };
 
   const opened: CodeHostTimelineEvent = {
     kind: "event",
@@ -391,11 +440,7 @@ export async function readConversation(
     timeline: [opened, ...items.flatMap(toTimelineEvent)].sort((left, right) => left.createdAt - right.createdAt),
     threads: (await Promise.all(threads.map((thread) => withAllComments(client, thread)))).flatMap(toThread),
     viewedPaths: files.filter((file) => file.viewerViewedState === "VIEWED" && file.path.length <= 1_000).map((file) => file.path),
-    mergeMethods: [
-      ...(repository.mergeCommitAllowed ? (["merge"] as const) : []),
-      ...(repository.squashMergeAllowed ? (["squash"] as const) : []),
-      ...(repository.rebaseMergeAllowed ? (["rebase"] as const) : []),
-    ],
+    mergeMethods: MERGE_METHODS.filter((method) => repositoryAllows[method] && (ruleMethods?.has(method) ?? true)),
   };
 }
 

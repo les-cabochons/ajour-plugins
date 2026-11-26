@@ -58,7 +58,13 @@ its checks:
   reviews, commits, force pushes, renames, review requests, draft and ready
   changes, merges, closes and reopens, after an "opened" event), the files you
   marked viewed and the merge methods the repository allows. It keeps Ajour's
-  limits: 2,000 threads, 5,000 timeline events and 3,000 files.
+  limits: 2,000 threads, 5,000 timeline events and 3,000 files. Of the
+  repository's merge methods, it offers only those every pull request rule
+  on the target branch allows (`GET
+  /repos/{owner}/{repo}/rules/branches/{branch}`, at most 500 rules), since
+  GitHub refuses the others. When the rules can't be read, without access or
+  on a GitHub Enterprise Server older than rulesets, it offers the
+  repository's methods, and GitHub's refusal of one says why.
 - `getChecks` reads the check runs and commit statuses on the head, at most
   500, each with its name, its state (pending, success, failure or skipped:
   cancelled, timed out and action required count as failures; neutral,
@@ -317,6 +323,7 @@ on the GitHub URL itself, and the base path of the URL is ignored.
 | `rest` | GET | `/repos/*/*/pulls/*/files`, `/repositories/*/pulls/*/files` | Listing a pull request's changed files, for Deck |
 | `rest` | GET | `/repos/*/*/compare/*`, `/repositories/*/compare/*` | Finding where a pull request's head branched off, for Deck |
 | `rest` | GET | `/repos/*/*/contents/**`, `/repositories/*/contents/**` | Reading a changed file at the base and the head, for Deck |
+| `rest` | GET | `/repos/*/*/rules/branches/**`, `/repositories/*/rules/branches/**` | Reading the merge methods a pull request's target branch allows, for Deck |
 | `rest` | PATCH | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Writing an issue's description |
 | `rest` | PATCH | `/repos/*/*/pulls/*`, `/repositories/*/pulls/*` | Editing a pull request's title, from Deck (Review pull requests) |
 | `rest` | PUT | `/repos/*/*/pulls/*/merge`, `/repositories/*/pulls/*/merge` | Merging a pull request, from Deck (Review pull requests) |

@@ -50,9 +50,13 @@ of that branch (`26b4fb47`) with the `feat/deck-draft-review` branch
 their `{ uncertain: true }` answer. It was then packed from the
 `feat/deck-summary` branch of `les-cabochons/ajour` (les-cabochons/ajour#789)
 at `66f15ea4`, its merge of origin/main `3b8ffe65` (after #918), which adds
-the `getLinkedTickets` operation to those. Pack it again from origin/main once
-that branch merges; the SDK's version stays 0.4.0, so only the lockfile
-integrity changes.
+the `getLinkedTickets` operation to those. It was then packed from the
+`feat/deck-replies-resolve` branch of `les-cabochons/ajour`
+(les-cabochons/ajour#785) at `3f4de3e0`, its merge of origin/main after #919
+and #939, for named replies: `submissionId` and `firstTriedAt` on
+`replyToThread` and its `{ uncertain: true }` answer, and the `headSha` a file
+is viewed at on `setFileViewed`. The SDK's version stays 0.4.0, so only the
+lockfile integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

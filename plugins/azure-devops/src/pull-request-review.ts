@@ -46,7 +46,7 @@ const MAX_NAME = 500;
 const MAX_URL = 2_000;
 
 /** A code thread is resolved once its status is any of these. */
-const RESOLVED = new Set(["fixed", "wontFix", "closed", "byDesign"]);
+export const RESOLVED = new Set(["fixed", "wontFix", "closed", "byDesign"]);
 /** System threads the timeline tells another way: votes as reviews, pushes as iterations. */
 const TOLD_ELSEWHERE = new Set(["VoteUpdate", "RefUpdate"]);
 

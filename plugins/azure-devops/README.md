@@ -138,6 +138,8 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
 | POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads`                                                           | Review pull requests                  |
 | PUT           | `/*/_apis/git/repositories/*/pullRequests/*/reviewers/*`                                                       | Review pull requests                  |
+| POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads/*/comments`                                                | Review pull requests                  |
+| PATCH         | `/*/_apis/git/repositories/*/pullRequests/*/threads/*`                                                         | Review pull requests                  |
 | GET           | `/_apis/identities` on the `identities` host                                                                   | Search people across the organisation |
 
 The `identities` host is derived from the Organization URL:
@@ -417,6 +419,18 @@ requests**:
   posted on its own carries its submission the same way, and its retry
   returns the thread an earlier try left. Ajour runs the tries of one
   submission one at a time.
+
+The rest of a review round, from 2.8.0:
+
+- `replyToThread` adds a comment at the end of a thread, under its first
+  one. Azure DevOps comments carry no properties, and a hidden mark in the
+  words might show, so a reply carries no submission: a retry reads the
+  thread, and when it holds a comment of yours from around the first try on
+  (two minutes before, for the clocks to disagree), it posts nothing and
+  answers that it can't tell, so Ajour asks you before posting again.
+- `setThreadResolved` sets a thread's status to fixed, or back to active.
+- There is no `setFileViewed`: Azure DevOps doesn't share which files you
+  marked reviewed, so Deck keeps its viewed marks on your computer.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

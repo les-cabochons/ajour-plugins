@@ -132,8 +132,10 @@ describe("network declaration", () => {
       "PATCH /repos/*/*/issues/*",
       "POST /repos/*/*/issues/*/comments",
       "GET /repos/*/*/pulls/*",
+      "PATCH /repos/*/*/pulls/*",
       "POST /repos/*/*/pulls/*/comments",
       "GET /repos/*/*/pulls/*/files",
+      "PUT /repos/*/*/pulls/*/merge",
       "POST /repos/*/*/pulls/*/reviews",
       "GET /repositories/*/activity",
       "GET /repositories/*/compare/*",
@@ -142,21 +144,27 @@ describe("network declaration", () => {
       "PATCH /repositories/*/issues/*",
       "POST /repositories/*/issues/*/comments",
       "GET /repositories/*/pulls/*",
+      "PATCH /repositories/*/pulls/*",
       "POST /repositories/*/pulls/*/comments",
       "GET /repositories/*/pulls/*/files",
+      "PUT /repositories/*/pulls/*/merge",
       "POST /repositories/*/pulls/*/reviews",
     ]);
-    // The writes of Deck's draft review, and only they, wait for Review pull requests.
+    // The writes of Deck's draft review and the author's actions, and only they, wait for Review pull requests.
     expect(
       rest.endpoints
         .filter((endpoint: { access?: string }) => endpoint.access)
         .map((endpoint: { method: string; path: string; access: string }) => `${endpoint.access}: ${endpoint.method} ${endpoint.path}`),
     ).toEqual([
       "reviewPullRequests: POST /repos/*/*/issues/*/comments",
+      "reviewPullRequests: PATCH /repos/*/*/pulls/*",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments",
+      "reviewPullRequests: PUT /repos/*/*/pulls/*/merge",
       "reviewPullRequests: POST /repos/*/*/pulls/*/reviews",
       "reviewPullRequests: POST /repositories/*/issues/*/comments",
+      "reviewPullRequests: PATCH /repositories/*/pulls/*",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments",
+      "reviewPullRequests: PUT /repositories/*/pulls/*/merge",
       "reviewPullRequests: POST /repositories/*/pulls/*/reviews",
     ]);
   });

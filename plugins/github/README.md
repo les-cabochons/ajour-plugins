@@ -118,12 +118,33 @@ ADR 0002):
   Ajour asks you before posting again. Ajour runs the tries of one submission
   one at a time.
 
+### Author actions, from Deck
+
+On a pull request you opened, Deck edits the title, converts it to a draft or
+marks it ready, and merges it after a confirmation, each at once:
+
+- `updatePullRequest` edits the title (`PATCH
+  /repos/{owner}/{repo}/pulls/{number}`) and changes the draft state through
+  GraphQL, `convertPullRequestToDraft` or `markPullRequestReadyForReview`,
+  which GitHub's REST API can't. It answers with the title and draft state
+  GitHub then holds, and sends nothing for a draft state already set.
+- `mergePullRequest` merges with the method you chose, among those the
+  repository allows (`PUT /repos/{owner}/{repo}/pulls/{number}/merge`), with
+  your commit title and message, none for a rebase. It merges at most once,
+  and only at the head you read: it first reads the pull request, and one
+  already merged at that head is the answer to a retry whose first answer was
+  lost. It refuses a pull request that moved on, is closed or is a draft, and
+  sends the head as `sha`, so GitHub refuses the merge if a push landed since.
+  When the merge fails, it reads the pull request again, since GitHub may have
+  merged before its answer was lost.
+
 These endpoints sit behind the connection's **Review pull requests** access
-choice, which also covers the replies, resolving, viewed files, title and
-draft changes and merges of later versions. It starts off, and an update that
+choice, which also covers the replies, resolving and viewed files of later
+versions. It starts off, and an update that
 adds it asks for consent once. While it's off, Ajour refuses the operations
-before the plugin runs, and its broker refuses the endpoints. GitHub's GraphQL
-endpoint is allowed as a whole, so the token's own permissions stay the real
+before the plugin runs, and its broker refuses the endpoints; the plugin
+refuses the author's actions itself too, since the draft state goes through
+GraphQL. GitHub's GraphQL endpoint is allowed as a whole, so the token's own permissions stay the real
 limit: give it write access to pull requests only if you review from Ajour.
 
 ## Issues
@@ -266,6 +287,8 @@ on the GitHub URL itself, and the base path of the URL is ignored.
 | `rest` | GET | `/repos/*/*/compare/*`, `/repositories/*/compare/*` | Finding where a pull request's head branched off, for Deck |
 | `rest` | GET | `/repos/*/*/contents/**`, `/repositories/*/contents/**` | Reading a changed file at the base and the head, for Deck |
 | `rest` | PATCH | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Writing an issue's description |
+| `rest` | PATCH | `/repos/*/*/pulls/*`, `/repositories/*/pulls/*` | Editing a pull request's title, from Deck (Review pull requests) |
+| `rest` | PUT | `/repos/*/*/pulls/*/merge`, `/repositories/*/pulls/*/merge` | Merging a pull request, from Deck (Review pull requests) |
 
 The `/repositories/*` paths are for a renamed or transferred repository: GitHub
 redirects its old address to one of that form, and the plugin follows the

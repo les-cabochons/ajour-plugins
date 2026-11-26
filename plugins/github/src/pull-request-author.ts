@@ -47,7 +47,7 @@ interface DraftAnswer {
 }
 
 /** The title, the draft state or both, answered with what GitHub then holds. */
-export async function updatePullRequest(
+export async function updateGitHubPullRequest(
   client: GitHubClient,
   request: CodeHostUpdatePullRequestRequest,
 ): Promise<CodeHostUpdatePullRequestResult> {
@@ -69,7 +69,7 @@ export async function updatePullRequest(
  * the user saw. Throws when it can't merge it: merged at another head,
  * closed, moved on, or a draft.
  */
-function earlierMerge(pull: RestPull, request: CodeHostMergeRequest): CodeHostMergeResult | undefined {
+function mergeableOrEarlier(pull: RestPull, request: CodeHostMergeRequest): CodeHostMergeResult | undefined {
   if (pull.merged) {
     if (pull.head.sha !== request.headSha) {
       throw new Error("This pull request was already merged, with commits you didn't read.");
@@ -83,11 +83,11 @@ function earlierMerge(pull: RestPull, request: CodeHostMergeRequest): CodeHostMe
 }
 
 /** Merges the pull request with `method` at the head the user saw, once. */
-export async function mergePullRequest(
+export async function mergeGitHubPullRequest(
   client: GitHubClient,
   request: CodeHostMergeRequest,
 ): Promise<CodeHostMergeResult> {
-  const earlier = earlierMerge(await client.rest<RestPull>(pullPath(request)), request);
+  const earlier = mergeableOrEarlier(await client.rest<RestPull>(pullPath(request)), request);
   if (earlier) return earlier;
   // A rebase makes no merge commit, so it has no title or message.
   const commit =

@@ -401,7 +401,7 @@
       },
       {
         "method": "GET",
-        "path": "/*/_apis/policy/configurations",
+        "path": "/*/_apis/git/policy/configurations",
         "access": "pullRequests"
       },
       {
@@ -613,7 +613,7 @@
           },
           {
             "method": "GET",
-            "path": "/*/_apis/policy/configurations",
+            "path": "/*/_apis/git/policy/configurations",
             "access": "pullRequests"
           },
           {
@@ -772,7 +772,7 @@
           },
           {
             "method": "GET",
-            "path": "/*/*/_apis/policy/configurations",
+            "path": "/*/*/_apis/git/policy/configurations",
             "access": "pullRequests"
           },
           {

@@ -30,6 +30,13 @@ const STRATEGIES: Record<CodeHostMergeRequest["method"], string> = {
   rebase: "rebase",
 };
 
+/** A completion Azure DevOps answered it couldn't make. */
+const FAILED: Record<string, string> = {
+  conflicts: "Azure DevOps couldn't merge it: the source and target branches conflict.",
+  rejectedByPolicy: "Azure DevOps couldn't merge it: a branch policy refused the merge.",
+  failure: "Azure DevOps couldn't merge it.",
+};
+
 const MOVED = "The pull request has new commits since you read it. Refresh to review them before merging.";
 
 function clientOf(config: PullRequestConfig) {
@@ -65,7 +72,7 @@ const headOf = (pullRequest: AzurePullRequest) => pullRequest.lastMergeSourceCom
  * head the user saw. Throws when it can't complete it: merged at another
  * head, abandoned, moved on, or a draft.
  */
-function earlierMerge(pullRequest: AzurePullRequest, request: CodeHostMergeRequest) {
+function mergeableOrEarlier(pullRequest: AzurePullRequest, request: CodeHostMergeRequest) {
   if (pullRequest.status === "completed") {
     if (headOf(pullRequest) !== request.headSha) {
       throw new Error("This pull request was already merged, with commits you didn't read.");
@@ -93,7 +100,7 @@ export async function mergeAzurePullRequest(
 ): Promise<CodeHostMergeResult> {
   const client = clientOf(config);
   const pullRequest = await findPullRequest(client, request);
-  const earlier = earlierMerge(pullRequest, request);
+  const earlier = mergeableOrEarlier(pullRequest, request);
   if (earlier) return earlier;
   const message = commitMessage(request);
   try {
@@ -110,12 +117,18 @@ export async function mergeAzurePullRequest(
         },
       },
     );
-    // Azure DevOps may still be completing it: no merge commit yet.
-    return completed.status === "completed" ? mergeOf(completed) : {};
+    if (completed.status === "completed") return mergeOf(completed);
+    const failed = completed.mergeStatus ? FAILED[completed.mergeStatus] : undefined;
+    if (failed) throw new Error(failed);
+    // Azure DevOps is still completing it: no merge commit yet.
+    return {};
   } catch (error) {
-    // Azure DevOps may have completed it before its answer was lost.
+    // Azure DevOps may have completed it, or begun to, before its answer was lost.
     const after = await findPullRequest(client, request).catch(() => undefined);
-    if (after?.status === "completed" && headOf(after) === request.headSha) return mergeOf(after);
+    if (after && headOf(after) === request.headSha) {
+      if (after.status === "completed") return mergeOf(after);
+      if (after.status === "active" && after.mergeStatus === "queued") return {};
+    }
     throw error;
   }
 }

@@ -7,7 +7,7 @@ import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
-import { mergePullRequest as mergeGitHubPullRequest, updatePullRequest as updateGitHubPullRequest } from "./pull-request-author.ts";
+import { mergeGitHubPullRequest, updateGitHubPullRequest } from "./pull-request-author.ts";
 import { postPullRequestComment, submitPullRequestReview } from "./pull-request-writes.ts";
 
 /*
@@ -77,8 +77,8 @@ export const postComment: NonNullable<PluginModule["postComment"]> = async (conn
 
 /**
  * The access choice the author's actions need. Ajour refuses them while it's
- * off; the draft state goes through GraphQL, which the manifest can't put
- * behind it, so the plugin checks it too.
+ * off. The draft state goes through GraphQL, which no access choice can hold
+ * back at the broker, so the plugin checks it too, as a second gate.
  */
 function requireReviewAccess(connection: { access: readonly string[] }) {
   if (!connection.access.includes("reviewPullRequests")) {

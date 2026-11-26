@@ -14,7 +14,7 @@ import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 const ORG = "https://dev.azure.com/contoso";
 const PROJECT = "44444444-4444-4444-4444-444444444444";
 const BASE = `${ORG}/${PROJECT}/_apis/git/repositories/repo-1/pullRequests/7`;
-const POLICIES = `${ORG}/${PROJECT}/_apis/policy/configurations`;
+const POLICIES = `${ORG}/${PROJECT}/_apis/git/policy/configurations`;
 const MERGE_STRATEGY = "fa4e907d-c16b-4a4c-9dfa-4916e5d171ab";
 const alice = { id: "22222222-2222-2222-2222-222222222222", displayName: "Alice", uniqueName: "alice@contoso.com" };
 const repository = { id: "repo-1", name: "api", project: { id: PROJECT, name: "Fabrikam Web" } };
@@ -59,6 +59,8 @@ interface Pull {
   title: string;
   head: string;
   mergeCommit?: string;
+  /** Azure DevOps took the completion and is still merging. */
+  queued?: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ function azure(
     targetRefName: "refs/heads/main",
     lastMergeSourceCommit: { commitId: pull.head },
     ...(pull.mergeCommit ? { lastMergeCommit: { commitId: pull.mergeCommit } } : {}),
+    ...(pull.queued ? { mergeStatus: "queued" } : {}),
     repository,
   });
   stubAzureFetch(
@@ -219,6 +222,29 @@ describe("mergePullRequest", () => {
 
   it("answers without a merge commit while Azure DevOps is still completing it", async () => {
     azure({}, { complete: (pull) => json({ ...pullAnswer(pull), status: "active", mergeStatus: "queued" }) });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).resolves.toEqual({});
+  });
+
+  it.each([
+    ["conflicts", "Azure DevOps couldn't merge it: the source and target branches conflict."],
+    ["rejectedByPolicy", "Azure DevOps couldn't merge it: a branch policy refused the merge."],
+    ["failure", "Azure DevOps couldn't merge it."],
+  ])("fails when Azure DevOps answers the completion with %s", async (mergeStatus, message) => {
+    azure({}, { complete: (pull) => json({ ...pullAnswer(pull), status: "active", mergeStatus }) });
+
+    await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).rejects.toThrow(
+      message,
+    );
+  });
+
+  it("answers without a merge commit when a lost answer left the completion queued", async () => {
+    azure({}, {
+      complete: (current) => {
+        current.queued = true;
+        return json({ message: "TF400898: An internal error occurred." }, 500);
+      },
+    });
 
     await expect(mergePullRequest!(connection(), { ...ref, method: "squash", headSha: "abc123" })).resolves.toEqual({});
   });
@@ -361,8 +387,9 @@ describe("the merge methods a conversation offers", () => {
     [{ allowRebase: true }, ["rebase"]],
     // Semi-linear merges have no method in Deck.
     [{ allowRebaseMerge: true }, []],
-    // The policy's older form: squash only.
+    // The policy's older form: squash only, or a merge commit only.
     [{ useSquashMerge: true }, ["squash"]],
+    [{ useSquashMerge: false }, ["merge"]],
   ] as const)("maps %j to %j", async (settings, expected) => {
     azure({}, { policies: [policy(settings)] });
 
@@ -375,6 +402,37 @@ describe("the merge methods a conversation offers", () => {
     });
 
     await expect(methods()).resolves.toEqual(["merge", "squash", "rebase"]);
+  });
+
+  it("leaves out policies on another repository or branch, whatever Azure DevOps answers", async () => {
+    const scoped = (scope: Record<string, unknown>) => ({
+      ...policy({ allowSquash: true }),
+      settings: { allowSquash: true, scope: [scope] },
+    });
+    azure({}, {
+      policies: [
+        scoped({ repositoryId: "repo-2", refName: "refs/heads/main", matchKind: "exact" }),
+        scoped({ repositoryId: "repo-1", refName: "refs/heads/release", matchKind: "exact" }),
+        scoped({ repositoryId: "repo-1", refName: "refs/heads/rel", matchKind: "prefix" }),
+      ],
+    });
+
+    await expect(methods()).resolves.toEqual(["merge", "squash", "rebase"]);
+  });
+
+  it("counts a policy on a branch prefix, or on the whole project", async () => {
+    const scoped = (settings: Record<string, unknown>, scope: Record<string, unknown>) => ({
+      ...policy({}),
+      settings: { ...settings, scope: [scope] },
+    });
+    azure({}, {
+      policies: [
+        scoped({ allowSquash: true, allowRebase: true }, { repositoryId: "REPO-1", refName: "refs/heads/ma", matchKind: "Prefix" }),
+        scoped({ allowNoFastForward: true, allowSquash: true }, { repositoryId: null, refName: null }),
+      ],
+    });
+
+    await expect(methods()).resolves.toEqual(["squash"]);
   });
 
   it("offers only what every policy on the branch allows", async () => {

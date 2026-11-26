@@ -151,15 +151,17 @@ marks it ready, and merges it after a confirmation, each at once:
   lost. It refuses a pull request that moved on, is closed or is a draft, and
   sends the head as `sha`, so GitHub refuses the merge if a push landed since.
   When the merge fails, it reads the pull request again, since GitHub may have
-  merged before its answer was lost.
+  merged before its answer was lost. A title and a draft state sent together
+  are two calls: when the second fails, the title is already changed.
 
 These endpoints sit behind the connection's **Review pull requests** access
 choice, which also covers the replies, resolving and viewed files of later
-versions. It starts off, and an update that
-adds it asks for consent once. While it's off, Ajour refuses the operations
-before the plugin runs, and its broker refuses the endpoints; the plugin
-refuses the author's actions itself too, since the draft state goes through
-GraphQL. GitHub's GraphQL endpoint is allowed as a whole, so the token's own permissions stay the real
+versions. It starts off, and an update that adds it asks for consent once.
+While it's off, Ajour refuses the operations before the plugin runs, and its
+broker refuses the endpoints. The draft state goes through GraphQL, which no
+access choice can hold back, so the plugin also refuses the author's actions
+itself while the choice is off, as a second gate. GitHub's GraphQL endpoint is
+allowed as a whole, so the token's own permissions stay the real
 limit: give it write access to pull requests only if you review from Ajour.
 
 ## Issues
@@ -265,8 +267,8 @@ open **Settings → Plugins**, choose **Install from file**, and select
 The connection needs a personal access token. A fine-grained token needs the
 Issues permission set to Read and write for issues, read access to pull
 requests (read and write to review them from Deck) and read access to contents
-on the repositories you want,
-plus organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
+(read and write to merge from Deck) on the repositories you want, plus
+organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
 be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs
 without organization access. The plugin does not guess membership. For GitHub

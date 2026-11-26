@@ -135,7 +135,7 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`, `.../workitems`                        | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes`, for Deck                                    | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/items` (as `application/octet-stream`), for Deck                                  | Pull requests                         |
-| GET           | `/*/_apis/policy/evaluations`, `/*/_apis/policy/configurations`, `/_apis/teams`                                | Pull requests                         |
+| GET           | `/*/_apis/policy/evaluations`, `/*/_apis/git/policy/configurations`, `/_apis/teams`                            | Pull requests                         |
 | POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads`                                                           | Review pull requests                  |
 | PUT           | `/*/_apis/git/repositories/*/pullRequests/*/reviewers/*`                                                       | Review pull requests                  |
 | PATCH         | `/*/_apis/git/repositories/*/pullRequests/*`, for the title, draft and merge                                   | Review pull requests                  |
@@ -369,9 +369,11 @@ Deck's review page shows a pull request's conversation and checks:
   system messages as Azure DevOps phrased them. Azure DevOps doesn't share
   which files you marked viewed. The merge methods are those the target
   branch's "Limit merge types" policies allow (`GET
-  /{project}/_apis/policy/configurations`), each one of every policy that's
+  /{project}/_apis/git/policy/configurations`), each one of every policy that's
   on: no fast-forward as merge, squash, and rebase and fast-forward as rebase.
-  A semi-linear merge has no method in Deck. Without a policy, or when the
+  The policy's older form allows squash, or only a merge commit. A
+  semi-linear merge has no method in Deck. A policy on another repository or
+  branch never counts. Without a policy, or when the
   token can't read them, every method is offered, and Azure DevOps refuses
   one its policy forbids at the merge.
 - `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
@@ -444,7 +446,10 @@ publishes it, and completes it after a confirmation, each at once and behind
   refuses the completion if a push landed since. When the completion fails,
   it reads the pull request again, since Azure DevOps may have completed it
   before its answer was lost. While Azure DevOps is still completing it, the
-  answer has no merge commit yet.
+  answer has no merge commit yet; one Azure DevOps says failed, with
+  conflicts or refused by a policy, fails with its reason. It sets no other
+  completion option, so the source branch stays and linked work items keep
+  their state.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

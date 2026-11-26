@@ -152,6 +152,8 @@ export async function readConversation(
   const client = new AzureReposClient(config.connectionId, config.savedOrganizationUrl);
   const [viewer, pullRequest] = await Promise.all([fetchViewer(client), findPullRequest(client, ref)]);
   const base = pullRequestPath(pullRequest);
+  // The methods the target branch's merge policies allow, read alongside.
+  const mergeMethodsRead = allowedMergeMethods(client, pullRequest);
   const iterations = (
     await client.get<{ value: AzureIteration[] }>(`${base}/iterations`, { "api-version": API_VERSION })
   ).value.sort((left, right) => left.id - right.id);
@@ -164,8 +166,7 @@ export async function readConversation(
     })
   ).value.filter((thread) => !thread.isDeleted);
 
-  // The methods the target branch's merge policies allow.
-  const mergeMethods = await allowedMergeMethods(client, pullRequest);
+  const mergeMethods = await mergeMethodsRead;
 
   const codeThreads = threads.filter((thread) => thread.threadContext?.filePath);
   const otherThreads = threads.filter((thread) => !thread.threadContext?.filePath);

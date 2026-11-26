@@ -237,7 +237,7 @@ describe("network declaration", () => {
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
       "GET /*/_apis/git/repositories/*/items [pullRequests]",
-      "GET /*/_apis/policy/configurations [pullRequests]",
+      "GET /*/_apis/git/policy/configurations [pullRequests]",
       "GET /*/_apis/policy/evaluations [pullRequests]",
       "GET /_apis/teams [pullRequests]",
     ]);

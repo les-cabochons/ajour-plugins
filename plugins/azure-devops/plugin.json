@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.6.0",
+  "version": "2.10.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -370,6 +370,11 @@
         "access": "reviewPullRequests"
       },
       {
+        "method": "PATCH",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*",
+        "access": "reviewPullRequests"
+      },
+      {
         "method": "GET",
         "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
         "access": "pullRequests"
@@ -382,6 +387,11 @@
       {
         "method": "GET",
         "path": "/*/_apis/git/repositories/*/items",
+        "access": "pullRequests"
+      },
+      {
+        "method": "GET",
+        "path": "/*/_apis/policy/configurations",
         "access": "pullRequests"
       },
       {
@@ -562,6 +572,11 @@
             "access": "reviewPullRequests"
           },
           {
+            "method": "PATCH",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
@@ -574,6 +589,11 @@
           {
             "method": "GET",
             "path": "/*/_apis/git/repositories/*/items",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/_apis/policy/configurations",
             "access": "pullRequests"
           },
           {
@@ -701,6 +721,11 @@
             "access": "reviewPullRequests"
           },
           {
+            "method": "PATCH",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/iterations",
             "access": "pullRequests"
@@ -713,6 +738,11 @@
           {
             "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/items",
+            "access": "pullRequests"
+          },
+          {
+            "method": "GET",
+            "path": "/*/*/_apis/policy/configurations",
             "access": "pullRequests"
           },
           {

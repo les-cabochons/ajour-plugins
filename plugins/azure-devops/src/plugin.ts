@@ -45,6 +45,10 @@ import {
   submitPullRequestReview,
 } from "./pull-request-writes.ts";
 import {
+  mergeAzurePullRequest,
+  updateAzurePullRequest,
+} from "./pull-request-author.ts";
+import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
   PRIORITY_LEVELS,
@@ -435,6 +439,18 @@ export const postComment: NonNullable<PluginModule["postComment"]> = async (
   connection,
   request,
 ) => await postPullRequestComment(buildPullRequestConfig(connection), request);
+
+/** The title, or draft and published, from Deck's author actions. */
+export const updatePullRequest: NonNullable<
+  PluginModule["updatePullRequest"]
+> = async (connection, request) =>
+  await updateAzurePullRequest(buildPullRequestConfig(connection), request);
+
+/** Completes the pull request at the head the user saw, after Deck's confirmation. */
+export const mergePullRequest: NonNullable<
+  PluginModule["mergePullRequest"]
+> = async (connection, request) =>
+  await mergeAzurePullRequest(buildPullRequestConfig(connection), request);
 
 /** The pull request's iterations with their commits, for Deck's versions bar. */
 export const getPullRequestVersions: NonNullable<

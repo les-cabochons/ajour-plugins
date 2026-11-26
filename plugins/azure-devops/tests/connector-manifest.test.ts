@@ -231,9 +231,11 @@ describe("network declaration", () => {
       "GET /*/_apis/git/repositories/*/pullRequests/*/threads [pullRequests]",
       "POST /*/_apis/git/repositories/*/pullRequests/*/threads [reviewPullRequests]",
       "PUT /*/_apis/git/repositories/*/pullRequests/*/reviewers/* [reviewPullRequests]",
+      "PATCH /*/_apis/git/repositories/*/pullRequests/* [reviewPullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
       "GET /*/_apis/git/repositories/*/items [pullRequests]",
+      "GET /*/_apis/policy/configurations [pullRequests]",
       "GET /*/_apis/policy/evaluations [pullRequests]",
       "GET /_apis/teams [pullRequests]",
     ]);

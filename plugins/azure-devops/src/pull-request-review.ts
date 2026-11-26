@@ -1,3 +1,4 @@
+import { allowedMergeMethods } from "./merge-methods.ts";
 import type { PullRequestConfig } from "./pull-request-config.ts";
 import {
   API_VERSION,
@@ -159,6 +160,9 @@ export async function readConversation(
     })
   ).value.filter((thread) => !thread.isDeleted);
 
+  // The methods the target branch's merge policies allow.
+  const mergeMethods = await allowedMergeMethods(client, pullRequest);
+
   const codeThreads = threads.filter((thread) => thread.threadContext?.filePath);
   const otherThreads = threads.filter((thread) => !thread.threadContext?.filePath);
   const createdAt = time(pullRequest.creationDate) ?? 0;
@@ -201,8 +205,7 @@ export async function readConversation(
     timeline: timeline.slice(0, MAX_TIMELINE),
     threads: codeThreads.flatMap((thread) => toThread(thread, viewer)).slice(0, MAX_THREADS),
     viewedPaths: [],
-    // A branch policy may limit them; Azure DevOps refuses the merge then.
-    mergeMethods: ["merge", "squash", "rebase"],
+    mergeMethods,
   };
 }
 

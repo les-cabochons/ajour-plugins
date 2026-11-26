@@ -464,6 +464,33 @@ export interface CodeHostCommentResult {
 
 export type CodeHostPostCommentResult = CodeHostCommentResult | CodeHostUncertainResult;
 
+/** The title, the draft state or both. At least one is set. */
+export interface CodeHostUpdatePullRequestRequest extends CodeHostPullRequestRef {
+  /** 1 to 1,000 characters. */
+  title?: string;
+  draft?: boolean;
+}
+
+/** The title and draft state the code host holds after the update. */
+export interface CodeHostUpdatePullRequestResult {
+  title: string;
+  draft: boolean;
+}
+
+export interface CodeHostMergeRequest extends CodeHostPullRequestRef {
+  method: "merge" | "squash" | "rebase";
+  /** The head the user reviewed. The code host refuses the merge if it moved. */
+  headSha: string;
+  /** 1 to 1,000 characters. */
+  commitTitle?: string;
+  commitMessage?: string;
+}
+
+/** `mergeCommitSha` is absent while the code host is still completing the merge. */
+export interface CodeHostMergeResult {
+  mergeCommitSha?: string;
+}
+
 /** A commit a version brought. */
 export interface CodeHostVersionCommit {
   sha: string;

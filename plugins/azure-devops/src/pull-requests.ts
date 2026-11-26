@@ -53,7 +53,7 @@ export class AzureReposClient {
 
   /** A write: `body` sent as JSON, the answer read as JSON. */
   async send<T>(
-    method: "POST" | "PUT",
+    method: "POST" | "PUT" | "PATCH",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body: unknown,
@@ -62,7 +62,7 @@ export class AzureReposClient {
   }
 
   private async request<T>(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body?: unknown,
@@ -223,6 +223,8 @@ export interface AzurePullRequest {
   reviewers?: AzureReviewer[];
   mergeStatus?: string;
   lastMergeSourceCommit?: { commitId: string };
+  /** The merge commit, once the pull request completed. */
+  lastMergeCommit?: { commitId: string };
   /** The branch it merges into, such as `refs/heads/main`. */
   targetRefName?: string;
   repository: { id: string; name: string; project: { id: string; name: string } };

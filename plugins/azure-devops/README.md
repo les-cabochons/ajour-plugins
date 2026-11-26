@@ -350,6 +350,8 @@ pull requests automatically** is on, separately from **Auto sync to backlog**.
 | Checks                  | Build and Status policy evaluations.                                                                                                                           |
 | Approvals               | Each reviewer's vote, people and groups, except those who declined, with whether the reviewer is required.                                                     |
 | Mergeability            | The pull request's merge status.                                                                                                                               |
+| Branches                | `targetRefName` and `sourceRefName`, without `refs/heads/`, so Deck finds stacked pull requests.                                                               |
+| Base commit             | The latest iteration's `commonRefCommit`, where its head met the target branch, so Deck sees a layer below that moved since.                                   |
 
 A sync never returns comment or review text to Ajour. Pull requests need the
 **Code (Read)** scope, and **Project and Team (Read)** to find your teams.

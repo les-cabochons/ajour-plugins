@@ -223,6 +223,8 @@ export interface AzurePullRequest {
   reviewers?: AzureReviewer[];
   mergeStatus?: string;
   lastMergeSourceCommit?: { commitId: string };
+  /** The branch the pull request comes from, such as `refs/heads/feature/login`. */
+  sourceRefName?: string;
   /** The branch it merges into, such as `refs/heads/main`. */
   targetRefName?: string;
   repository: { id: string; name: string; project: { id: string; name: string } };
@@ -588,7 +590,13 @@ export function toPullRequestFacts(
     viewerIsAuthor: sameId(pullRequest.createdBy.id, context.viewer.id),
     headSha:
       pullRequest.lastMergeSourceCommit?.commitId ?? lastIteration?.sourceRefCommit?.commitId ?? "unknown",
+    ...(pullRequest.sourceRefName?.startsWith("refs/heads/")
+      ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length, "refs/heads/".length + 400) }
+      : {}),
     ...baseRefOf(pullRequest),
+    // Where the latest iteration met the target: Deck compares it with the
+    // head of the layer below in a stack (les-cabochons/ajour#788).
+    ...(lastIteration?.commonRefCommit?.commitId ? { baseSha: lastIteration.commonRefCommit.commitId } : {}),
     lastPushedAt,
     ...(pusher?.id ? { lastPushActor: toUser(pusher, context.viewer) } : {}),
     reviewRequests: lastN(toReviewRequests(pullRequest, context), 100),

@@ -34,6 +34,7 @@ function pullRequest(id: number, overrides: Record<string, unknown> = {}) {
     mergeStatus: "succeeded",
     lastMergeSourceCommit: { commitId: `sha-${id}` },
     targetRefName: "refs/heads/release/2026",
+    sourceRefName: "refs/heads/feature/login",
     repository,
     ...overrides,
   };
@@ -261,7 +262,13 @@ describe("syncPullRequests", () => {
       },
       "pullRequests/7/iterations": {
         value: [
-          { id: 2, createdDate: "2026-10-01T18:00:00Z", author: alice, sourceRefCommit: { commitId: "sha-7" } },
+          {
+            id: 2,
+            createdDate: "2026-10-01T18:00:00Z",
+            author: alice,
+            sourceRefCommit: { commitId: "sha-7" },
+            commonRefCommit: { commitId: "base-7" },
+          },
           { id: 1, createdDate: "2026-10-01T10:00:00Z", author: alice, sourceRefCommit: { commitId: "sha-0" } },
         ],
       },
@@ -293,6 +300,8 @@ describe("syncPullRequests", () => {
       viewerIsAuthor: false,
       headSha: "sha-7",
       baseRef: "release/2026",
+      headRef: "feature/login",
+      baseSha: "base-7",
       lastPushedAt: Date.parse("2026-10-01T18:00:00Z"),
       lastPushActor: { login: "alice@contoso.com" },
       checks: "pending",

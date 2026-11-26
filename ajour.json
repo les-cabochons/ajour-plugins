@@ -33,7 +33,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/agent-handoff",
       "files": [
         {
@@ -97,7 +97,7 @@
       "id": "azure_devops",
       "name": "Azure DevOps",
       "description": "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
-      "version": "2.2.1",
+      "version": "2.13.0",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector",
@@ -123,7 +123,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/azure-devops",
       "files": [
         {
@@ -133,18 +133,18 @@
         },
         {
           "path": "package.json",
-          "sha256": "d0e2b4eb43fb4f9ee47f3f43459989cbf4e4dd38eb953497bde4ac4cca7bab95",
-          "size": 1248
+          "sha256": "635fbd2ead9a8741b3002211377352eb13ae36c194db586e7d2f51467d98cf9b",
+          "size": 1249
         },
         {
           "path": "plugin.json",
-          "sha256": "856d2b25b61fcce7cc2ffb3626486465fda49310c149588ed6e1bf5047027d7b",
-          "size": 22939
+          "sha256": "182527b6acee21d88e8034b4933a32a03f852604ab96c357ce502f32cd9b830a",
+          "size": 28116
         },
         {
           "path": "src/azure-devops.ts",
-          "sha256": "09d12a564e206b7fd395e16595e654fb6ab88e88a09bb1448715bd7e0dcc72ae",
-          "size": 49988
+          "sha256": "106b990b78446b8c56e785164036f902f77697146c0736c8ab8334faa7e63fa9",
+          "size": 50012
         },
         {
           "path": "src/comments.ts",
@@ -153,8 +153,8 @@
         },
         {
           "path": "src/contract.ts",
-          "sha256": "af7c97a030b293114afa3653c61b7034f1b795352262a247dda71168bab38964",
-          "size": 11789
+          "sha256": "eecae4889f0f11ed0fec8dbf05390a38064bf96dee1afc45d57231720e75658a",
+          "size": 21286
         },
         {
           "path": "src/description-patch.ts",
@@ -207,9 +207,14 @@
           "size": 23056
         },
         {
+          "path": "src/merge-methods.ts",
+          "sha256": "99cac674e6afa3e77206e40cc08ff7d54c1e57edfd694106938550d0b45438cb",
+          "size": 4006
+        },
+        {
           "path": "src/plugin.ts",
-          "sha256": "610b688993441a002bb85a769ff89b3eabc7669136b88b793932ba09e1980752",
-          "size": 14200
+          "sha256": "6ee5ce706231e93b4b2d03eb1143ce297308b41e53a2ee1b68c9b78fb64e1682",
+          "size": 17980
         },
         {
           "path": "src/priority-levels.ts",
@@ -217,14 +222,39 @@
           "size": 3452
         },
         {
+          "path": "src/pull-request-author.ts",
+          "sha256": "1e301e84022c909bcebd2fcbb7d3d193b93b7d47f8bcc7f0acb49fcdb463d31c",
+          "size": 7003
+        },
+        {
           "path": "src/pull-request-config.ts",
           "sha256": "9f366b50115092a7a5f36df35fb38e51635b2d6fab16276cb8776daeba7b381a",
           "size": 4704
         },
         {
+          "path": "src/pull-request-content.ts",
+          "sha256": "714a584b3347532e5e1baa9ef78a405cc73ee8eb3a95e34027625dca8c6aadf7",
+          "size": 7753
+        },
+        {
+          "path": "src/pull-request-review.ts",
+          "sha256": "b9a29373ade8405f05e94d8c2ae8e8a582a86ca20a3d63444c05ff1b4110166c",
+          "size": 13015
+        },
+        {
+          "path": "src/pull-request-versions.ts",
+          "sha256": "a9e44d195489a257b7617c2722673505006a3ac6e5f1557274862fd0c2657c40",
+          "size": 3508
+        },
+        {
+          "path": "src/pull-request-writes.ts",
+          "sha256": "1122ad4023d48cd952743e91912da0cb4f7baad1eda5bc0842c2547089db19b1",
+          "size": 13118
+        },
+        {
           "path": "src/pull-requests.ts",
-          "sha256": "0f81bb18d42fe798ce881a6f1cdfc6b0232baa3c6935e5c47517b74197255e6a",
-          "size": 24875
+          "sha256": "cef71665daa7f061dfcbb352b6e4b21da988d9b3feab15c736f56cc82a9dbb2b",
+          "size": 34698
         },
         {
           "path": "src/settle.ts",
@@ -274,7 +304,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/chronops#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/chronops",
       "files": [
         {
@@ -343,7 +373,7 @@
       "id": "github",
       "name": "GitHub",
       "description": "Bring your GitHub issues into Ajour's backlog, and the pull requests you wrote or were asked to review.",
-      "version": "0.3.1",
+      "version": "0.14.0",
       "pluginApiVersion": 4,
       "capabilities": [
         "connector",
@@ -368,7 +398,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/github",
       "files": [
         {
@@ -378,13 +408,13 @@
         },
         {
           "path": "package.json",
-          "sha256": "11b3f285c23d4516ec2147307404e7a671d72eb3efa16ec034f645eaac7dbf15",
-          "size": 1178
+          "sha256": "5632c5f538b04a340ae9a7a1119b9a7c9b4571c26022a6da8b8bde546181d170",
+          "size": 1179
         },
         {
           "path": "plugin.json",
-          "sha256": "02e2e11b688d0a6a25e8a97bd5ef48b64b1cceb2f7a203ff2d4ac0573f4facda",
-          "size": 5168
+          "sha256": "1395e9a9166af70fd17075d0d4cda5c0228a19f687ace9aa3f7e8785115ade06",
+          "size": 7759
         },
         {
           "path": "src/config.ts",
@@ -393,8 +423,8 @@
         },
         {
           "path": "src/contract.ts",
-          "sha256": "2c24346ea23939b611c5df8925ffd7b3cd6b01f85c53a73a65ec5a29a1976872",
-          "size": 7360
+          "sha256": "812f6efa6d2bd197565c551ed69185b85804ac1f8549009c884508cd4c98d190",
+          "size": 16826
         },
         {
           "path": "src/description-source.ts",
@@ -408,8 +438,8 @@
         },
         {
           "path": "src/github.ts",
-          "sha256": "681a3b5d123462eb833874b2812db5e57c7516e398a8acb7c3df2ca07f6d75c8",
-          "size": 23141
+          "sha256": "51ac1bb8f3590aaa8962b3227128857044826d37968c3fb3925af56644a981cd",
+          "size": 29529
         },
         {
           "path": "src/issues.ts",
@@ -418,8 +448,33 @@
         },
         {
           "path": "src/plugin.ts",
-          "sha256": "f7f585b93a5b5b11d3370f312a0a17ad93cacd17e4b8d6371b0b7547e81c2036",
-          "size": 2937
+          "sha256": "3ec2b7e7f2689d579444c4152930a374681be90de1d2725b221ceab446eb731a",
+          "size": 7445
+        },
+        {
+          "path": "src/pull-request-author.ts",
+          "sha256": "fd11f7626e9b3c86ea030af8497f15c222cfadb00c9744010784dfeba21ea8f9",
+          "size": 5002
+        },
+        {
+          "path": "src/pull-request-content.ts",
+          "sha256": "597ac644de2138dd272d728f27c0421e40c36b88e480527b08c5c8f838169091",
+          "size": 5955
+        },
+        {
+          "path": "src/pull-request-review.ts",
+          "sha256": "6d81207f515d77f4336c3d23a1f2226552abfc84f20818e25f7b70b6b324e78c",
+          "size": 24590
+        },
+        {
+          "path": "src/pull-request-versions.ts",
+          "sha256": "2c20a30a8d90f59445dcd7a68d25d46601b8813d15ff66c310da2dc20c9a9409",
+          "size": 8426
+        },
+        {
+          "path": "src/pull-request-writes.ts",
+          "sha256": "d05c08c14dc87b4d56aa4c3837bcd48bb408c8e9f57bd7fcc3e56ece76147430",
+          "size": 16968
         }
       ]
     },
@@ -451,7 +506,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/ics",
       "files": [
         {
@@ -539,7 +594,7 @@
       },
       "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/jira",
       "files": [
         {
@@ -659,7 +714,7 @@
       },
       "website": "https://docs.ajour.day/plugins/workday-agent",
       "status": "available",
-      "commit": "c5f142a26251fea50955da735545eb2a4ea6e20b",
+      "commit": "41542d461427319c5451edbb5275a8b13962af82",
       "path": "plugins/workday-agent",
       "files": [
         {

@@ -69,6 +69,13 @@ from the `feat/deck-stacks` branch of `les-cabochons/ajour`
 (les-cabochons/ajour#788) at `e2cf6e91`, its merge of origin/main after #917,
 adding the optional `baseSha` on pull request facts, and again at `8ee26b6b`,
 its merge of origin/main after #948, which is byte for byte that pack.
+It was then packed from the `fix/deck-council-r1` branch of
+`les-cabochons/ajour` (les-cabochons/ajour#965) at `c9f8497b`, for the
+optional `voteWithheld: { reason: "new_commits" }` on `submitReview`'s
+result, which `azure-devops` answers when new commits held back a vote after
+the threads posted. That pack also brings the chat's writes of #961: the
+optional `url` on `submitReview`, `postComment` and `replyToThread` results,
+and `deleteComment`.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

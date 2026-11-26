@@ -117,6 +117,12 @@ async function reviewedIteration(client: AzureReposClient, pullRequest: AzurePul
   return { id: found.id, latest: found.id === iterations.at(-1)?.id };
 }
 
+/** Whether the latest iteration's head is `headSha`, read now. */
+async function headIsLatest(client: AzureReposClient, pullRequest: AzurePullRequest, headSha: string) {
+  const latest = (await iterationsOf(client, pullRequest)).at(-1);
+  return latest?.sourceRefCommit?.commitId?.toLowerCase() === headSha.toLowerCase();
+}
+
 /** A post's place, the same for a thread and for what the request asks: a file's side and lines, or the whole pull request. */
 function placeOf(anchor: CodeHostLineAnchor | undefined) {
   if (!anchor) return "";
@@ -172,6 +178,16 @@ export async function postPullRequestComment(
  * approval needs that head to be the latest: a vote counts for the whole
  * pull request, code the user didn't read included.
  *
+ * The latest iteration is read again right before an approval's vote, and
+ * a push that landed while the threads posted sends no vote: the answer
+ * says the vote was withheld, not a failure, since the threads are on the
+ * pull request and a retry under a new submission would post them again.
+ * Ajour takes them out of the draft and asks the user to vote again once
+ * they've read the new commits. Azure DevOps
+ * has no vote bound to a head, so a push in the moment between that read
+ * and the vote still gets it. That gap is one request long, well under a
+ * second; before, it lasted while every thread posted.
+ *
  * Each thread carries the request's `submissionId`. A retry with the same
  * identity reads the pull request's threads and posts only the places it
  * finds no thread of that submission at, one thread for each, so Retry
@@ -207,6 +223,11 @@ export async function submitPullRequestReview(
       newThread(post.body, post.anchor, iteration.id, request.submissionId),
     );
   }
+  // Azure DevOps keeps no review: the pull request and its reviewer name it.
+  const reviewId = `${pullRequest.pullRequestId}-${viewer.id}`;
+  if (request.verdict === "approve" && !(await headIsLatest(client, pullRequest, request.headSha))) {
+    return { reviewId, voteWithheld: { reason: "new_commits" } };
+  }
   const vote = VOTES[request.verdict];
   if (vote !== undefined) {
     await client.send(
@@ -216,8 +237,7 @@ export async function submitPullRequestReview(
       { vote },
     );
   }
-  // Azure DevOps keeps no review: the pull request and its reviewer name it.
-  return { reviewId: `${pullRequest.pullRequestId}-${viewer.id}` };
+  return { reviewId };
 }
 
 /** The threads the user posted for `submissionId`. */

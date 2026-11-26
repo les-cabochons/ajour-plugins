@@ -452,6 +452,43 @@ export async function sendAzureDevOps(
   }
 }
 
+/**
+ * The oldest server the plugin works with. It sends REST api-version 7.1,
+ * which Azure DevOps Server has since 2022.1 (Microsoft's "API and TFS
+ * version mapping"); 2022.0 has 7.0, and the plugin doesn't step down.
+ */
+const MINIMUM_SERVER = "Azure DevOps Server 2022.1";
+
+export const SERVER_TOO_OLD = `This Azure DevOps Server is older than Ajour supports. Ajour needs ${MINIMUM_SERVER} or later.`;
+
+/**
+ * Whether a failed answer says the server doesn't have the api-version
+ * asked for. The plugin's preview versions are all 7.1 ones, which 2022.1
+ * has too, so the same answer to one still means an older server.
+ */
+function isVersionOutOfRange(payload: { typeKey?: unknown; message?: unknown } | null) {
+  return (
+    payload?.typeKey === "VssVersionOutOfRangeException" ||
+    (typeof payload?.message === "string" && /REST API version .* is out of range/i.test(payload.message))
+  );
+}
+
+/** Azure DevOps's message in a failed answer, or a plain one. */
+export function errorMessageOf(payload: { message?: unknown } | null) {
+  return typeof payload?.message === "string" && payload.message.trim() ? payload.message.trim() : "Request failed";
+}
+
+/**
+ * A failed answer's error: that the server is older than the plugin needs,
+ * or Azure DevOps's status and `detail`, by default its message. An answer
+ * that isn't JSON has no message.
+ */
+export async function failureOf(response: AzureResponse, detail?: string) {
+  const payload = (await response.json().catch(() => null)) as { message?: unknown; typeKey?: unknown } | null;
+  if (isVersionOutOfRange(payload)) return new Error(SERVER_TOO_OLD);
+  return new Error(`Azure DevOps request failed (${response.status}): ${detail ?? errorMessageOf(payload)}`);
+}
+
 export async function requestAzureDevOps<T>(
   config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
   path: string,
@@ -467,24 +504,7 @@ export async function requestAzureDevOps<T>(
     throw new Error(TOKEN_REJECTED);
   }
 
-  if (!response.ok) {
-    let detail = "Request failed";
-    try {
-      const payload = (await response.json()) as { message?: string };
-      if (
-        typeof payload.message === "string" &&
-        payload.message.trim().length > 0
-      ) {
-        detail = payload.message.trim();
-      }
-    } catch {
-      // Ignore non-JSON error responses.
-    }
-
-    throw new Error(
-      `Azure DevOps request failed (${response.status}): ${detail}`,
-    );
-  }
+  if (!response.ok) throw await failureOf(response);
 
   // A delete answers 204 with no body.
   const text = await response.text();

@@ -1,4 +1,11 @@
-import { isRejectedToken, sendAzureDevOps, TOKEN_REJECTED, type AzureResponse } from "./azure-devops.ts";
+import {
+  errorMessageOf,
+  failureOf,
+  isRejectedToken,
+  sendAzureDevOps,
+  TOKEN_REJECTED,
+  type AzureResponse,
+} from "./azure-devops.ts";
 import { repositoryInScope, type PullRequestConfig } from "./pull-request-config.ts";
 import type {
   CodeHostApproval,
@@ -94,7 +101,7 @@ export class AzureReposClient {
       throw new AzureReposNotFoundError(await errorDetail(response, isJson), response.status);
     }
     if (!response.ok) {
-      throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
+      throw await failureOf(response);
     }
     if (!isJson) {
       throw new Error("Azure DevOps returned an unexpected response. Check the organization URL.");
@@ -134,7 +141,7 @@ export class AzureReposClient {
       throw new Error(`Azure DevOps request failed (404): ${payload?.message?.trim() || "Request failed"}`);
     }
     if (!response.ok) {
-      throw new Error(`Azure DevOps request failed (${response.status}): ${await errorDetail(response, isJson)}`);
+      throw await failureOf(response);
     }
     const text = await response.text();
     // Asked for the bytes, Azure DevOps could still describe the item in
@@ -186,15 +193,7 @@ interface AzureErrorPayload {
 }
 
 async function errorDetail(response: AzureResponse, isJson: boolean) {
-  if (isJson) {
-    try {
-      const payload = (await response.json()) as { message?: unknown };
-      if (typeof payload.message === "string" && payload.message.trim()) return payload.message.trim();
-    } catch {
-      // Fall back to a plain detail.
-    }
-  }
-  return "Request failed";
+  return errorMessageOf(isJson ? ((await response.json().catch(() => null)) as { message?: unknown } | null) : null);
 }
 
 interface AzureIdentity {

@@ -160,7 +160,11 @@ The rest of a review round, from 0.9.0:
   thread's comments newest first, page by page, for yours that carries it,
   uncertain on the same terms as a comment.
 - `setThreadResolved` resolves or unresolves a thread, through GraphQL's
-  `resolveReviewThread` and `unresolveReviewThread`.
+  `resolveReviewThread` and `unresolveReviewThread`. Those name the thread
+  alone, so the plugin first reads the thread's pull request and refuses a
+  thread of another repository or pull request than the request's, with
+  "This review thread belongs to another pull request.", changing nothing.
+  `replyToThread` checks the thread it reads the same way before it posts.
 - `setFileViewed` ticks or clears a file's **Viewed** box, through GraphQL's
   `markFileAsViewed` and `unmarkFileAsViewed`. GitHub keeps the mark for the
   pull request's head, so the plugin marks a file viewed only while the head

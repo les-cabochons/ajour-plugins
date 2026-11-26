@@ -1,6 +1,7 @@
 import {
   assigneeOf,
   emailOf,
+  failureOf,
   getProjectName,
   parseAzureWorkItemId,
   requestAzureDevOps,
@@ -635,11 +636,7 @@ async function searchOrganizationPeople(
     },
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) {
-    throw new Error(
-      `Azure DevOps request failed (${response.status}): people search`,
-    );
-  }
+  if (!response.ok) throw await failureOf(response, "people search");
   const data = (await response.json()) as { value?: AzureIdentity2[] };
   return (data.value ?? [])
     .filter(

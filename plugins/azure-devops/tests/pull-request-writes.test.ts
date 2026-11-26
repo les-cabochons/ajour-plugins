@@ -78,6 +78,8 @@ const PUSHED = [...ITERATIONS, { id: 3, sourceRefCommit: { commitId: "newer" } }
  * Azure DevOps with the pull request, its iterations, the threads it already
  * has, and a new id for each thread posted. `failVote` refuses the vote
  * once; `failThread` refuses that thread post (0 is the first) once.
+ * `pushAfterReads` lands a push once the iterations were read that many
+ * times.
  */
 function azure(
   options: {
@@ -86,11 +88,13 @@ function azure(
     iterations?: unknown[];
     failVote?: boolean;
     failThread?: number;
+    pushAfterReads?: number;
   } = {},
 ) {
   const sent: Sent[] = [];
   let nextThread = 100;
   let posts = 0;
+  let iterationReads = 0;
   let failVote = options.failVote ?? false;
   stubAzureFetch(
     async (input, init) => {
@@ -101,7 +105,10 @@ function azure(
       if (url.endsWith("/_apis/connectionData")) return json(connectionData);
       if (url.endsWith("/_apis/git/pullrequests/7")) return json(pullRequest);
       if (url === `${BASE}/threads` && method === "GET") return json({ value: options.threads ?? [] });
-      if (url === `${BASE}/iterations`) return json({ value: options.iterations ?? ITERATIONS });
+      if (url === `${BASE}/iterations`) {
+        const pushed = options.pushAfterReads !== undefined && iterationReads++ >= options.pushAfterReads;
+        return json({ value: pushed ? PUSHED : (options.iterations ?? ITERATIONS) });
+      }
       if (url === `${BASE}/threads` && method === "POST") {
         if (posts++ === options.failThread) return json({ message: "TF400898: An internal error occurred." }, 500);
         const id = nextThread++;
@@ -437,6 +444,62 @@ describe("submitReview", () => {
       submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", body: "Ship it.", comments }),
     ).rejects.toThrow("The pull request has new commits since you read it. Open it again to approve its latest changes.");
     expect(sent).toEqual([]);
+  });
+
+  it("sends no approval when a push lands while its comments post, and answers that the vote was withheld", async () => {
+    const sent = azure({ pushAfterReads: 1 });
+
+    // The threads are on the pull request: no throw, so Ajour takes them
+    // out of the draft and never posts them again.
+    expect(
+      await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", body: "Ship it.", comments }),
+    ).toEqual({ reviewId: `7-${VIEWER}`, voteWithheld: { reason: "new_commits" } });
+    expect(sent.map((request) => request.method)).toEqual(["POST", "POST", "POST"]);
+  });
+
+  it("after that refusal, Retry with the same submission posts nothing and asks to open it again", async () => {
+    const threads = comments.map((comment, index) => ({
+      id: 100 + index,
+      comments: [{ id: 1, author: { id: VIEWER } }],
+      threadContext: {
+        filePath: `/${comment.path}`,
+        ...(comment.side === "head"
+          ? { rightFileStart: { line: comment.line }, rightFileEnd: { line: comment.line } }
+          : { leftFileStart: { line: comment.line }, leftFileEnd: { line: comment.line } }),
+      },
+      properties: { "Ajour.ReviewSubmission": { $type: "System.String", $value: "sub-1" } },
+    }));
+    const sent = azure({ iterations: PUSHED, threads });
+
+    await expect(
+      submitReview!(connection(), {
+        ...ref,
+        headSha: "abc123",
+        verdict: "approve",
+        comments,
+        submissionId: "sub-1",
+        firstTriedAt: 1,
+      }),
+    ).rejects.toThrow("Open it again to approve its latest changes.");
+    expect(sent).toEqual([]);
+  });
+
+  it("sends no approval without comments when a push lands before the vote", async () => {
+    const sent = azure({ pushAfterReads: 1 });
+
+    expect(await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", comments: [] })).toEqual({
+      reviewId: `7-${VIEWER}`,
+      voteWithheld: { reason: "new_commits" },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it("still waits for the author when a push lands while its comments post", async () => {
+    const sent = azure({ pushAfterReads: 1 });
+
+    await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "request_changes", comments });
+
+    expect(sent.map((request) => request.method)).toEqual(["POST", "POST", "PUT"]);
   });
 
   it("comments, or waits for the author, on an iteration that isn't the latest", async () => {

@@ -485,7 +485,17 @@ export interface CodeHostUncertainResult {
   uncertain: true;
 }
 
-export type CodeHostSubmitReviewResult = { reviewId: string } | CodeHostUncertainResult;
+export type CodeHostSubmitReviewResult =
+  | {
+      reviewId: string;
+      /**
+       * The comments and the summary posted, and the vote didn't: new
+       * commits arrived while the review was sending. The user reads them
+       * and votes again.
+       */
+      voteWithheld?: { reason: "new_commits" };
+    }
+  | CodeHostUncertainResult;
 
 /** A single comment: on the conversation, or on lines when `anchor` is set. */
 export interface CodeHostPostCommentRequest extends CodeHostPullRequestRef, CodeHostSubmission {

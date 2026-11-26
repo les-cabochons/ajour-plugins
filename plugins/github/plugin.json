@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "version": "0.8.0",
+  "version": "0.12.0",
   "apiVersion": 4,
   "displayName": "GitHub",
   "description": "Brings your GitHub issues into the backlog, and the pull requests you wrote or were asked to review.",

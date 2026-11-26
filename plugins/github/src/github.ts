@@ -20,7 +20,7 @@ const TRACKED_BATCH_SIZE = 20;
 
 interface GraphQLResponse<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: { message: string; type?: string }[];
 }
 
 /** The headers every request names. The manifest lists each, and the broker adds the bearer credential. */
@@ -142,6 +142,19 @@ export class GitHubClient {
   }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    return await this.answer<T>(query, variables, false);
+  }
+
+  /**
+   * A query whose aliased fields may name things that don't exist: GitHub
+   * answers those with null and a NOT_FOUND error, and they stay null here.
+   * Any other error still fails the query.
+   */
+  async queryAllowingMissing<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    return await this.answer<T>(query, variables, true);
+  }
+
+  private async answer<T>(query: string, variables: Record<string, unknown>, allowMissing: boolean): Promise<T> {
     const response = await this.send("graphql", { method: "POST", path: "/graphql", body: { query, variables } });
 
     if (response.status === 401) {
@@ -152,8 +165,9 @@ export class GitHubClient {
     }
 
     const payload = (await response.json()) as GraphQLResponse<T>;
-    if (payload.errors?.length) {
-      throw new Error(`GitHub: ${payload.errors.map((error) => error.message).join(" ")}`);
+    const errors = (payload.errors ?? []).filter((error) => !(allowMissing && error.type === "NOT_FOUND"));
+    if (errors.length) {
+      throw new Error(`GitHub: ${errors.map((error) => error.message).join(" ")}`);
     }
     if (!payload.data) {
       throw new Error("GitHub returned no data.");

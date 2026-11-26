@@ -38,7 +38,7 @@ import {
   syncPullRequests as syncAzurePullRequests,
 } from "./pull-requests.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
-import { readChecks, readConversation } from "./pull-request-review.ts";
+import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
 import {
   postPullRequestComment,
@@ -422,6 +422,12 @@ export const getChecks: NonNullable<PluginModule["getChecks"]> = async (
   connection,
   request,
 ) => await readChecks(buildPullRequestConfig(connection), request);
+
+/** The work items the pull request is linked to, for the summary Deck shows above its guide. */
+export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = async (
+  connection,
+  request,
+) => await readLinkedTickets(buildPullRequestConfig(connection), request);
 
 /** A review from Deck's Finish review: its threads, then the vote. */
 export const submitReview: NonNullable<PluginModule["submitReview"]> = async (

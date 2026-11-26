@@ -354,6 +354,7 @@ describe("the source entrypoint", () => {
       "editItemComment",
       "getChecks",
       "getFileContent",
+      "getLinkedTickets",
       "getPullRequestContent",
       "getPullRequestConversation",
       "getPullRequestVersions",

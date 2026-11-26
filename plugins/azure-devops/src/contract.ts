@@ -413,6 +413,29 @@ export interface CodeHostChecksResult {
   checks: CodeHostCheck[];
 }
 
+/** A work item the pull request is linked to. */
+export interface CodeHostLinkedTicket {
+  /** The work item's id. */
+  number: number;
+  /** A GitHub issue's repository. A work item has none. */
+  repository?: string;
+  /** 1 to 1,000 characters. */
+  title: string;
+  /** HTML, as Azure DevOps stores the description, at most 65,536 characters. */
+  body: string;
+  /** An http or https URL, at most 2,000 characters. */
+  url: string;
+  /** The work item's state, such as "Active". 1 to 100 characters. */
+  state: string;
+}
+
+export type CodeHostLinkedTicketsRequest = CodeHostPullRequestRef;
+
+/** At most 50, in the pull request's order. */
+export interface CodeHostLinkedTicketsResult {
+  tickets: CodeHostLinkedTicket[];
+}
+
 /** A comment anchored to lines of the diff at `headSha`. */
 export interface CodeHostLineAnchor {
   path: string;

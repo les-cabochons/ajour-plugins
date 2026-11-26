@@ -135,11 +135,12 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/threads`, `.../iterations`, `.../workitems`                        | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes`, for Deck                                    | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/items` (as `application/octet-stream`), for Deck                                  | Pull requests                         |
-| GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
+| GET           | `/*/_apis/policy/evaluations`, `/*/_apis/git/policy/configurations`, `/_apis/teams`                            | Pull requests                         |
 | POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads`                                                           | Review pull requests                  |
 | PUT           | `/*/_apis/git/repositories/*/pullRequests/*/reviewers/*`                                                       | Review pull requests                  |
 | POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads/*/comments`                                                | Review pull requests                  |
 | PATCH         | `/*/_apis/git/repositories/*/pullRequests/*/threads/*`                                                         | Review pull requests                  |
+| PATCH         | `/*/_apis/git/repositories/*/pullRequests/*`, for the title, draft and merge                                   | Review pull requests                  |
 | GET           | `/_apis/identities` on the `identities` host                                                                   | Search people across the organisation |
 
 The `identities` host is derived from the Organization URL:
@@ -370,8 +371,15 @@ Deck's review page shows a pull request's conversation and checks:
   design threads are resolved. The timeline holds the opening, each iteration,
   each vote as a review, each comment on the whole pull request and the other
   system messages as Azure DevOps phrased them. Azure DevOps doesn't share
-  which files you marked viewed, and every merge method is offered, since a
-  branch policy that limits them refuses the merge itself.
+  which files you marked viewed. The merge methods are those the target
+  branch's "Limit merge types" policies allow (`GET
+  /{project}/_apis/git/policy/configurations`), each one of every policy that's
+  on: no fast-forward as merge, squash, and rebase and fast-forward as rebase.
+  The policy's older form allows squash, or only a merge commit. A
+  semi-linear merge has no method in Deck. A policy on another repository or
+  branch never counts. Without a policy, or when the
+  token can't read them, every method is offered, and Azure DevOps refuses
+  one its policy forbids at the merge.
 - `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
   checks: approved passes, rejected and broken fail, not applicable is skipped,
   and queued and running are pending. A build links to its last run.
@@ -433,6 +441,37 @@ The rest of a review round, from 2.8.0:
 - `setThreadResolved` sets a thread's status to fixed, or back to active.
 - There is no `setFileViewed`: Azure DevOps doesn't share which files you
   marked reviewed, so Deck keeps its viewed marks on your computer.
+
+### Author actions, from Deck
+
+On a pull request you created, Deck edits the title, marks it as a draft or
+publishes it, and completes it after a confirmation, each at once and behind
+**Review pull requests**:
+
+- `updatePullRequest` sends the title, the draft state or both in one update
+  (`PATCH /{project}/_apis/git/repositories/{repository}/pullRequests/{id}`),
+  and answers with the title and draft state Azure DevOps then holds.
+- `mergePullRequest` completes the pull request with the merge strategy you
+  chose: merge as no fast-forward, squash, or rebase as rebase and
+  fast-forward. The merge commit's message is your commit title, then your
+  message after a blank line; a rebase has none. It completes at most once,
+  and only at the head you read: it first reads the pull request, and one
+  already completed at that head is the answer to a retry whose first answer
+  was lost. It refuses a pull request that moved on, is abandoned or is a
+  draft, and sends the head as `lastMergeSourceCommit`, so Azure DevOps
+  refuses the completion if a push landed since. A completion Azure DevOps
+  already took at that head and is still merging (a `completionQueueTime`,
+  with `mergeStatus` queued) is answered as still completing, and isn't sent
+  again. When the completion fails, it reads the pull request again, since
+  Azure DevOps may have completed it, or taken it, before its answer was
+  lost: only a completed pull request or a `completionQueueTime` newer than
+  the first read's counts, since Azure DevOps also says queued while it works
+  out mergeability in the background, and otherwise the failure stands.
+  While Azure DevOps is still completing it, the answer has no merge commit
+  yet; one Azure DevOps says failed, with
+  conflicts or refused by a policy, fails with its reason. It sets no other
+  completion option, so the source branch stays and linked work items keep
+  their state.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

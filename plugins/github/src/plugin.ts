@@ -7,6 +7,7 @@ import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
+import { mergeGitHubPullRequest, updateGitHubPullRequest } from "./pull-request-author.ts";
 import {
   postPullRequestComment,
   replyToPullRequestThread,
@@ -80,6 +81,28 @@ export const submitReview: NonNullable<PluginModule["submitReview"]> = async (co
 export const postComment: NonNullable<PluginModule["postComment"]> = async (connection, request) =>
   await postPullRequestComment(new GitHubClient(connection.id), request);
 
+/**
+ * The access choice the author's actions need. Ajour refuses them while it's
+ * off. The draft state goes through GraphQL, which no access choice can hold
+ * back at the broker, so the plugin checks it too, as a second gate.
+ */
+function requireReviewAccess(connection: { access: readonly string[] }) {
+  if (!connection.access.includes("reviewPullRequests")) {
+    throw new Error("Turn on Review pull requests (reviewPullRequests) for this connection to change its pull requests.");
+  }
+}
+
+/** The title, or draft and ready, from Deck's author actions. */
+export const updatePullRequest: NonNullable<PluginModule["updatePullRequest"]> = async (connection, request) => {
+  requireReviewAccess(connection);
+  return await updateGitHubPullRequest(new GitHubClient(connection.id), request);
+};
+
+/** A merge at the head the user saw, after Deck's confirmation. */
+export const mergePullRequest: NonNullable<PluginModule["mergePullRequest"]> = async (connection, request) => {
+  requireReviewAccess(connection);
+  return await mergeGitHubPullRequest(new GitHubClient(connection.id), request);
+};
 /** A reply at the end of a review thread, sent at once from Deck. */
 export const replyToThread: NonNullable<PluginModule["replyToThread"]> = async (connection, request) =>
   await replyToPullRequestThread(new GitHubClient(connection.id), request);

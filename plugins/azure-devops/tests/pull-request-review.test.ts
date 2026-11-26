@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginConnection } from "@ajour/plugin-sdk";
-import { getChecks, getPullRequestConversation } from "../src/plugin.ts";
+import { getChecks, getLinkedTickets, getPullRequestConversation } from "../src/plugin.ts";
 import { ALL_ACCESS, stubAzureFetch } from "./support/azure-ajour.ts";
 
 /*
@@ -228,5 +228,76 @@ describe("getChecks", () => {
       ],
     });
     expect(calls.some((url) => url.includes(`artifactId=vstfs:///CodeReview/CodeReviewId/${PROJECT}/7`))).toBe(true);
+  });
+});
+
+describe("getLinkedTickets", () => {
+  it("returns each linked work item in the pull request's order, with its title, description, link and state", async () => {
+    const calls = stubFetch({
+      "_apis/git/pullrequests/7": pullRequest,
+      "pullRequests/7/workitems": { count: 3, value: [{ id: "1204" }, { id: "88" }, { id: "1204" }, { id: "9" }] },
+      "_apis/wit/workitems?": {
+        count: 3,
+        value: [
+          // Azure DevOps answers in its own order, and leaves out one the token can't read.
+          {
+            id: 88,
+            fields: { "System.Title": "Log the retries", "System.State": "Done", "System.TeamProject": "Fabrikam Web" },
+          },
+          null,
+          {
+            id: 1204,
+            fields: {
+              "System.Title": " Rate limits for the billing API ",
+              "System.State": "Active",
+              "System.Description": "<p>Limit each tenant.</p>",
+              "System.TeamProject": "Fabrikam Web",
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(getLinkedTickets(connection, ref)).resolves.toEqual({
+      tickets: [
+        {
+          number: 1204,
+          title: "Rate limits for the billing API",
+          body: "<p>Limit each tenant.</p>",
+          url: `${ORG}/Fabrikam%20Web/_workitems/edit/1204`,
+          state: "Active",
+        },
+        {
+          number: 88,
+          title: "Log the retries",
+          body: "",
+          url: `${ORG}/Fabrikam%20Web/_workitems/edit/88`,
+          state: "Done",
+        },
+      ],
+    });
+    const read = calls.find((url) => url.includes("_apis/wit/workitems?"))!;
+    expect(read).toContain("ids=1204,88,9");
+    expect(read).toContain("fields=System.Title,System.State,System.Description,System.TeamProject");
+    expect(read).toContain("errorPolicy=omit");
+    expect(calls.some((url) => url.includes(`/${PROJECT}/_apis/git/repositories/repo-1/pullRequests/7/workitems`))).toBe(
+      true,
+    );
+  });
+
+  it("returns no tickets, and reads no work item, when none is linked", async () => {
+    const calls = stubFetch({
+      "_apis/git/pullrequests/7": pullRequest,
+      "pullRequests/7/workitems": { count: 0, value: [] },
+    });
+
+    await expect(getLinkedTickets(connection, ref)).resolves.toEqual({ tickets: [] });
+    expect(calls.some((url) => url.includes("_apis/wit/workitems?"))).toBe(false);
+  });
+
+  it("fails when Azure DevOps doesn't find the pull request", async () => {
+    stubFetch({});
+
+    await expect(getLinkedTickets(connection, ref)).rejects.toThrow();
   });
 });

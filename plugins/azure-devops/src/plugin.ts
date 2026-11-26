@@ -42,6 +42,8 @@ import { readChecks, readConversation } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
 import {
   postPullRequestComment,
+  replyToPullRequestThread,
+  setPullRequestThreadResolved,
   submitPullRequestReview,
 } from "./pull-request-writes.ts";
 import {
@@ -435,6 +437,22 @@ export const postComment: NonNullable<PluginModule["postComment"]> = async (
   connection,
   request,
 ) => await postPullRequestComment(buildPullRequestConfig(connection), request);
+
+/** A reply at the end of a thread, sent at once from Deck. */
+export const replyToThread: NonNullable<PluginModule["replyToThread"]> = async (
+  connection,
+  request,
+) =>
+  await replyToPullRequestThread(buildPullRequestConfig(connection), request);
+
+/**
+ * Resolves or unresolves a thread from Deck. Azure DevOps keeps no per-file
+ * viewed state, so there is no setFileViewed: Ajour keeps the marks itself.
+ */
+export const setThreadResolved: NonNullable<
+  PluginModule["setThreadResolved"]
+> = async (connection, request) =>
+  await setPullRequestThreadResolved(buildPullRequestConfig(connection), request);
 
 /** The pull request's iterations with their commits, for Deck's versions bar. */
 export const getPullRequestVersions: NonNullable<

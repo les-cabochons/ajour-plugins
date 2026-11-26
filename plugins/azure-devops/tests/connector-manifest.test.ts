@@ -231,6 +231,8 @@ describe("network declaration", () => {
       "GET /*/_apis/git/repositories/*/pullRequests/*/threads [pullRequests]",
       "POST /*/_apis/git/repositories/*/pullRequests/*/threads [reviewPullRequests]",
       "PUT /*/_apis/git/repositories/*/pullRequests/*/reviewers/* [reviewPullRequests]",
+      "POST /*/_apis/git/repositories/*/pullRequests/*/threads/*/comments [reviewPullRequests]",
+      "PATCH /*/_apis/git/repositories/*/pullRequests/*/threads/* [reviewPullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
       "GET /*/_apis/git/repositories/*/items [pullRequests]",
@@ -479,12 +481,12 @@ describe("connection access", () => {
       "browsePullRequests",
     ]);
     // Every write to a pull request waits for Review pull requests, Code (Read & write).
+    // Azure DevOps keeps no per-file viewed state, so setFileViewed isn't among them.
     expect(choice("reviewPullRequests").operations).toEqual([
       "submitReview",
       "postComment",
       "replyToThread",
       "setThreadResolved",
-      "setFileViewed",
       "updatePullRequest",
       "mergePullRequest",
     ]);

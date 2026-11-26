@@ -48,12 +48,11 @@ with the `feat/deck-draft-review` branch (les-cabochons/ajour#918), for Deck's
 writes that name their submission: `submissionId` and `firstTriedAt` on
 `submitReview` and `postComment`, and their `{ uncertain: true }` answer.
 It was packed again from the `feat/deck-asks-read-clone` branch of
-`les-cabochons/ajour` at commit `9a4402e8` (les-cabochons/ajour#917, on
-origin/main `21757219` of 2026-11-26, after #928), with the
-`feat/deck-draft-review` branch's contract (`4a718ed8`) applied, adding the
-optional `headRef` and `repositoryIdentity` on pull request facts. Pack it
-again from origin/main once both branches merge; the SDK's version stays
-0.4.0, so only the lockfile integrity changes.
+`les-cabochons/ajour` at commit `d66af326` (les-cabochons/ajour#917, on
+origin/main `3b8ffe65` of 2026-11-26, after #918, whose contract it now has
+without a patch), adding the optional `headRef` and `repositoryIdentity` on
+pull request facts. Pack it again from origin/main once #917 merges; the
+SDK's version stays 0.4.0, so only the lockfile integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

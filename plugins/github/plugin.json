@@ -119,6 +119,7 @@
           { "method": "POST", "path": "/repos/*/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/comments", "access": "reviewPullRequests" },
+          { "method": "POST", "path": "/repos/*/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/reviews", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/activity" },
@@ -129,6 +130,7 @@
           { "method": "POST", "path": "/repositories/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*" },
           { "method": "POST", "path": "/repositories/*/pulls/*/comments", "access": "reviewPullRequests" },
+          { "method": "POST", "path": "/repositories/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*/files" },
           { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" }
         ]

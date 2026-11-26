@@ -54,7 +54,7 @@ export class AzureReposClient {
 
   /** A write: `body` sent as JSON, the answer read as JSON. */
   async send<T>(
-    method: "POST" | "PUT",
+    method: "POST" | "PUT" | "PATCH",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body: unknown,
@@ -63,7 +63,7 @@ export class AzureReposClient {
   }
 
   private async request<T>(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body?: unknown,

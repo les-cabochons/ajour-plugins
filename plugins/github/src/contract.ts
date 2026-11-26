@@ -300,6 +300,36 @@ export interface CodeHostCommentResult {
 
 export type CodeHostPostCommentResult = CodeHostCommentResult | CodeHostUncertainResult;
 
+/** A reply at the end of a review thread, named like a comment. */
+export interface CodeHostReplyRequest extends CodeHostPullRequestRef, CodeHostSubmission {
+  threadId: string;
+  body: string;
+}
+
+export interface CodeHostResolveThreadRequest extends CodeHostPullRequestRef {
+  threadId: string;
+  resolved: boolean;
+}
+
+export interface CodeHostResolveThreadResult {
+  resolved: boolean;
+}
+
+export interface CodeHostSetFileViewedRequest extends CodeHostPullRequestRef {
+  path: string;
+  viewed: boolean;
+  /**
+   * The head the user viewed the file at. Marking it viewed is refused once
+   * the pull request moved on, so the code host never shows as viewed code
+   * the user didn't read.
+   */
+  headSha: string;
+}
+
+export interface CodeHostSetFileViewedResult {
+  viewed: boolean;
+}
+
 /** A commit a version brought. */
 export interface CodeHostVersionCommit {
   sha: string;

@@ -133,6 +133,7 @@ describe("network declaration", () => {
       "POST /repos/*/*/issues/*/comments",
       "GET /repos/*/*/pulls/*",
       "POST /repos/*/*/pulls/*/comments",
+      "POST /repos/*/*/pulls/*/comments/*/replies",
       "GET /repos/*/*/pulls/*/files",
       "POST /repos/*/*/pulls/*/reviews",
       "GET /repositories/*/activity",
@@ -143,6 +144,7 @@ describe("network declaration", () => {
       "POST /repositories/*/issues/*/comments",
       "GET /repositories/*/pulls/*",
       "POST /repositories/*/pulls/*/comments",
+      "POST /repositories/*/pulls/*/comments/*/replies",
       "GET /repositories/*/pulls/*/files",
       "POST /repositories/*/pulls/*/reviews",
     ]);
@@ -154,9 +156,11 @@ describe("network declaration", () => {
     ).toEqual([
       "reviewPullRequests: POST /repos/*/*/issues/*/comments",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments",
+      "reviewPullRequests: POST /repos/*/*/pulls/*/comments/*/replies",
       "reviewPullRequests: POST /repos/*/*/pulls/*/reviews",
       "reviewPullRequests: POST /repositories/*/issues/*/comments",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments",
+      "reviewPullRequests: POST /repositories/*/pulls/*/comments/*/replies",
       "reviewPullRequests: POST /repositories/*/pulls/*/reviews",
     ]);
   });

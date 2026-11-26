@@ -49,6 +49,25 @@ export class AzureReposClient {
   }
 
   async get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
+    return await this.request<T>("GET", path, params);
+  }
+
+  /** A write: `body` sent as JSON, the answer read as JSON. */
+  async send<T>(
+    method: "POST" | "PUT",
+    path: string,
+    params: Record<string, string | number | boolean | undefined>,
+    body: unknown,
+  ): Promise<T> {
+    return await this.request<T>(method, path, params, body);
+  }
+
+  private async request<T>(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    params: Record<string, string | number | boolean | undefined>,
+    body?: unknown,
+  ): Promise<T> {
     const query: Record<string, string | number | boolean> = {};
     for (const [name, value] of Object.entries(params)) {
       if (value !== undefined) query[name] = value;
@@ -57,7 +76,11 @@ export class AzureReposClient {
     const response = await sendAzureDevOps(
       { id: this.connectionId, organizationUrl: this.organizationUrl },
       path,
-      Object.keys(query).length > 0 ? { query } : {},
+      {
+        ...(method === "GET" ? {} : { method }),
+        ...(Object.keys(query).length > 0 ? { query } : {}),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
     );
 
     // A rejected token gets 401, or a 203 or a redirect to the sign-in page.
@@ -203,6 +226,8 @@ export interface AzurePullRequest {
   lastMergeSourceCommit?: { commitId: string };
   /** The branch the pull request comes from, such as `refs/heads/feature/login`. */
   sourceRefName?: string;
+  /** The branch it merges into, such as `refs/heads/main`. */
+  targetRefName?: string;
   repository: AzureRepository;
   /** The fork the pull request comes from, when it isn't the repository itself. */
   forkSource?: { name?: string; repository?: AzureRepository };
@@ -258,6 +283,15 @@ export interface AzureIteration {
   /** The commit the iteration is compared with: where its head and the target branch met when it was pushed. */
   commonRefCommit?: { commitId: string };
   push?: { date?: string; pushedBy?: AzureIdentity };
+  /** Why the iteration was made: create, push, forcePush, rebase… */
+  reason?: string;
+  /** Listed only with `includeCommits=true`, newest first. */
+  commits?: {
+    commitId?: string;
+    comment?: string;
+    author?: { name?: string; date?: string };
+    committer?: { date?: string };
+  }[];
 }
 
 export interface AzurePolicyEvaluation {
@@ -289,6 +323,12 @@ interface MappingContext {
   viewer: Viewer;
   /** Lowercased ids of the viewer's teams, or empty when team requests are off. */
   viewerTeams: Set<string>;
+}
+
+/** The branch a pull request merges into, without `refs/heads/`. */
+function baseRefOf(pullRequest: AzurePullRequest): { baseRef?: string } {
+  const name = pullRequest.targetRefName?.replace(/^refs\/heads\//, "").trim();
+  return name ? { baseRef: name.slice(0, 400) } : {};
 }
 
 export function time(value: string | undefined) {
@@ -612,6 +652,7 @@ export function toPullRequestFacts(
     ...(pullRequest.sourceRefName?.startsWith("refs/heads/")
       ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length) }
       : {}),
+    ...baseRefOf(pullRequest),
     repositoryIdentity: toRepositoryIdentity(pullRequest, context.organizationUrl),
     lastPushedAt,
     ...(pusher?.id ? { lastPushActor: toUser(pusher, context.viewer) } : {}),

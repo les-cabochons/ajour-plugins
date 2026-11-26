@@ -40,6 +40,7 @@ function pullRequest(id: number, overrides: Record<string, unknown> = {}) {
     reviewers: [],
     mergeStatus: "succeeded",
     lastMergeSourceCommit: { commitId: `sha-${id}` },
+    targetRefName: "refs/heads/release/2026",
     repository,
     ...overrides,
   };
@@ -299,6 +300,7 @@ describe("syncPullRequests", () => {
       updatedAt: Date.parse("2026-10-02T09:00:00Z"),
       viewerIsAuthor: false,
       headSha: "sha-7",
+      baseRef: "release/2026",
       headRef: "feature/login",
       repositoryIdentity: {
         cloneUrls: [

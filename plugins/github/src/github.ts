@@ -102,7 +102,7 @@ export class GitHubClient {
   /** A REST call. A refusal throws with GitHub's status and message. */
   async rest<T>(
     path: string,
-    init: { method?: "GET" | "PATCH"; body?: unknown; query?: Record<string, string | number> } = {},
+    init: { method?: "GET" | "POST" | "PATCH"; body?: unknown; query?: Record<string, string | number> } = {},
   ): Promise<T> {
     const response = await this.send("rest", {
       method: init.method ?? "GET",
@@ -209,6 +209,8 @@ interface GitHubPullRequest {
   closedAt: string | null;
   headRefOid: string;
   headRefName: string;
+  /** Absent in answers from before it was asked. */
+  baseRefName?: string;
   /** Null when the fork the pull request comes from was deleted. */
   headRepository: GitHubRepositoryAddresses | null;
   isCrossRepository?: boolean;
@@ -260,7 +262,7 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName mergeable isCrossRepository
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable isCrossRepository
   headRepository { nameWithOwner url sshUrl }
   repository { nameWithOwner url sshUrl }
   author { ${ACTOR_FIELDS} }
@@ -543,6 +545,7 @@ export function toPullRequestFacts(
     ...(pullRequest.closedAt ? { closedAt: time(pullRequest.closedAt) } : {}),
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
+    ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
     ...(pullRequest.headRefName ? { headRef: pullRequest.headRefName } : {}),
     ...(repositoryIdentity ? { repositoryIdentity } : {}),
     lastPushedAt,

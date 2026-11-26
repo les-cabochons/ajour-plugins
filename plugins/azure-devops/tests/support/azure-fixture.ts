@@ -57,6 +57,24 @@ export interface FixtureIteration {
   sourceRefCommit: { commitId: string };
   commonRefCommit?: { commitId: string };
   targetRefCommit: { commitId: string };
+  /** Why Azure DevOps made the iteration: create, push, forcePush, rebase… */
+  reason?: string;
+  push?: { date?: string };
+  /** The iteration's commits, newest first, listed only with `includeCommits=true`. */
+  commits?: FixtureCommit[];
+}
+
+/** A commit as an iteration lists it. */
+export interface FixtureCommit {
+  commitId: string;
+  comment: string;
+  author: { name: string; date: string };
+  committer: { name: string; date: string };
+}
+
+/** A commit by Alba at `date`. */
+export function commitOf(commitId: string, comment: string, date: string): FixtureCommit {
+  return { commitId, comment, author: { name: "Alba", date }, committer: { name: "Alba", date } };
 }
 
 export interface FixtureAnswer {
@@ -267,6 +285,7 @@ export function createAzureFixture(organizationUrl: string) {
     reviewers: [{ ...viewer, vote: 0 }],
     mergeStatus: "succeeded",
     lastMergeSourceCommit: { commitId: HEAD_1 },
+    targetRefName: "refs/heads/main",
     repository: { id: "repo-1", name: "api", project: { id: PROJECT_ID, name: PROJECT } },
   };
   /** The repository's files at each commit, by `commit:path`. A binary file holds a NUL. */
@@ -290,6 +309,12 @@ export function createAzureFixture(organizationUrl: string) {
       sourceRefCommit: { commitId: HEAD_1 },
       commonRefCommit: { commitId: BASE_1 },
       targetRefCommit: { commitId: BASE_1 },
+      reason: "create",
+      push: { date: "2026-10-02T08:59:00Z" },
+      commits: [
+        commitOf(HEAD_1, "Raise the limit\n\nTwenty is what the API allows.", "2026-10-02T08:30:00Z"),
+        commitOf("c0ffee00000000000000000000000000000000c1", "Add the limits file", "2026-10-02T08:00:00Z"),
+      ],
     },
   ];
   /** Each iteration's changes against its common commit, as `$compareTo=0` lists them. */
@@ -313,7 +338,13 @@ export function createAzureFixture(organizationUrl: string) {
    * A push: a new iteration with its head and common commit, its changes
    * against that commit, and the files it adds to the repository.
    */
-  function push(head: string, common: string, iterationChanges: FixtureChange[], added: Record<string, string> = {}) {
+  function push(
+    head: string,
+    common: string,
+    iterationChanges: FixtureChange[],
+    added: Record<string, string> = {},
+    detail: Pick<FixtureIteration, "reason" | "push" | "commits"> = {},
+  ) {
     const id = iterations.length + 1;
     iterations.push({
       id,
@@ -322,6 +353,8 @@ export function createAzureFixture(organizationUrl: string) {
       sourceRefCommit: { commitId: head },
       commonRefCommit: { commitId: common },
       targetRefCommit: { commitId: common },
+      reason: "push",
+      ...detail,
     });
     changes.set(id, iterationChanges);
     for (const [key, text] of Object.entries(added)) files.set(key, text);
@@ -516,7 +549,9 @@ export function createAzureFixture(organizationUrl: string) {
                   ],
                 },
               ]
-            : iterations,
+            : query.get("includeCommits") === "true"
+              ? iterations
+              : iterations.map(({ commits: _commits, ...iteration }) => iteration),
       });
     }
     // An iteration's changes, a page at a time: 100 unless `$top` says, at most 2,000.

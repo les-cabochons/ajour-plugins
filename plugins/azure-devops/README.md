@@ -94,13 +94,15 @@ Each connection chooses what it may do. Ajour shows the choices with the token
 scope each needs, refuses an operation whose choice is off before the plugin
 runs, and its broker refuses a request to an endpoint whose choice is off. The
 ids are the ones Ajour gave this plugin on API 3, so a connection keeps its
-choices.
+choices. Review pull requests came in 2.6.0: an update to it asks for consent
+once, and it starts off on every connection.
 
 | Choice                                | Token scope                                        | Unlocks                                                                                                           |
 | ------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Read the backlog (always on)          | Work Items (Read)                                  | Sync, WIQL queries and batch reads, comments, descriptions, the item's and the project's people                   |
 | Edit work items                       | Work Items (Read & write)                          | Estimate uploads (`pushEstimates`), settle, description writes, posting, editing and deleting comments, reactions |
-| Pull requests                         | Code (Read), and Project and Team (Read) for teams | Pull request sync and the other code host operations                                                              |
+| Pull requests                         | Code (Read), and Project and Team (Read) for teams | Pull request sync and Deck's reads: changes, conversation and checks                                              |
+| Review pull requests                  | Code (Read & write)                                | Deck's comments, reviews and votes, and the other pull request writes                                             |
 | Search people across the organisation | Identity (Read)                                    | Mention and assignee suggestions from the organization's identities, for a typed query                            |
 
 A sync on a connection that can't edit work items still reads everything:
@@ -134,6 +136,8 @@ and its broker refuses anything else. Paths are under the Organization URL;
 | GET           | `/*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes`, for Deck                                    | Pull requests                         |
 | GET           | `/*/_apis/git/repositories/*/items` (as `application/octet-stream`), for Deck                                  | Pull requests                         |
 | GET           | `/*/_apis/policy/evaluations`, `/_apis/teams`                                                                  | Pull requests                         |
+| POST          | `/*/_apis/git/repositories/*/pullRequests/*/threads`                                                           | Review pull requests                  |
+| PUT           | `/*/_apis/git/repositories/*/pullRequests/*/reviewers/*`                                                       | Review pull requests                  |
 | GET           | `/_apis/identities` on the `identities` host                                                                   | Search people across the organisation |
 
 The `identities` host is derived from the Organization URL:
@@ -369,6 +373,45 @@ Deck's review page shows a pull request's conversation and checks:
 - `getChecks` returns each enabled policy evaluation, as Azure DevOps lists its
   checks: approved passes, rejected and broken fail, not applicable is skipped,
   and queued and running are pending. A build links to its last run.
+- `getPullRequestVersions` returns the pull request's iterations for Deck's
+  versions bar (les-cabochons/ajour#787), read with their commits
+  (`includeCommits=true`): each iteration keeps its number, its source
+  commit as the head, its common commit as the base, the push's date (or
+  the iteration's), whether it was a force push or a rebase, and its
+  commits oldest first, at most 250. The answer says versions are
+  iterations, so Deck names them so.
+- `syncPullRequests` names the branch the pull request merges into, without
+  `refs/heads/`.
+
+### Reviewing, from Deck
+
+Deck's draft review writes at once (Ajour's ADR 0002), behind **Review pull
+requests**:
+
+- `postComment` posts a comment as a new active thread: on the head's lines
+  (the right side of the file), the base's (the left side), from the first
+  line of a range, or on the whole pull request without an anchor. Line
+  comments sit on the iteration whose head is the commit you reviewed,
+  compared with the common commit of the source and target branches, the
+  diff Deck showed (`iterationContext` with both comparing iterations set to
+  that iteration). When no iteration has that commit any more, the comment
+  fails and asks you to open the pull request again.
+- `submitReview` has no review to submit on Azure DevOps. It posts a thread
+  for each line comment and one for the summary, then sets your vote:
+  **Approve** votes 10, **Request changes** votes -5, "Wait for author", and
+  **Comment** leaves your vote as it is. Every submit checks the head you
+  reviewed first, a vote with no comments too: a head no iteration has fails,
+  and so does an approval of an iteration that isn't the latest, since a vote
+  counts for code you didn't read. Nothing is posted then.
+- Each thread of a submit carries Ajour's submission id in a thread property,
+  `Ajour.ReviewSubmission`, which Azure DevOps doesn't show. Ajour keeps the
+  id with the draft review until the submit succeeds, so a retry, after a
+  restart too, reads the pull request's threads and posts only the places
+  with no thread of yours for that submission, then votes. A thread of
+  another submission, or of none, never holds a comment back. A comment
+  posted on its own carries its submission the same way, and its retry
+  returns the thread an earlier try left. Ajour runs the tries of one
+  submission one at a time.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "apiVersion": 4,
   "displayName": "GitHub",
   "description": "Brings your GitHub issues into the backlog, and the pull requests you wrote or were asked to review.",
@@ -43,7 +43,7 @@
       "required": true,
       "secret": true,
       "placeholder": "Paste a personal access token",
-      "helpText": "Issues need the Issues permission set to Read and write, to close and reopen them and to write their descriptions back. Pull requests need read and write access to pull requests and read access to the repositories, and read:org for team review requests."
+      "helpText": "Issues need the Issues permission set to Read and write, to close and reopen them and to write their descriptions back. Pull requests need read access to pull requests and the repositories, and read:org for team review requests. Reviewing them from Deck needs write access to pull requests."
     },
     {
       "id": "include",
@@ -116,15 +116,21 @@
           { "method": "GET", "path": "/repos/*/*/contents/**" },
           { "method": "GET", "path": "/repos/*/*/issues/*" },
           { "method": "PATCH", "path": "/repos/*/*/issues/*" },
+          { "method": "POST", "path": "/repos/*/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*" },
+          { "method": "POST", "path": "/repos/*/*/pulls/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
+          { "method": "POST", "path": "/repos/*/*/pulls/*/reviews", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/activity" },
           { "method": "GET", "path": "/repositories/*/compare/*" },
           { "method": "GET", "path": "/repositories/*/contents/**" },
           { "method": "GET", "path": "/repositories/*/issues/*" },
           { "method": "PATCH", "path": "/repositories/*/issues/*" },
+          { "method": "POST", "path": "/repositories/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*" },
-          { "method": "GET", "path": "/repositories/*/pulls/*/files" }
+          { "method": "POST", "path": "/repositories/*/pulls/*/comments", "access": "reviewPullRequests" },
+          { "method": "GET", "path": "/repositories/*/pulls/*/files" },
+          { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" }
         ]
       },
       {
@@ -139,5 +145,23 @@
     ],
     "requestHeaders": ["Accept", "Content-Type", "User-Agent", "X-GitHub-Api-Version"]
   },
+  "connectionAccess": [
+    {
+      "id": "reviewPullRequests",
+      "label": "Review pull requests",
+      "description": "Comment on pull requests, submit your reviews, and make Ajour's other pull request changes: replies, resolving, viewed files, titles and merges.",
+      "tokenScope": "Pull requests (Read and write)",
+      "always": false,
+      "operations": [
+        "submitReview",
+        "postComment",
+        "replyToThread",
+        "setThreadResolved",
+        "setFileViewed",
+        "updatePullRequest",
+        "mergePullRequest"
+      ]
+    }
+  ],
   "runtime": { "start": "whenNeeded" }
 }

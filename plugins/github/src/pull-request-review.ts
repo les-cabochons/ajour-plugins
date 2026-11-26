@@ -1,5 +1,6 @@
 import type { GitHubClient, PageInfo } from "./github.ts";
 import { nextCursor, splitRepository, toUser, type GitHubActor } from "./github.ts";
+import { withoutSubmissionMark } from "./pull-request-writes.ts";
 import type {
   CodeHostCheck,
   CodeHostCheckRunState,
@@ -178,7 +179,7 @@ type GitHubCheckContext =
   | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; url: string | null }
   | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null };
 
-interface Connection<T> {
+export interface Connection<T> {
   pageInfo: PageInfo;
   nodes: T[];
 }
@@ -200,20 +201,20 @@ const EVENT_TEXT: Record<string, string> = {
   ReopenedEvent: "reopened this pull request",
 };
 
-function time(value: string) {
+export function time(value: string) {
   return Date.parse(value);
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** The pull request's variables, its owner, name and number. */
-function variables(ref: CodeHostPullRequestRef) {
+export function variables(ref: CodeHostPullRequestRef) {
   const [owner, name] = splitRepository(ref.repository);
   return { owner, name, number: ref.number };
 }
 
 /** Every node of one connection, page by page, up to `max`. */
-async function readAll<T>(
+export async function readAll<T>(
   max: number,
   read: (after: string | null) => Promise<Connection<T> | null | undefined>,
 ): Promise<T[]> {
@@ -229,9 +230,9 @@ async function readAll<T>(
   return nodes.slice(0, max);
 }
 
-type PullRequestOf<T> = { repository: { pullRequest: T | null } | null };
+export type PullRequestOf<T> = { repository: { pullRequest: T | null } | null };
 
-function notFound(): never {
+export function notFound(): never {
   throw new Error("GitHub could not find the pull request.");
 }
 
@@ -239,7 +240,8 @@ function toThread(thread: GitHubThread): CodeHostReviewThread[] {
   const comments = thread.comments.nodes.map((comment) => ({
     id: comment.id,
     author: toUser(comment.author),
-    body: clip(comment.body, MAX_BODY),
+    // Without the line naming the submission Ajour posted it as.
+    body: clip(withoutSubmissionMark(comment.body), MAX_BODY),
     createdAt: time(comment.createdAt),
     ...(comment.lastEditedAt ? { updatedAt: time(comment.lastEditedAt) } : {}),
   }));
@@ -268,12 +270,22 @@ function reviewerName(reviewer: GitHubReviewer) {
 function toTimelineEvent(item: GitHubTimelineItem): CodeHostTimelineEvent[] {
   switch (item.__typename) {
     case "IssueComment":
-      return [{ kind: "comment", id: item.id, author: toUser(item.author), body: clip(item.body, MAX_BODY), createdAt: time(item.createdAt) }];
+      return [
+        {
+          kind: "comment",
+          id: item.id,
+          author: toUser(item.author),
+          body: clip(withoutSubmissionMark(item.body), MAX_BODY),
+          createdAt: time(item.createdAt),
+        },
+      ];
     case "PullRequestReview": {
       const verdict = VERDICTS[item.state];
       // A pending review is a draft nobody else sees.
       if (!verdict || !item.submittedAt) return [];
-      return [{ kind: "review", id: item.id, author: toUser(item.author), verdict, body: clip(item.body, MAX_BODY), createdAt: time(item.submittedAt) }];
+      // Without the line naming the submission Ajour posted it as.
+      const body = clip(withoutSubmissionMark(item.body), MAX_BODY);
+      return [{ kind: "review", id: item.id, author: toUser(item.author), verdict, body, createdAt: time(item.submittedAt) }];
     }
     case "PullRequestCommit":
       return [

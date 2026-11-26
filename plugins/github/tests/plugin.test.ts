@@ -25,6 +25,7 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     closedAt: null,
     headRefOid: "abc123",
     headRefName: "change/rate-limits",
+    baseRefName: "main",
     headRepository: {
       nameWithOwner: "alice/api",
       url: "https://github.com/alice/api",
@@ -368,6 +369,7 @@ describe("GitHub plugin", () => {
       updatedAt: Date.parse("2026-10-02T10:00:00Z"),
       viewerIsAuthor: false,
       headSha: "abc123",
+      baseRef: "main",
       headRef: "change/rate-limits",
       repositoryIdentity: {
         cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],

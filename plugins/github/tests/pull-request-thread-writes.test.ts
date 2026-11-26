@@ -46,7 +46,14 @@ describe("replyToThread", () => {
     size = 100,
     access = [REVIEW],
     thread = true,
-  }: { comments?: ThreadComment[]; size?: number; access?: readonly string[]; thread?: boolean } = {}) {
+    parent = ref,
+  }: {
+    comments?: ThreadComment[];
+    size?: number;
+    access?: readonly string[];
+    thread?: boolean;
+    parent?: { repository: string; number: number };
+  } = {}) {
     const pageOf = (before: unknown) => {
       const end = typeof before === "string" ? Number(before) : comments.length;
       const start = Math.max(0, end - size);
@@ -59,6 +66,7 @@ describe("replyToThread", () => {
       ({ variables }: GraphQLCall) => ({
         node: thread
           ? {
+              pullRequest: { number: parent.number, repository: { nameWithOwner: parent.repository } },
               first: { nodes: comments.slice(0, 1).map(({ databaseId }) => ({ databaseId })) },
               comments: pageOf(variables.before),
             }
@@ -99,6 +107,15 @@ describe("replyToThread", () => {
 
     await expect(replyToThread!(connection([]), { ...ref, threadId: THREAD, body: "Thanks." })).rejects.toThrow(
       /reviewPullRequests/,
+    );
+    expect(posts(requests)).toEqual([]);
+  });
+
+  it("refuses a thread of another pull request, posting nothing", async () => {
+    const { requests } = gitHub({ parent: { repository: "acme/api", number: 8 } });
+
+    await expect(replyToThread!(connection(), { ...ref, threadId: THREAD, body: "Done." })).rejects.toThrow(
+      "This review thread belongs to another pull request.",
     );
     expect(posts(requests)).toEqual([]);
   });
@@ -194,7 +211,7 @@ describe("setThreadResolved", () => {
   function gitHub(resolved: boolean, parent: { repository: string; number: number } | null = ref) {
     return stubGitHub(
       ({ query }: GraphQLCall) =>
-        query.includes("ReviewThread(input")
+        query.startsWith("mutation")
           ? { [query.includes("unresolve") ? "unresolveReviewThread" : "resolveReviewThread"]: { thread: { isResolved: resolved } } }
           : {
               node: parent
@@ -217,7 +234,6 @@ describe("setThreadResolved", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0]!.variables).toEqual({ id: THREAD });
-    expect(mutations(calls)).toHaveLength(1);
     expect(calls[1]!.query).toContain(`${mutation}(input: { threadId: $id })`);
     expect(calls[1]!.variables).toEqual({ id: THREAD });
     expect(posts(requests)).toEqual([]);

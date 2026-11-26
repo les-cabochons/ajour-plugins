@@ -318,6 +318,7 @@ export async function submitPullRequestReview(
 const THREAD_QUERY = `query($id: ID!, $before: String) {
   node(id: $id) {
     ... on PullRequestReviewThread {
+      pullRequest { number repository { nameWithOwner } }
       first: comments(first: 1) { nodes { databaseId } }
       comments(last: 100, before: $before) {
         pageInfo { hasPreviousPage startCursor }
@@ -327,7 +328,29 @@ const THREAD_QUERY = `query($id: ID!, $before: String) {
   }
 }`;
 
+/** The pull request a review thread is on. */
+interface ThreadParent {
+  number: number;
+  repository: { nameWithOwner: string };
+}
+
+/**
+ * Refuses a thread of another pull request than the request's: GitHub's
+ * thread writes and reads name the thread alone. Ajour checks it too; this
+ * is the second check.
+ */
+function checkThreadParent(parent: ThreadParent | undefined, request: { repository: string; number: number }) {
+  if (!parent) throw new Error("GitHub could not find the review thread.");
+  if (
+    parent.number !== request.number ||
+    parent.repository.nameWithOwner.toLowerCase() !== request.repository.toLowerCase()
+  ) {
+    throw new Error("This review thread belongs to another pull request.");
+  }
+}
+
 interface ThreadNode {
+  pullRequest: ThreadParent;
   first: { nodes: ({ databaseId: number | null } | null)[] };
   comments: Page<CommentNode>;
 }
@@ -353,6 +376,7 @@ export async function replyToPullRequestThread(
   const { submissionId, firstTriedAt } = request;
   checkSubmissionId(submissionId);
   const thread = await readThread(client, request.threadId, undefined);
+  checkThreadParent(thread?.pullRequest, request);
   const first = thread?.first.nodes[0]?.databaseId;
   if (!thread || first == null) throw new Error("GitHub could not find the review thread.");
   if (submissionId && firstTriedAt !== undefined) {
@@ -379,24 +403,16 @@ const THREAD_PARENT_QUERY = `query($id: ID!) {
 /**
  * Resolves or unresolves a review thread, and answers the state GitHub
  * holds then. The mutation names the thread alone, so the thread's pull
- * request is read first, and a thread of another one is refused: Ajour
- * checks it too, this is the second check.
+ * request is read first, and a thread of another one is refused.
  */
 export async function setPullRequestThreadResolved(
   client: GitHubClient,
   request: CodeHostResolveThreadRequest,
 ): Promise<CodeHostResolveThreadResult> {
-  const { node } = await client.query<{
-    node: { pullRequest?: { number: number; repository: { nameWithOwner: string } } } | null;
-  }>(THREAD_PARENT_QUERY, { id: request.threadId });
-  const parent = node?.pullRequest;
-  if (!parent) throw new Error("GitHub could not find the review thread.");
-  if (
-    parent.number !== request.number ||
-    parent.repository.nameWithOwner.toLowerCase() !== request.repository.toLowerCase()
-  ) {
-    throw new Error("This review thread belongs to another pull request.");
-  }
+  const { node } = await client.query<{ node: { pullRequest?: ThreadParent } | null }>(THREAD_PARENT_QUERY, {
+    id: request.threadId,
+  });
+  checkThreadParent(node?.pullRequest, request);
   const mutation = request.resolved ? "resolveReviewThread" : "unresolveReviewThread";
   const data = await client.query<Record<string, { thread: { isResolved: boolean } | null } | null>>(
     `mutation($id: ID!) { ${mutation}(input: { threadId: $id }) { thread { isResolved } } }`,

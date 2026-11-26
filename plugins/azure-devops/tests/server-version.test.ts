@@ -35,7 +35,7 @@ function serverOf2022() {
 const TOO_OLD = "This Azure DevOps Server is older than Ajour supports. Ajour needs Azure DevOps Server 2022.1 or later.";
 
 describe("an Azure DevOps Server older than 2022.1", () => {
-  it("says which release Deck needs when it reads a pull request", async () => {
+  it("says which release Ajour needs when Deck reads a pull request", async () => {
     serverOf2022();
 
     await expect(

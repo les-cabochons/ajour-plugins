@@ -181,8 +181,8 @@ export async function postPullRequestComment(
  * The latest iteration is read again right before an approval's vote, and
  * a push that landed while the threads posted sends no vote. Azure DevOps
  * has no vote bound to a head, so a push in the moment between that read
- * and the vote still gets it: the gap is one request long, well under a
- * second, where it was every thread's post long before.
+ * and the vote still gets it. That gap is one request long, well under a
+ * second; before, it lasted while every thread posted.
  *
  * Each thread carries the request's `submissionId`. A retry with the same
  * identity reads the pull request's threads and posts only the places it

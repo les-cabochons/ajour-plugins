@@ -164,6 +164,7 @@ The rest of a review round, from 0.9.0:
   alone, so the plugin first reads the thread's pull request and refuses a
   thread of another repository or pull request than the request's, with
   "This review thread belongs to another pull request.", changing nothing.
+  `replyToThread` checks the thread it reads the same way before it posts.
 - `setFileViewed` ticks or clears a file's **Viewed** box, through GraphQL's
   `markFileAsViewed` and `unmarkFileAsViewed`. GitHub keeps the mark for the
   pull request's head, so the plugin marks a file viewed only while the head

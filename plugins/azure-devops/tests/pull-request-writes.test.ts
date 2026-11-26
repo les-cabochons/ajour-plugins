@@ -457,6 +457,33 @@ describe("submitReview", () => {
     expect(sent.map((request) => request.method)).toEqual(["POST", "POST", "POST"]);
   });
 
+  it("after that refusal, Retry with the same submission posts nothing and asks to open it again", async () => {
+    const threads = comments.map((comment, index) => ({
+      id: 100 + index,
+      comments: [{ id: 1, author: { id: VIEWER } }],
+      threadContext: {
+        filePath: `/${comment.path}`,
+        ...(comment.side === "head"
+          ? { rightFileStart: { line: comment.line }, rightFileEnd: { line: comment.line } }
+          : { leftFileStart: { line: comment.line }, leftFileEnd: { line: comment.line } }),
+      },
+      properties: { "Ajour.ReviewSubmission": { $type: "System.String", $value: "sub-1" } },
+    }));
+    const sent = azure({ iterations: PUSHED, threads });
+
+    await expect(
+      submitReview!(connection(), {
+        ...ref,
+        headSha: "abc123",
+        verdict: "approve",
+        comments,
+        submissionId: "sub-1",
+        firstTriedAt: 1,
+      }),
+    ).rejects.toThrow("Open it again to approve its latest changes.");
+    expect(sent).toEqual([]);
+  });
+
   it("sends no approval without comments when a push lands before the vote", async () => {
     const sent = azure({ pushAfterReads: 1 });
 

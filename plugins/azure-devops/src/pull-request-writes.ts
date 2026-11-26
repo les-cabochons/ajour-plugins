@@ -117,6 +117,12 @@ async function reviewedIteration(client: AzureReposClient, pullRequest: AzurePul
   return { id: found.id, latest: found.id === iterations.at(-1)?.id };
 }
 
+/** Whether the latest iteration's head is `headSha`, read now. */
+async function headIsLatest(client: AzureReposClient, pullRequest: AzurePullRequest, headSha: string) {
+  const latest = (await iterationsOf(client, pullRequest)).at(-1);
+  return latest?.sourceRefCommit?.commitId?.toLowerCase() === headSha.toLowerCase();
+}
+
 /** A post's place, the same for a thread and for what the request asks: a file's side and lines, or the whole pull request. */
 function placeOf(anchor: CodeHostLineAnchor | undefined) {
   if (!anchor) return "";
@@ -172,6 +178,12 @@ export async function postPullRequestComment(
  * approval needs that head to be the latest: a vote counts for the whole
  * pull request, code the user didn't read included.
  *
+ * The latest iteration is read again right before an approval's vote, and
+ * a push that landed while the threads posted sends no vote. Azure DevOps
+ * has no vote bound to a head, so a push in the moment between that read
+ * and the vote still gets it: the gap is one request long, well under a
+ * second, where it was every thread's post long before.
+ *
  * Each thread carries the request's `submissionId`. A retry with the same
  * identity reads the pull request's threads and posts only the places it
  * finds no thread of that submission at, one thread for each, so Retry
@@ -205,6 +217,13 @@ export async function submitPullRequestReview(
       `${base}/threads`,
       { "api-version": API_VERSION },
       newThread(post.body, post.anchor, iteration.id, request.submissionId),
+    );
+  }
+  if (request.verdict === "approve" && !(await headIsLatest(client, pullRequest, request.headSha))) {
+    throw new Error(
+      posts.length
+        ? "New commits arrived while your review was sending: your comments were posted, your vote wasn't. Review the new commits."
+        : "New commits arrived while your review was sending, so your vote wasn't. Review the new commits.",
     );
   }
   const vote = VOTES[request.verdict];

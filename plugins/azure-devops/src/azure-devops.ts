@@ -452,6 +452,23 @@ export async function sendAzureDevOps(
   }
 }
 
+/**
+ * The oldest server the plugin works with. It sends REST api-version 7.1,
+ * which Azure DevOps Server has since 2022.1 (Microsoft's "API and TFS
+ * version mapping"); 2022.0 has 7.0, and the plugin doesn't step down.
+ */
+export const MINIMUM_SERVER = "Azure DevOps Server 2022.1";
+
+export const SERVER_TOO_OLD = `This Azure DevOps Server is older than Ajour supports. Ajour needs ${MINIMUM_SERVER} or later.`;
+
+/** Whether a failed answer says the server doesn't have the api-version asked for. */
+export function isVersionOutOfRange(payload: { typeKey?: unknown; message?: unknown } | null | undefined) {
+  return (
+    payload?.typeKey === "VssVersionOutOfRangeException" ||
+    (typeof payload?.message === "string" && /REST API version .* is out of range/i.test(payload.message))
+  );
+}
+
 export async function requestAzureDevOps<T>(
   config: Pick<AzureDevOpsConnectionInput, "id"> & { organizationUrl?: string },
   path: string,
@@ -470,8 +487,9 @@ export async function requestAzureDevOps<T>(
   if (!response.ok) {
     let detail = "Request failed";
     try {
-      const payload = (await response.json()) as { message?: string };
-      if (
+      const payload = (await response.json()) as { message?: string; typeKey?: string };
+      if (isVersionOutOfRange(payload)) detail = SERVER_TOO_OLD;
+      else if (
         typeof payload.message === "string" &&
         payload.message.trim().length > 0
       ) {
@@ -482,7 +500,9 @@ export async function requestAzureDevOps<T>(
     }
 
     throw new Error(
-      `Azure DevOps request failed (${response.status}): ${detail}`,
+      detail === SERVER_TOO_OLD
+        ? SERVER_TOO_OLD
+        : `Azure DevOps request failed (${response.status}): ${detail}`,
     );
   }
 

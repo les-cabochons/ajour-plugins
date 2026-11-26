@@ -104,6 +104,10 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   headSha: string;
   /** The branch the pull request merges into, such as `main`. */
   baseRef?: string;
+  /** The branch the pull request comes from. */
+  headRef?: string;
+  /** The commit of `baseRef` the head is based on, for Deck's stale-base check. */
+  baseSha?: string;
   lastPushedAt: number;
   lastPushActor?: CodeHostUser;
   reviewRequests: CodeHostReviewRequest[];

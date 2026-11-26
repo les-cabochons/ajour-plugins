@@ -55,8 +55,11 @@ the `getLinkedTickets` operation to those. It was then packed from the
 (les-cabochons/ajour#785) at `3f4de3e0`, its merge of origin/main after #919
 and #939, for named replies: `submissionId` and `firstTriedAt` on
 `replyToThread` and its `{ uncertain: true }` answer, and the `headSha` a file
-is viewed at on `setFileViewed`. The SDK's version stays 0.4.0, so only the
-lockfile integrity changes.
+is viewed at on `setFileViewed`. It was then packed from the
+`feat/deck-stacks` branch of `les-cabochons/ajour` (les-cabochons/ajour#788)
+at `5576cc58`, on origin/main `280f0486` (after #938), for stacks: the
+optional `headRef` and `baseSha` on pull request facts. The SDK's version
+stays 0.4.0, so only the lockfile integrity changes.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

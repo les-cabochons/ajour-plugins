@@ -229,6 +229,8 @@ describe("network declaration", () => {
       "GET /*/_apis/git/pullrequests [pullRequests]",
       "GET /_apis/git/pullrequests/* [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/threads [pullRequests]",
+      "POST /*/_apis/git/repositories/*/pullRequests/*/threads [reviewPullRequests]",
+      "PUT /*/_apis/git/repositories/*/pullRequests/*/reviewers/* [reviewPullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations [pullRequests]",
       "GET /*/_apis/git/repositories/*/pullRequests/*/iterations/*/changes [pullRequests]",
       "GET /*/_apis/git/repositories/*/items [pullRequests]",
@@ -398,9 +400,10 @@ describe("saved cloud project URL routing", () => {
 });
 
 describe("connection access", () => {
-  // The same choices as Ajour's own table for this plugin on API 3
-  // (packages/shared/connection-access.ts), so a migrated connection keeps its choices.
-  it("declares Ajour's four Azure DevOps choices, by the same ids, each with its token scope", () => {
+  // Ajour's own table for this plugin on API 3 (packages/shared/connection-access.ts),
+  // by the same ids, so a migrated connection keeps its choices, and Review pull
+  // requests since 2.6.0 (les-cabochons/ajour#784), which starts off.
+  it("declares Ajour's Azure DevOps choices, by the same ids, each with its token scope", () => {
     expect(
       validManifest.connectionAccess.map((choice: any) => [
         choice.id,
@@ -417,6 +420,7 @@ describe("connection access", () => {
         "Code (Read), and Project and Team (Read) for teams",
         false,
       ],
+      ["reviewPullRequests", "Review pull requests", "Code (Read & write)", false],
       [
         "peopleSearch",
         "Search people across the organisation",
@@ -426,7 +430,7 @@ describe("connection access", () => {
     ]);
   });
 
-  it("gates every write, the estimate upload included, behind Edit work items", () => {
+  it("gates every write behind Edit work items, the estimate upload included, or Review pull requests", () => {
     const edit = validManifest.connectionAccess.find(
       (choice: any) => choice.id === "editWorkItems",
     );
@@ -446,7 +450,9 @@ describe("connection access", () => {
       ),
     ].filter(
       (endpoint: any) =>
-        endpoint.method !== "GET" && endpoint.access !== "editWorkItems",
+        endpoint.method !== "GET" &&
+        endpoint.access !== "editWorkItems" &&
+        endpoint.access !== "reviewPullRequests",
     );
     // Reads that POST a query or a list of ids.
     expect([...new Set(endpointsOf(writes))]).toEqual([
@@ -458,12 +464,30 @@ describe("connection access", () => {
     ]);
   });
 
-  it("gates the code host operations behind Pull requests, and the organisation's people behind people search", () => {
+  it("gates the code host reads behind Pull requests, its writes behind Review pull requests, and the organisation's people behind people search", () => {
     const choice = (id: string) =>
       validManifest.connectionAccess.find(
         (candidate: any) => candidate.id === id,
       );
-    expect(choice("pullRequests").operations).toContain("syncPullRequests");
+    expect(choice("pullRequests").operations).toEqual([
+      "syncPullRequests",
+      "getPullRequestContent",
+      "getFileContent",
+      "getPullRequestConversation",
+      "getChecks",
+      "getPullRequestVersions",
+      "browsePullRequests",
+    ]);
+    // Every write to a pull request waits for Review pull requests, Code (Read & write).
+    expect(choice("reviewPullRequests").operations).toEqual([
+      "submitReview",
+      "postComment",
+      "replyToThread",
+      "setThreadResolved",
+      "setFileViewed",
+      "updatePullRequest",
+      "mergePullRequest",
+    ]);
     expect(choice("peopleSearch").operations).toEqual([
       "searchItemPeople",
       "searchAssignees",

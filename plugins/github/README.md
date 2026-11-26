@@ -86,7 +86,45 @@ say where an older head met the base branch, so the versions carry no base,
 and Deck reads an older version against the head's base unless it cached
 that version before. At most 500 versions, each with at most 250 commits.
 
-Writes (comments, reviews, merge) come in later versions.
+### Reviewing, from Deck
+
+Deck's draft review writes through two operations, each at once (Ajour's
+ADR 0002):
+
+- `postComment` posts one comment: on lines of the diff at the commit you
+  reviewed (`POST /repos/{owner}/{repo}/pulls/{number}/comments`, the head's
+  lines on the right side and the base's on the left, from the first line of
+  a range), or on the conversation without an anchor (`POST
+  /repos/{owner}/{repo}/issues/{number}/comments`).
+- `submitReview` submits a review in one call (`POST
+  /repos/{owner}/{repo}/pulls/{number}/reviews`): its verdict as `APPROVE`,
+  `REQUEST_CHANGES` or `COMMENT`, its summary when there is one, and every
+  line comment of the draft. GitHub holds no pending review.
+- GitHub takes no idempotency key, so a review's or comment's body starts
+  with an HTML comment naming Ajour's submission id, `<!-- ajour-review: … -->`,
+  on a line of its own before your Markdown, which GitHub's pages don't show
+  and Ajour leaves out when it reads the conversation, wherever an edit left
+  it. Ajour keeps the id with the draft review until the write succeeds, and a
+  retry also says when the first try was sent. A retry first reads the pull
+  request's reviews (or, for a comment on the conversation, its comments)
+  through GraphQL, newest first and page by page, back to the first one
+  whatever its time, since this computer's clock may run ahead of GitHub's,
+  for one of yours that carries it: when the answer to an earlier try was lost
+  after GitHub took the review, the retry returns that review and posts
+  nothing again. A review or comment of yours from around the first try on
+  that names no submission, as when someone edited the mark out, or a look
+  that runs out of pages (20) before the first one, makes the answer
+  uncertain: the plugin posts nothing, and
+  Ajour asks you before posting again. Ajour runs the tries of one submission
+  one at a time.
+
+These endpoints sit behind the connection's **Review pull requests** access
+choice, which also covers the replies, resolving, viewed files, title and
+draft changes and merges of later versions. It starts off, and an update that
+adds it asks for consent once. While it's off, Ajour refuses the operations
+before the plugin runs, and its broker refuses the endpoints. GitHub's GraphQL
+endpoint is allowed as a whole, so the token's own permissions stay the real
+limit: give it write access to pull requests only if you review from Ajour.
 
 ## Issues
 
@@ -189,8 +227,9 @@ open **Settings → Plugins**, choose **Install from file**, and select
 `plugins/github/package/github-<version>.ajour-connector`.
 
 The connection needs a personal access token. A fine-grained token needs the
-Issues permission set to Read and write for issues, and read and write access
-to pull requests and read access to contents on the repositories you want,
+Issues permission set to Read and write for issues, read access to pull
+requests (read and write to review them from Deck) and read access to contents
+on the repositories you want,
 plus organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
 be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs

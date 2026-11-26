@@ -656,7 +656,9 @@ export function toPullRequestFacts(
     viewerIsAuthor: sameId(pullRequest.createdBy.id, context.viewer.id),
     headSha:
       pullRequest.lastMergeSourceCommit?.commitId ?? lastIteration?.sourceRefCommit?.commitId ?? "unknown",
-    ...(pullRequest.sourceRefName?.startsWith("refs/heads/")
+    // A fork it can't name: its branch isn't the repository's branch of that
+    // name, and Deck can neither stack on it nor fetch it (les-cabochons/ajour#788).
+    ...(pullRequest.sourceRefName?.startsWith("refs/heads/") && (!pullRequest.forkSource || pullRequest.forkSource.repository)
       ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length, "refs/heads/".length + 400) }
       : {}),
     ...baseRefOf(pullRequest),

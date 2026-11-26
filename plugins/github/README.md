@@ -80,7 +80,8 @@ its checks:
   when it's http or https.
 - `syncPullRequests` adds each reviewer's vote: their latest approval or
   change request, then each person or team asked who hasn't given one, the
-  base and head branches' names (`baseRefName`, `headRefName`), and the base
+  base and head branches' names (`baseRefName`, and `headRefName` but for a
+  deleted fork's, which isn't the repository's branch of that name), and the base
   commit (`baseRefOid`), so Deck finds stacked pull requests and a layer
   below that moved since (les-cabochons/ajour#788). `baseRefOid` is the base
   branch's tip when the pull request last changed, not where the head

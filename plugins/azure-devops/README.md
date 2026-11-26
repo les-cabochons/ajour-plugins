@@ -353,7 +353,7 @@ pull requests automatically** is on, separately from **Auto sync to backlog**.
 | Mergeability            | The pull request's merge status.                                                                                                                               |
 | Clone addresses         | The repository's `remoteUrl` and `sshUrl` when the response has them, or else its HTTPS address under the organization and, on Azure DevOps Services, its SSH one. |
 | Head branch and fork    | `sourceRefName`, and `forkSource` for a pull request from a fork, with the fork's addresses.                                                                    |
-| Branches                | `targetRefName` and `sourceRefName`, without `refs/heads/`, so Deck finds stacked pull requests.                                                               |
+| Branches                | `targetRefName` and `sourceRefName`, without `refs/heads/`, so Deck finds stacked pull requests; no source branch for a fork without its repository.                                                               |
 | Base commit             | The latest iteration's `commonRefCommit`, where its head met the target branch, so Deck sees a layer below that moved since.                                   |
 
 A sync never returns comment or review text to Ajour. Pull requests need the

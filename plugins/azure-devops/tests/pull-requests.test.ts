@@ -5,6 +5,7 @@ import {
   checkState,
   mentions,
   PullRequestSearch,
+  toPullRequestFacts,
   toRepositoryIdentity,
   type AzurePullRequest,
 } from "../src/pull-requests.ts";
@@ -587,5 +588,20 @@ describe("where a pull request's repository is cloned from", () => {
     expect(
       toRepositoryIdentity(azurePullRequest({ forkSource: { repository } }), ORG).source,
     ).toBeUndefined();
+  });
+
+  it("names no head branch for a fork it can't name, so it never passes for the repository's own", () => {
+    const factsOf = (overrides: Partial<AzurePullRequest>) =>
+      toPullRequestFacts(
+        azurePullRequest(overrides),
+        { threads: [], iterations: [] },
+        {
+          organizationUrl: ORG,
+          viewer: { id: "viewer", user: { login: "viewer@contoso.com", isBot: false } },
+          viewerTeams: new Set(),
+        },
+      );
+    expect(factsOf({ forkSource: { name: "refs/heads/feature/login" } }).headRef).toBeUndefined();
+    expect(factsOf({}).headRef).toBe("feature/login");
   });
 });

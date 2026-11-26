@@ -542,6 +542,10 @@ export function toPullRequestFacts(
   ].sort((left, right) => left.createdAt - right.createdAt);
 
   const repositoryIdentity = toRepositoryIdentity(pullRequest);
+  // A fork Ajour can't name, such as a deleted one: its branch isn't the
+  // repository's branch of that name, and Deck can neither stack on it nor
+  // fetch it (les-cabochons/ajour#788).
+  const headKnown = !pullRequest.isCrossRepository || !!repositoryIdentity?.source;
   const lastPush = pullRequest.timelineItems.nodes[0];
   const lastPushedAt = lastPush
     ? time(lastPush.__typename === "PullRequestCommit" ? lastPush.commit.committedDate : lastPush.createdAt)
@@ -562,7 +566,7 @@ export function toPullRequestFacts(
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
     ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
-    ...(pullRequest.headRefName ? { headRef: pullRequest.headRefName.slice(0, 400) } : {}),
+    ...(pullRequest.headRefName && headKnown ? { headRef: pullRequest.headRefName.slice(0, 400) } : {}),
     // Deck compares it with the head of the layer below in a stack (les-cabochons/ajour#788).
     ...(pullRequest.baseRefOid ? { baseSha: pullRequest.baseRefOid } : {}),
     ...(repositoryIdentity ? { repositoryIdentity } : {}),

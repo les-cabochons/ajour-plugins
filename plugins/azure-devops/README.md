@@ -88,6 +88,13 @@ project query scope. No connection migration is needed. Mark an Azure DevOps
 Server connection as on-premises when the server is on a private network or
 uses `http`.
 
+Azure DevOps Server needs release **2022.1 or later**. The plugin sends REST
+`api-version` 7.1, which Azure DevOps Server has since 2022.1 (Microsoft's
+[API and TFS version mapping](https://learn.microsoft.com/en-us/rest/api/azure/devops/?view=azure-devops-rest-7.2#api-and-tfs-version-mapping));
+2022.0 has 7.0 and 2020 has 6.0. An older server refuses the version, and the
+plugin says "This Azure DevOps Server is older than Ajour supports. Ajour
+needs Azure DevOps Server 2022.1 or later." instead of the server's message.
+
 ### Access
 
 Each connection chooses what it may do. Ajour shows the choices with the token
@@ -421,7 +428,13 @@ requests**:
   **Comment** leaves your vote as it is. Every submit checks the head you
   reviewed first, a vote with no comments too: a head no iteration has fails,
   and so does an approval of an iteration that isn't the latest, since a vote
-  counts for code you didn't read. Nothing is posted then.
+  counts for code you didn't read. Nothing is posted then. An approval reads
+  the latest iteration again right before its vote: when a push landed while
+  the threads posted, it sends no vote and fails with "New commits arrived
+  while your review was sending: your comments were posted, your vote
+  wasn't. Review the new commits." Azure DevOps has no vote bound to a head,
+  so a push in the moment between that read and the vote, one request long,
+  still gets the vote.
 - Each thread of a submit carries Ajour's submission id in a thread property,
   `Ajour.ReviewSubmission`, which Azure DevOps doesn't show. Ajour keeps the
   id with the draft review until the submit succeeds, so a retry, after a

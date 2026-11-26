@@ -350,6 +350,8 @@ pull requests automatically** is on, separately from **Auto sync to backlog**.
 | Checks                  | Build and Status policy evaluations.                                                                                                                           |
 | Approvals               | Each reviewer's vote, people and groups, except those who declined, with whether the reviewer is required.                                                     |
 | Mergeability            | The pull request's merge status.                                                                                                                               |
+| Clone addresses         | The repository's `remoteUrl` and `sshUrl` when the response has them, or else its HTTPS address under the organization and, on Azure DevOps Services, its SSH one. |
+| Head branch and fork    | `sourceRefName`, and `forkSource` for a pull request from a fork, with the fork's addresses.                                                                    |
 
 A sync never returns comment or review text to Ajour. Pull requests need the
 **Code (Read)** scope, and **Project and Team (Read)** to find your teams.

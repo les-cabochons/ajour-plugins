@@ -372,11 +372,31 @@ export async function replyToPullRequestThread(
   return { commentId: String(id) };
 }
 
-/** Resolves or unresolves a review thread, and answers the state GitHub holds then. */
+const THREAD_PARENT_QUERY = `query($id: ID!) {
+  node(id: $id) { ... on PullRequestReviewThread { pullRequest { number repository { nameWithOwner } } } }
+}`;
+
+/**
+ * Resolves or unresolves a review thread, and answers the state GitHub
+ * holds then. The mutation names the thread alone, so the thread's pull
+ * request is read first, and a thread of another one is refused: Ajour
+ * checks it too, this is the second check.
+ */
 export async function setPullRequestThreadResolved(
   client: GitHubClient,
   request: CodeHostResolveThreadRequest,
 ): Promise<CodeHostResolveThreadResult> {
+  const { node } = await client.query<{
+    node: { pullRequest?: { number: number; repository: { nameWithOwner: string } } } | null;
+  }>(THREAD_PARENT_QUERY, { id: request.threadId });
+  const parent = node?.pullRequest;
+  if (!parent) throw new Error("GitHub could not find the review thread.");
+  if (
+    parent.number !== request.number ||
+    parent.repository.nameWithOwner.toLowerCase() !== request.repository.toLowerCase()
+  ) {
+    throw new Error("This review thread belongs to another pull request.");
+  }
   const mutation = request.resolved ? "resolveReviewThread" : "unresolveReviewThread";
   const data = await client.query<Record<string, { thread: { isResolved: boolean } | null } | null>>(
     `mutation($id: ID!) { ${mutation}(input: { threadId: $id }) { thread { isResolved } } }`,

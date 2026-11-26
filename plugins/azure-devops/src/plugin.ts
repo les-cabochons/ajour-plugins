@@ -39,6 +39,7 @@ import {
 } from "./pull-requests.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
+import { readVersions } from "./pull-request-versions.ts";
 import {
   DEFAULT_PRIORITY_LEVEL_VALUES,
   PRIORITY_LEVEL_FIELD_IDS,
@@ -423,6 +424,12 @@ export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = a
   connection,
   request,
 ) => await readLinkedTickets(buildPullRequestConfig(connection), request);
+
+/** The pull request's iterations with their commits, for Deck's versions bar. */
+export const getPullRequestVersions: NonNullable<
+  PluginModule["getPullRequestVersions"]
+> = async (connection, request) =>
+  await readVersions(buildPullRequestConfig(connection), request);
 
 /** People to assign the item to, by uniqueName, for the settle dialog. */
 export const searchAssignees: NonNullable<

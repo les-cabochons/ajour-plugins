@@ -280,6 +280,7 @@ describe("the source entrypoint", () => {
       "getLinkedTickets",
       "getPullRequestContent",
       "getPullRequestConversation",
+      "getPullRequestVersions",
       "listSettleStates",
       "readDescription",
       "syncConnection",

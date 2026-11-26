@@ -374,6 +374,15 @@ Deck's review page shows a pull request's conversation and checks:
   Deck heads the pull request's summary with the first one's title. The read
   needs Work Items (Read): with a token that has only Code (Read), it fails,
   and Deck says the linked tickets couldn't be read.
+- `getPullRequestVersions` returns the pull request's iterations for Deck's
+  versions bar (les-cabochons/ajour#787), read with their commits
+  (`includeCommits=true`): each iteration keeps its number, its source
+  commit as the head, its common commit as the base, the push's date (or
+  the iteration's), whether it was a force push or a rebase, and its
+  commits oldest first, at most 250. The answer says versions are
+  iterations, so Deck names them so.
+- `syncPullRequests` names the branch the pull request merges into, without
+  `refs/heads/`.
 
 Ajour lets the user turn work items and pull requests on and off separately.
 `validateConnection` receives the capabilities that are on as its second

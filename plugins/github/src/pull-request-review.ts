@@ -182,7 +182,7 @@ type GitHubCheckContext =
   | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; url: string | null }
   | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null };
 
-interface Connection<T> {
+export interface Connection<T> {
   pageInfo: PageInfo;
   nodes: T[];
 }
@@ -204,20 +204,20 @@ const EVENT_TEXT: Record<string, string> = {
   ReopenedEvent: "reopened this pull request",
 };
 
-function time(value: string) {
+export function time(value: string) {
   return Date.parse(value);
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** The pull request's variables, its owner, name and number. */
-function variables(ref: CodeHostPullRequestRef) {
+export function variables(ref: CodeHostPullRequestRef) {
   const [owner, name] = splitRepository(ref.repository);
   return { owner, name, number: ref.number };
 }
 
 /** Every node of one connection, page by page, up to `max`. */
-async function readAll<T>(
+export async function readAll<T>(
   max: number,
   read: (after: string | null) => Promise<Connection<T> | null | undefined>,
 ): Promise<T[]> {
@@ -233,9 +233,9 @@ async function readAll<T>(
   return nodes.slice(0, max);
 }
 
-type PullRequestOf<T> = { repository: { pullRequest: T | null } | null };
+export type PullRequestOf<T> = { repository: { pullRequest: T | null } | null };
 
-function notFound(): never {
+export function notFound(): never {
   throw new Error("GitHub could not find the pull request.");
 }
 

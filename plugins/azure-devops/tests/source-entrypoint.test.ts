@@ -357,6 +357,7 @@ describe("the source entrypoint", () => {
       "getLinkedTickets",
       "getPullRequestContent",
       "getPullRequestConversation",
+      "getPullRequestVersions",
       "listItemComments",
       "listSettleStates",
       "postItemComment",

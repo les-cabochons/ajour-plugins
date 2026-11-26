@@ -6,6 +6,7 @@ import { fetchViewer, GitHubClient, syncPullRequests as syncGitHubPullRequests }
 import { listIssueSettleStates, syncIssues, writeIssueSettle } from "./issues.ts";
 import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.ts";
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
+import { readVersions } from "./pull-request-versions.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
@@ -63,6 +64,10 @@ export const getChecks: NonNullable<PluginModule["getChecks"]> = async (connecti
 /** The issues the pull request closes or is linked to, for the summary Deck shows above its guide. */
 export const getLinkedTickets: NonNullable<PluginModule["getLinkedTickets"]> = async (connection, request) =>
   await readLinkedTickets(new GitHubClient(connection.id), request);
+
+/** Each push with its commits, from the timeline, for Deck's versions bar. */
+export const getPullRequestVersions: NonNullable<PluginModule["getPullRequestVersions"]> = async (connection, request) =>
+  await readVersions(new GitHubClient(connection.id), request);
 
 /** Issues assigned to you, as backlog items. */
 export const syncConnection: NonNullable<PluginModule["syncConnection"]> = async (connection, workItems = []) =>

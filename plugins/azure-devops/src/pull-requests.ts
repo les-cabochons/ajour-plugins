@@ -656,10 +656,15 @@ export function toPullRequestFacts(
     viewerIsAuthor: sameId(pullRequest.createdBy.id, context.viewer.id),
     headSha:
       pullRequest.lastMergeSourceCommit?.commitId ?? lastIteration?.sourceRefCommit?.commitId ?? "unknown",
-    ...(pullRequest.sourceRefName?.startsWith("refs/heads/")
-      ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length) }
+    // A fork it can't name: its branch isn't the repository's branch of that
+    // name, and Deck can neither stack on it nor fetch it (les-cabochons/ajour#788).
+    ...(pullRequest.sourceRefName?.startsWith("refs/heads/") && (!pullRequest.forkSource || pullRequest.forkSource.repository)
+      ? { headRef: pullRequest.sourceRefName.slice("refs/heads/".length, "refs/heads/".length + 400) }
       : {}),
     ...baseRefOf(pullRequest),
+    // Where the latest iteration met the target: Deck compares it with the
+    // head of the layer below in a stack (les-cabochons/ajour#788).
+    ...(lastIteration?.commonRefCommit?.commitId ? { baseSha: lastIteration.commonRefCommit.commitId } : {}),
     repositoryIdentity: toRepositoryIdentity(pullRequest, context.organizationUrl),
     lastPushedAt,
     ...(pusher?.id ? { lastPushActor: toUser(pusher, context.viewer) } : {}),

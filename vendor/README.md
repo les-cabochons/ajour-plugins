@@ -64,7 +64,11 @@ Packed again from the `feat/deck-author-actions` branch of
 `les-cabochons/ajour` (les-cabochons/ajour#786) at `7551e8d3`, its merge of
 origin/main after #917, for the author's actions, `updatePullRequest` and
 `mergePullRequest`, which the SDK has declared since #407: that pack is byte
-for byte the one above, and the lockfile doesn't change.
+for byte the one above, and the lockfile doesn't change. It was then packed
+from the `feat/deck-stacks` branch of `les-cabochons/ajour`
+(les-cabochons/ajour#788) at `e2cf6e91`, its merge of origin/main after #917,
+adding the optional `baseSha` on pull request facts, and again at `8ee26b6b`,
+its merge of origin/main after #948, which is byte for byte that pack.
 
 The SDK is not on npm yet. Plugins install it as a
 `file:../../vendor/ajour-plugin-sdk-<version>.tgz` dev dependency.

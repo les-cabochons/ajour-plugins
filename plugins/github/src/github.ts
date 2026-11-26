@@ -225,6 +225,8 @@ interface GitHubPullRequest {
   headRefName: string;
   /** Absent in answers from before it was asked. */
   baseRefName?: string;
+  /** The base branch's commit the pull request is based on. Absent in answers from before it was asked. */
+  baseRefOid?: string;
   /** Null when the fork the pull request comes from was deleted. */
   headRepository: GitHubRepositoryAddresses | null;
   isCrossRepository?: boolean;
@@ -276,7 +278,7 @@ interface GitHubPullRequest {
 const ACTOR_FIELDS = `__typename login avatarUrl ... on User { name }`;
 
 const PULL_REQUEST_FIELDS = `
-  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName mergeable isCrossRepository
+  id number url title isDraft state createdAt updatedAt closedAt headRefOid headRefName baseRefName baseRefOid mergeable isCrossRepository
   headRepository { nameWithOwner url sshUrl }
   repository { nameWithOwner url sshUrl }
   author { ${ACTOR_FIELDS} }
@@ -540,6 +542,10 @@ export function toPullRequestFacts(
   ].sort((left, right) => left.createdAt - right.createdAt);
 
   const repositoryIdentity = toRepositoryIdentity(pullRequest);
+  // A fork Ajour can't name, such as a deleted one: its branch isn't the
+  // repository's branch of that name, and Deck can neither stack on it nor
+  // fetch it (les-cabochons/ajour#788).
+  const headKnown = !pullRequest.isCrossRepository || !!repositoryIdentity?.source;
   const lastPush = pullRequest.timelineItems.nodes[0];
   const lastPushedAt = lastPush
     ? time(lastPush.__typename === "PullRequestCommit" ? lastPush.commit.committedDate : lastPush.createdAt)
@@ -560,7 +566,9 @@ export function toPullRequestFacts(
     viewerIsAuthor: author.login.toLowerCase() === viewerLogin,
     headSha: pullRequest.headRefOid,
     ...(pullRequest.baseRefName ? { baseRef: pullRequest.baseRefName.slice(0, 400) } : {}),
-    ...(pullRequest.headRefName ? { headRef: pullRequest.headRefName } : {}),
+    ...(pullRequest.headRefName && headKnown ? { headRef: pullRequest.headRefName.slice(0, 400) } : {}),
+    // Deck compares it with the head of the layer below in a stack (les-cabochons/ajour#788).
+    ...(pullRequest.baseRefOid ? { baseSha: pullRequest.baseRefOid } : {}),
     ...(repositoryIdentity ? { repositoryIdentity } : {}),
     lastPushedAt,
     reviewRequests,

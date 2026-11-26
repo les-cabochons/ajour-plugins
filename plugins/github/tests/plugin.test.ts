@@ -26,6 +26,7 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     headRefOid: "abc123",
     headRefName: "change/rate-limits",
     baseRefName: "main",
+    baseRefOid: "base123",
     headRepository: {
       nameWithOwner: "alice/api",
       url: "https://github.com/alice/api",
@@ -371,6 +372,7 @@ describe("GitHub plugin", () => {
       headSha: "abc123",
       baseRef: "main",
       headRef: "change/rate-limits",
+      baseSha: "base123",
       repositoryIdentity: {
         cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],
         source: {
@@ -593,6 +595,20 @@ describe("where a pull request's repository is cloned from", () => {
     expect(await identityOf({ headRepository: null })).toEqual({
       cloneUrls: ["https://github.com/acme/api.git", "git@github.com:acme/api.git"],
     });
+  });
+
+  it("names no head branch once a fork is deleted, so it never passes for the repository's own", async () => {
+    stubGitHub((call) =>
+      call.query.includes("search(")
+        ? searchResult([pullRequest({ headRepository: null }), pullRequest({ number: 2, isCrossRepository: false })])
+        : call.query.includes("organizations")
+          ? { viewer: { organizations: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } }
+          : { viewer },
+    );
+    const [gone, own] = (await syncPullRequests(connection, { tracked: [] })).pullRequests;
+    expect(gone!.headRef).toBeUndefined();
+    expect(gone!.baseRef).toBe("main");
+    expect(own!.headRef).toBe("change/rate-limits");
   });
 
   it("keeps a GitHub Enterprise host, and says nothing without an address", async () => {

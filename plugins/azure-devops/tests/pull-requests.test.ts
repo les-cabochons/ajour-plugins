@@ -5,6 +5,7 @@ import {
   checkState,
   mentions,
   PullRequestSearch,
+  toPullRequestFacts,
   toRepositoryIdentity,
   type AzurePullRequest,
 } from "../src/pull-requests.ts";
@@ -41,6 +42,7 @@ function pullRequest(id: number, overrides: Record<string, unknown> = {}) {
     mergeStatus: "succeeded",
     lastMergeSourceCommit: { commitId: `sha-${id}` },
     targetRefName: "refs/heads/release/2026",
+    sourceRefName: "refs/heads/feature/login",
     repository,
     ...overrides,
   };
@@ -269,7 +271,13 @@ describe("syncPullRequests", () => {
       },
       "pullRequests/7/iterations": {
         value: [
-          { id: 2, createdDate: "2026-10-01T18:00:00Z", author: alice, sourceRefCommit: { commitId: "sha-7" } },
+          {
+            id: 2,
+            createdDate: "2026-10-01T18:00:00Z",
+            author: alice,
+            sourceRefCommit: { commitId: "sha-7" },
+            commonRefCommit: { commitId: "base-7" },
+          },
           { id: 1, createdDate: "2026-10-01T10:00:00Z", author: alice, sourceRefCommit: { commitId: "sha-0" } },
         ],
       },
@@ -302,6 +310,7 @@ describe("syncPullRequests", () => {
       headSha: "sha-7",
       baseRef: "release/2026",
       headRef: "feature/login",
+      baseSha: "base-7",
       repositoryIdentity: {
         cloneUrls: [
           `${ORG}/Fabrikam%20Web/_git/api`,
@@ -579,5 +588,20 @@ describe("where a pull request's repository is cloned from", () => {
     expect(
       toRepositoryIdentity(azurePullRequest({ forkSource: { repository } }), ORG).source,
     ).toBeUndefined();
+  });
+
+  it("names no head branch for a fork it can't name, so it never passes for the repository's own", () => {
+    const factsOf = (overrides: Partial<AzurePullRequest>) =>
+      toPullRequestFacts(
+        azurePullRequest(overrides),
+        { threads: [], iterations: [] },
+        {
+          organizationUrl: ORG,
+          viewer: { id: "viewer", user: { login: "viewer@contoso.com", isBot: false } },
+          viewerTeams: new Set(),
+        },
+      );
+    expect(factsOf({ forkSource: { name: "refs/heads/feature/login" } }).headRef).toBeUndefined();
+    expect(factsOf({}).headRef).toBe("feature/login");
   });
 });

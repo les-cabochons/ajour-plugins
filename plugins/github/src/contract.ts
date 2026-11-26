@@ -112,6 +112,8 @@ export interface CodeHostPullRequestFacts extends CodeHostPullRequestRef {
   baseRef?: string;
   /** The branch the pull request comes from. */
   headRef?: string;
+  /** The commit of `baseRef` the head is based on, for Deck's stale-base check. */
+  baseSha?: string;
   /** Where the repository is cloned from, and the fork it comes from. */
   repositoryIdentity?: CodeHostRepositoryIdentity;
   lastPushedAt: number;

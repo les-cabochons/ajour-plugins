@@ -118,10 +118,13 @@
           { "method": "PATCH", "path": "/repos/*/*/issues/*" },
           { "method": "POST", "path": "/repos/*/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*" },
+          { "method": "PATCH", "path": "/repos/*/*/pulls/*", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/comments", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
+          { "method": "PUT", "path": "/repos/*/*/pulls/*/merge", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/reviews", "access": "reviewPullRequests" },
+          { "method": "GET", "path": "/repos/*/*/rules/branches/**" },
           { "method": "GET", "path": "/repositories/*/activity" },
           { "method": "GET", "path": "/repositories/*/compare/*" },
           { "method": "GET", "path": "/repositories/*/contents/**" },
@@ -129,10 +132,13 @@
           { "method": "PATCH", "path": "/repositories/*/issues/*" },
           { "method": "POST", "path": "/repositories/*/issues/*/comments", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*" },
+          { "method": "PATCH", "path": "/repositories/*/pulls/*", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repositories/*/pulls/*/comments", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repositories/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*/files" },
-          { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" }
+          { "method": "PUT", "path": "/repositories/*/pulls/*/merge", "access": "reviewPullRequests" },
+          { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" },
+          { "method": "GET", "path": "/repositories/*/rules/branches/**" }
         ]
       },
       {
@@ -152,7 +158,7 @@
       "id": "reviewPullRequests",
       "label": "Review pull requests",
       "description": "Comment on pull requests, submit your reviews, and make Ajour's other pull request changes: replies, resolving, viewed files, titles and merges.",
-      "tokenScope": "Pull requests (Read and write)",
+      "tokenScope": "Pull requests (Read and write), and Contents (Read and write) to merge",
       "always": false,
       "operations": [
         "submitReview",

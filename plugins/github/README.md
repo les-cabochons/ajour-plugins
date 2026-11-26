@@ -65,7 +65,14 @@ its checks:
   reviews, commits, force pushes, renames, review requests, draft and ready
   changes, merges, closes and reopens, after an "opened" event), the files you
   marked viewed and the merge methods the repository allows. It keeps Ajour's
-  limits: 2,000 threads, 5,000 timeline events and 3,000 files.
+  limits: 2,000 threads, 5,000 timeline events and 3,000 files. Of the
+  repository's merge methods, it offers only those every pull request rule
+  on the target branch allows (`GET
+  /repos/{owner}/{repo}/rules/branches/{branch}`, at most 500 rules), and no
+  merge commit when a rule requires a linear history, since GitHub refuses
+  the others. When the rules can't be read, without access or
+  on a GitHub Enterprise Server older than rulesets, it offers the
+  repository's methods, and GitHub's refusal of one says why.
 - `getChecks` reads the check runs and commit statuses on the head, at most
   500, each with its name, its state (pending, success, failure or skipped:
   cancelled, timed out and action required count as failures; neutral,
@@ -159,12 +166,34 @@ The rest of a review round, from 0.9.0:
   is the one you read in Deck, and refuses once new commits arrived.
   Clearing it needs no check.
 
+### Author actions, from Deck
+
+On a pull request you opened, Deck edits the title, converts it to a draft or
+marks it ready, and merges it after a confirmation, each at once:
+
+- `updatePullRequest` edits the title (`PATCH
+  /repos/{owner}/{repo}/pulls/{number}`) and changes the draft state through
+  GraphQL, `convertPullRequestToDraft` or `markPullRequestReadyForReview`,
+  which GitHub's REST API can't. It answers with the title and draft state
+  GitHub then holds, and sends nothing for a draft state already set.
+- `mergePullRequest` merges with the method you chose, among those the
+  repository allows (`PUT /repos/{owner}/{repo}/pulls/{number}/merge`), with
+  your commit title and message, none for a rebase. It merges at most once,
+  and only at the head you read: it first reads the pull request, and one
+  already merged at that head is the answer to a retry whose first answer was
+  lost. It refuses a pull request that moved on, is closed or is a draft, and
+  sends the head as `sha`, so GitHub refuses the merge if a push landed since.
+  When the merge fails, it reads the pull request again, since GitHub may have
+  merged before its answer was lost. A title and a draft state sent together
+  are two calls: when the second fails, the title is already changed.
+
 These endpoints sit behind the connection's **Review pull requests** access
-choice, which also covers resolving, viewed files, title and draft changes
-and merges of later versions. It starts off, and an update that
-adds it asks for consent once. While it's off, Ajour refuses the operations
-before the plugin runs, and its broker refuses the endpoints. GitHub's GraphQL
-endpoint is allowed as a whole, so the token's own permissions stay the real
+choice. It starts off, and an update that adds it asks for consent once.
+While it's off, Ajour refuses the operations before the plugin runs, and its
+broker refuses the endpoints. The draft state goes through GraphQL, which no
+access choice can hold back, so the plugin also refuses the author's actions
+itself while the choice is off, as a second gate. GitHub's GraphQL endpoint is
+allowed as a whole, so the token's own permissions stay the real
 limit: give it write access to pull requests only if you review from Ajour.
 
 ## Issues
@@ -270,8 +299,8 @@ open **Settings → Plugins**, choose **Install from file**, and select
 The connection needs a personal access token. A fine-grained token needs the
 Issues permission set to Read and write for issues, read access to pull
 requests (read and write to review them from Deck) and read access to contents
-on the repositories you want,
-plus organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
+(read and write to merge from Deck) on the repositories you want, plus
+organization members read access for team review requests. A classic token needs `repo` and `read:org`. If team membership cannot
 be read, sync reports the missing access. Turn off **Include team review
 requests** to keep authored, direct-requested and previously reviewed PRs
 without organization access. The plugin does not guess membership. For GitHub
@@ -306,7 +335,10 @@ on the GitHub URL itself, and the base path of the URL is ignored.
 | `rest` | GET | `/repos/*/*/pulls/*/files`, `/repositories/*/pulls/*/files` | Listing a pull request's changed files, for Deck |
 | `rest` | GET | `/repos/*/*/compare/*`, `/repositories/*/compare/*` | Finding where a pull request's head branched off, for Deck |
 | `rest` | GET | `/repos/*/*/contents/**`, `/repositories/*/contents/**` | Reading a changed file at the base and the head, for Deck |
+| `rest` | GET | `/repos/*/*/rules/branches/**`, `/repositories/*/rules/branches/**` | Reading the merge methods a pull request's target branch allows, for Deck |
 | `rest` | PATCH | `/repos/*/*/issues/*`, `/repositories/*/issues/*` | Writing an issue's description |
+| `rest` | PATCH | `/repos/*/*/pulls/*`, `/repositories/*/pulls/*` | Editing a pull request's title, from Deck (Review pull requests) |
+| `rest` | PUT | `/repos/*/*/pulls/*/merge`, `/repositories/*/pulls/*/merge` | Merging a pull request, from Deck (Review pull requests) |
 
 The `/repositories/*` paths are for a renamed or transferred repository: GitHub
 redirects its old address to one of that form, and the plugin follows the

@@ -1,3 +1,4 @@
+import { allowedMergeMethods } from "./merge-methods.ts";
 import type { PullRequestConfig } from "./pull-request-config.ts";
 import {
   API_VERSION,
@@ -151,6 +152,8 @@ export async function readConversation(
   const client = new AzureReposClient(config.connectionId, config.savedOrganizationUrl);
   const [viewer, pullRequest] = await Promise.all([fetchViewer(client), findPullRequest(client, ref)]);
   const base = pullRequestPath(pullRequest);
+  // The methods the target branch's merge policies allow, read alongside.
+  const mergeMethodsRead = allowedMergeMethods(client, pullRequest);
   const iterations = (
     await client.get<{ value: AzureIteration[] }>(`${base}/iterations`, { "api-version": API_VERSION })
   ).value.sort((left, right) => left.id - right.id);
@@ -162,6 +165,8 @@ export async function readConversation(
       ...(latest !== undefined ? { $iteration: latest, $baseIteration: 0 } : {}),
     })
   ).value.filter((thread) => !thread.isDeleted);
+
+  const mergeMethods = await mergeMethodsRead;
 
   const codeThreads = threads.filter((thread) => thread.threadContext?.filePath);
   const otherThreads = threads.filter((thread) => !thread.threadContext?.filePath);
@@ -205,8 +210,7 @@ export async function readConversation(
     timeline: timeline.slice(0, MAX_TIMELINE),
     threads: codeThreads.flatMap((thread) => toThread(thread, viewer)).slice(0, MAX_THREADS),
     viewedPaths: [],
-    // A branch policy may limit them; Azure DevOps refuses the merge then.
-    mergeMethods: ["merge", "squash", "rebase"],
+    mergeMethods,
   };
 }
 

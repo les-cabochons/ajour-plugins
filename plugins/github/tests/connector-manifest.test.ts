@@ -132,10 +132,13 @@ describe("network declaration", () => {
       "PATCH /repos/*/*/issues/*",
       "POST /repos/*/*/issues/*/comments",
       "GET /repos/*/*/pulls/*",
+      "PATCH /repos/*/*/pulls/*",
       "POST /repos/*/*/pulls/*/comments",
       "POST /repos/*/*/pulls/*/comments/*/replies",
       "GET /repos/*/*/pulls/*/files",
+      "PUT /repos/*/*/pulls/*/merge",
       "POST /repos/*/*/pulls/*/reviews",
+      "GET /repos/*/*/rules/branches/**",
       "GET /repositories/*/activity",
       "GET /repositories/*/compare/*",
       "GET /repositories/*/contents/**",
@@ -143,24 +146,31 @@ describe("network declaration", () => {
       "PATCH /repositories/*/issues/*",
       "POST /repositories/*/issues/*/comments",
       "GET /repositories/*/pulls/*",
+      "PATCH /repositories/*/pulls/*",
       "POST /repositories/*/pulls/*/comments",
       "POST /repositories/*/pulls/*/comments/*/replies",
       "GET /repositories/*/pulls/*/files",
+      "PUT /repositories/*/pulls/*/merge",
       "POST /repositories/*/pulls/*/reviews",
+      "GET /repositories/*/rules/branches/**",
     ]);
-    // The writes of Deck's draft review, and only they, wait for Review pull requests.
+    // The writes of Deck's draft review and the author's actions, and only they, wait for Review pull requests.
     expect(
       rest.endpoints
         .filter((endpoint: { access?: string }) => endpoint.access)
         .map((endpoint: { method: string; path: string; access: string }) => `${endpoint.access}: ${endpoint.method} ${endpoint.path}`),
     ).toEqual([
       "reviewPullRequests: POST /repos/*/*/issues/*/comments",
+      "reviewPullRequests: PATCH /repos/*/*/pulls/*",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments",
       "reviewPullRequests: POST /repos/*/*/pulls/*/comments/*/replies",
+      "reviewPullRequests: PUT /repos/*/*/pulls/*/merge",
       "reviewPullRequests: POST /repos/*/*/pulls/*/reviews",
       "reviewPullRequests: POST /repositories/*/issues/*/comments",
+      "reviewPullRequests: PATCH /repositories/*/pulls/*",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments",
       "reviewPullRequests: POST /repositories/*/pulls/*/comments/*/replies",
+      "reviewPullRequests: PUT /repositories/*/pulls/*/merge",
       "reviewPullRequests: POST /repositories/*/pulls/*/reviews",
     ]);
   });
@@ -193,7 +203,7 @@ describe("network declaration", () => {
         label: "Review pull requests",
         description:
           "Comment on pull requests, submit your reviews, and make Ajour's other pull request changes: replies, resolving, viewed files, titles and merges.",
-        tokenScope: "Pull requests (Read and write)",
+        tokenScope: "Pull requests (Read and write), and Contents (Read and write) to merge",
         always: false,
         operations: [
           "submitReview",

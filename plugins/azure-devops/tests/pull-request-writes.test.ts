@@ -446,14 +446,14 @@ describe("submitReview", () => {
     expect(sent).toEqual([]);
   });
 
-  it("sends no approval when a push lands while its comments post, and says the comments went", async () => {
+  it("sends no approval when a push lands while its comments post, and answers that the vote was withheld", async () => {
     const sent = azure({ pushAfterReads: 1 });
 
-    await expect(
-      submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", body: "Ship it.", comments }),
-    ).rejects.toThrow(
-      "New commits arrived while your review was sending: your comments were posted, your vote wasn't. Review the new commits.",
-    );
+    // The threads are on the pull request: no throw, so Ajour takes them
+    // out of the draft and never posts them again.
+    expect(
+      await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", body: "Ship it.", comments }),
+    ).toEqual({ reviewId: `7-${VIEWER}`, voteWithheld: { reason: "new_commits" } });
     expect(sent.map((request) => request.method)).toEqual(["POST", "POST", "POST"]);
   });
 
@@ -487,9 +487,10 @@ describe("submitReview", () => {
   it("sends no approval without comments when a push lands before the vote", async () => {
     const sent = azure({ pushAfterReads: 1 });
 
-    await expect(
-      submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", comments: [] }),
-    ).rejects.toThrow("New commits arrived while your review was sending, so your vote wasn't. Review the new commits.");
+    expect(await submitReview!(connection(), { ...ref, headSha: "abc123", verdict: "approve", comments: [] })).toEqual({
+      reviewId: `7-${VIEWER}`,
+      voteWithheld: { reason: "new_commits" },
+    });
     expect(sent).toEqual([]);
   });
 

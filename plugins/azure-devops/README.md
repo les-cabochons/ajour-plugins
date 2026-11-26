@@ -430,9 +430,11 @@ requests**:
   and so does an approval of an iteration that isn't the latest, since a vote
   counts for code you didn't read. Nothing is posted then. An approval reads
   the latest iteration again right before its vote: when a push landed while
-  the threads posted, it sends no vote and fails with "New commits arrived
-  while your review was sending: your comments were posted, your vote
-  wasn't. Review the new commits." Azure DevOps has no vote bound to a head,
+  the threads posted, it sends no vote and answers that the vote was
+  withheld for new commits, without failing: the threads are on the pull
+  request, so Ajour takes them out of your draft, tells you your vote wasn't
+  sent, and a later approval sends the vote alone, with no thread twice.
+  Azure DevOps has no vote bound to a head,
   so a push in the moment between that read and the vote, one request long,
   still gets the vote.
 - Each thread of a submit carries Ajour's submission id in a thread property,

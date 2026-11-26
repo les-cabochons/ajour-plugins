@@ -179,7 +179,11 @@ export async function postPullRequestComment(
  * pull request, code the user didn't read included.
  *
  * The latest iteration is read again right before an approval's vote, and
- * a push that landed while the threads posted sends no vote. Azure DevOps
+ * a push that landed while the threads posted sends no vote: the answer
+ * says the vote was withheld, not a failure, since the threads are on the
+ * pull request and a retry under a new submission would post them again.
+ * Ajour takes them out of the draft and asks the user to vote again once
+ * they've read the new commits. Azure DevOps
  * has no vote bound to a head, so a push in the moment between that read
  * and the vote still gets it. That gap is one request long, well under a
  * second; before, it lasted while every thread posted.
@@ -219,12 +223,10 @@ export async function submitPullRequestReview(
       newThread(post.body, post.anchor, iteration.id, request.submissionId),
     );
   }
+  // Azure DevOps keeps no review: the pull request and its reviewer name it.
+  const reviewId = `${pullRequest.pullRequestId}-${viewer.id}`;
   if (request.verdict === "approve" && !(await headIsLatest(client, pullRequest, request.headSha))) {
-    throw new Error(
-      posts.length
-        ? "New commits arrived while your review was sending: your comments were posted, your vote wasn't. Review the new commits."
-        : "New commits arrived while your review was sending, so your vote wasn't. Review the new commits.",
-    );
+    return { reviewId, voteWithheld: { reason: "new_commits" } };
   }
   const vote = VOTES[request.verdict];
   if (vote !== undefined) {
@@ -235,8 +237,7 @@ export async function submitPullRequestReview(
       { vote },
     );
   }
-  // Azure DevOps keeps no review: the pull request and its reviewer name it.
-  return { reviewId: `${pullRequest.pullRequestId}-${viewer.id}` };
+  return { reviewId };
 }
 
 /** The threads the user posted for `submissionId`. */

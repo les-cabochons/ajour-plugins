@@ -8,7 +8,13 @@ import { readFileAtCommit, readPullRequestFiles } from "./pull-request-content.t
 import { readChecks, readConversation, readLinkedTickets } from "./pull-request-review.ts";
 import { readVersions } from "./pull-request-versions.ts";
 import { mergeGitHubPullRequest, updateGitHubPullRequest } from "./pull-request-author.ts";
-import { postPullRequestComment, submitPullRequestReview } from "./pull-request-writes.ts";
+import {
+  postPullRequestComment,
+  replyToPullRequestThread,
+  setPullRequestFileViewed,
+  setPullRequestThreadResolved,
+  submitPullRequestReview,
+} from "./pull-request-writes.ts";
 
 /*
  * The plugin's entrypoint, loaded as an ES module in Ajour's sandboxed worker
@@ -97,6 +103,17 @@ export const mergePullRequest: NonNullable<PluginModule["mergePullRequest"]> = a
   requireReviewAccess(connection);
   return await mergeGitHubPullRequest(new GitHubClient(connection.id), request);
 };
+/** A reply at the end of a review thread, sent at once from Deck. */
+export const replyToThread: NonNullable<PluginModule["replyToThread"]> = async (connection, request) =>
+  await replyToPullRequestThread(new GitHubClient(connection.id), request);
+
+/** Resolves or unresolves a review thread from Deck. */
+export const setThreadResolved: NonNullable<PluginModule["setThreadResolved"]> = async (connection, request) =>
+  await setPullRequestThreadResolved(new GitHubClient(connection.id), request);
+
+/** Marks a file viewed, or not, on GitHub, as the user marks it in Deck. */
+export const setFileViewed: NonNullable<PluginModule["setFileViewed"]> = async (connection, request) =>
+  await setPullRequestFileViewed(new GitHubClient(connection.id), request);
 
 /** Each push with its commits, from the timeline, for Deck's versions bar. */
 export const getPullRequestVersions: NonNullable<PluginModule["getPullRequestVersions"]> = async (connection, request) =>

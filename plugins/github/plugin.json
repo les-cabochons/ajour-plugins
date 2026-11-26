@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "apiVersion": 4,
   "displayName": "GitHub",
   "description": "Brings your GitHub issues into the backlog, and the pull requests you wrote or were asked to review.",
@@ -120,6 +120,7 @@
           { "method": "GET", "path": "/repos/*/*/pulls/*" },
           { "method": "PATCH", "path": "/repos/*/*/pulls/*", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/comments", "access": "reviewPullRequests" },
+          { "method": "POST", "path": "/repos/*/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repos/*/*/pulls/*/files" },
           { "method": "PUT", "path": "/repos/*/*/pulls/*/merge", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repos/*/*/pulls/*/reviews", "access": "reviewPullRequests" },
@@ -132,6 +133,7 @@
           { "method": "GET", "path": "/repositories/*/pulls/*" },
           { "method": "PATCH", "path": "/repositories/*/pulls/*", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repositories/*/pulls/*/comments", "access": "reviewPullRequests" },
+          { "method": "POST", "path": "/repositories/*/pulls/*/comments/*/replies", "access": "reviewPullRequests" },
           { "method": "GET", "path": "/repositories/*/pulls/*/files" },
           { "method": "PUT", "path": "/repositories/*/pulls/*/merge", "access": "reviewPullRequests" },
           { "method": "POST", "path": "/repositories/*/pulls/*/reviews", "access": "reviewPullRequests" }

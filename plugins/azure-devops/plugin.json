@@ -1,6 +1,6 @@
 {
   "id": "azure_devops",
-  "version": "2.10.0",
+  "version": "2.12.0",
   "apiVersion": 4,
   "displayName": "Azure DevOps",
   "description": "Sync Azure DevOps work items into backlog, and bring in the pull requests you wrote or were asked to review.",
@@ -380,6 +380,16 @@
         "access": "reviewPullRequests"
       },
       {
+        "method": "POST",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/threads/*/comments",
+        "access": "reviewPullRequests"
+      },
+      {
+        "method": "PATCH",
+        "path": "/*/_apis/git/repositories/*/pullRequests/*/threads/*",
+        "access": "reviewPullRequests"
+      },
+      {
         "method": "GET",
         "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
         "access": "pullRequests"
@@ -592,6 +602,16 @@
             "access": "reviewPullRequests"
           },
           {
+            "method": "POST",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/threads/*/comments",
+            "access": "reviewPullRequests"
+          },
+          {
+            "method": "PATCH",
+            "path": "/*/_apis/git/repositories/*/pullRequests/*/threads/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/_apis/git/repositories/*/pullRequests/*/workitems",
             "access": "pullRequests"
@@ -751,6 +771,16 @@
             "access": "reviewPullRequests"
           },
           {
+            "method": "POST",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/threads/*/comments",
+            "access": "reviewPullRequests"
+          },
+          {
+            "method": "PATCH",
+            "path": "/*/*/_apis/git/repositories/*/pullRequests/*/threads/*",
+            "access": "reviewPullRequests"
+          },
+          {
             "method": "GET",
             "path": "/*/*/_apis/git/repositories/*/pullRequests/*/workitems",
             "access": "pullRequests"
@@ -861,7 +891,6 @@
         "postComment",
         "replyToThread",
         "setThreadResolved",
-        "setFileViewed",
         "updatePullRequest",
         "mergePullRequest"
       ]

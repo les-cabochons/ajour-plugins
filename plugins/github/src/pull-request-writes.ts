@@ -5,6 +5,11 @@ import type {
   CodeHostPostCommentRequest,
   CodeHostPostCommentResult,
   CodeHostPullRequestRef,
+  CodeHostReplyRequest,
+  CodeHostResolveThreadRequest,
+  CodeHostResolveThreadResult,
+  CodeHostSetFileViewedRequest,
+  CodeHostSetFileViewedResult,
   CodeHostSubmitReviewRequest,
   CodeHostSubmitReviewResult,
 } from "./contract.ts";
@@ -26,6 +31,11 @@ import type {
  * with the mark edited out, so the answer is uncertain, and Ajour asks the
  * user before posting again; so is a look that runs out of pages first.
  * Ajour runs the tries of one submission one at a time.
+ *
+ * The rest of a review round (les-cabochons/ajour#785) writes here too: a
+ * reply, marked and found again the same way, to a thread's first comment
+ * through REST, and through GraphQL, which has no REST form, a thread
+ * resolved or unresolved and a file marked viewed or not.
  */
 
 const EVENTS: Record<CodeHostSubmitReviewRequest["verdict"], string> = {
@@ -303,4 +313,106 @@ export async function submitPullRequestReview(
     },
   });
   return { reviewId: String(id) };
+}
+
+const THREAD_QUERY = `query($id: ID!, $before: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      first: comments(first: 1) { nodes { databaseId } }
+      comments(last: 100, before: $before) {
+        pageInfo { hasPreviousPage startCursor }
+        nodes { databaseId viewerDidAuthor body createdAt }
+      }
+    }
+  }
+}`;
+
+interface ThreadNode {
+  first: { nodes: ({ databaseId: number | null } | null)[] };
+  comments: Page<CommentNode>;
+}
+
+async function readThread(client: GitHubClient, threadId: string, before: string | undefined) {
+  const data = await client.query<{ node: Partial<ThreadNode> | null }>(THREAD_QUERY, {
+    id: threadId,
+    ...(before ? { before } : {}),
+  });
+  const thread = data.node;
+  return thread?.first && thread.comments ? (thread as ThreadNode) : undefined;
+}
+
+/**
+ * A reply at the end of a review thread, to its first comment, as GitHub's
+ * own Reply does. A retry of a submission first reads the thread's
+ * comments, newest first, for the user's that carries its mark.
+ */
+export async function replyToPullRequestThread(
+  client: GitHubClient,
+  request: CodeHostReplyRequest,
+): Promise<CodeHostPostCommentResult> {
+  const { submissionId, firstTriedAt } = request;
+  checkSubmissionId(submissionId);
+  const thread = await readThread(client, request.threadId, undefined);
+  const first = thread?.first.nodes[0]?.databaseId;
+  if (!thread || first == null) throw new Error("GitHub could not find the review thread.");
+  if (submissionId && firstTriedAt !== undefined) {
+    // The newest page came with the thread; older ones are read as needed.
+    const earlier = await lookBack(
+      async (before) => (before ? (await readThread(client, request.threadId, before))?.comments : thread.comments),
+      firstTriedAt,
+      judgeConversationComment(submissionId),
+    );
+    if (earlier === "uncertain") return { uncertain: true };
+    if (earlier) return { commentId: String(earlier.found) };
+  }
+  const { id } = await client.rest<{ id: number }>(
+    `${pullsPath(request.repository, request.number)}/comments/${first}/replies`,
+    { method: "POST", body: { body: marked(request.body, submissionId) } },
+  );
+  return { commentId: String(id) };
+}
+
+/** Resolves or unresolves a review thread, and answers the state GitHub holds then. */
+export async function setPullRequestThreadResolved(
+  client: GitHubClient,
+  request: CodeHostResolveThreadRequest,
+): Promise<CodeHostResolveThreadResult> {
+  const mutation = request.resolved ? "resolveReviewThread" : "unresolveReviewThread";
+  const data = await client.query<Record<string, { thread: { isResolved: boolean } | null } | null>>(
+    `mutation($id: ID!) { ${mutation}(input: { threadId: $id }) { thread { isResolved } } }`,
+    { id: request.threadId },
+  );
+  const thread = data[mutation]?.thread;
+  if (!thread) throw new Error("GitHub could not find the review thread.");
+  return { resolved: thread.isResolved };
+}
+
+const PULL_REQUEST_HEAD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { id headRefOid } }
+}`;
+
+/**
+ * Marks a file viewed, or not, as GitHub's Viewed box does. GitHub keeps the
+ * mark for the pull request's head, so a file is marked viewed only while
+ * the head is the one the user read; unmarking needs no check.
+ */
+export async function setPullRequestFileViewed(
+  client: GitHubClient,
+  request: CodeHostSetFileViewedRequest,
+): Promise<CodeHostSetFileViewedResult> {
+  const [owner, name] = splitRepository(request.repository);
+  const data = await client.query<{
+    repository: { pullRequest: { id: string; headRefOid: string } | null } | null;
+  }>(PULL_REQUEST_HEAD_QUERY, { owner, name, number: request.number });
+  const pullRequest = data.repository?.pullRequest;
+  if (!pullRequest) throw new Error("GitHub could not find the pull request.");
+  if (request.viewed && pullRequest.headRefOid.toLowerCase() !== request.headSha.toLowerCase()) {
+    throw new Error("The pull request has new commits since you read it. Refresh to mark its latest changes viewed.");
+  }
+  const mutation = request.viewed ? "markFileAsViewed" : "unmarkFileAsViewed";
+  await client.query(
+    `mutation($id: ID!, $path: String!) { ${mutation}(input: { pullRequestId: $id, path: $path }) { pullRequest { id } } }`,
+    { id: pullRequest.id, path: request.path },
+  );
+  return { viewed: request.viewed };
 }

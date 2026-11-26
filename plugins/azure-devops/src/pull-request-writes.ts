@@ -1,9 +1,10 @@
 import type { PullRequestConfig } from "./pull-request-config.ts";
-import { findPullRequest, pullRequestPath } from "./pull-request-review.ts";
+import { findPullRequest, pullRequestPath, RESOLVED } from "./pull-request-review.ts";
 import {
   API_VERSION,
   AzureReposClient,
   fetchViewer,
+  time,
   type AzureIteration,
   type AzurePullRequest,
   type AzureThread,
@@ -12,6 +13,9 @@ import type {
   CodeHostLineAnchor,
   CodeHostPostCommentRequest,
   CodeHostPostCommentResult,
+  CodeHostReplyRequest,
+  CodeHostResolveThreadRequest,
+  CodeHostResolveThreadResult,
   CodeHostSubmitReviewRequest,
   CodeHostSubmitReviewResult,
 } from "./contract.ts";
@@ -27,6 +31,11 @@ import type {
  * manifest puts these endpoints behind the "Review pull requests" access
  * choice, Code (Read & write), and Ajour refuses the operations while it's
  * off.
+ *
+ * The rest of a review round (les-cabochons/ajour#785) adds a reply at the
+ * end of a thread and a thread resolved or unresolved. Azure DevOps keeps
+ * no per-file viewed state the REST API shares, so the plugin offers no
+ * setFileViewed, and Ajour keeps viewed marks on the computer.
  */
 
 const VOTES: Record<CodeHostSubmitReviewRequest["verdict"], number | undefined> = {
@@ -225,4 +234,74 @@ async function submissionThreads(client: AzureReposClient, base: string, viewerI
 /** The places of the threads the user posted for `submissionId`, one entry per thread. */
 async function submissionPlaces(client: AzureReposClient, base: string, viewerId: string, submissionId: string) {
   return (await submissionThreads(client, base, viewerId, submissionId)).map(threadPlace);
+}
+
+/** Thread ids are the numbers the conversation reader names threads by. */
+function threadNumber(threadId: string) {
+  if (!/^\d{1,10}$/.test(threadId)) throw new Error("Azure DevOps could not find the review thread.");
+  return Number(threadId);
+}
+
+/**
+ * How far before the first try a comment of the user's still counts as
+ * maybe the first try's, for the clocks of this computer and Azure DevOps
+ * to disagree by.
+ */
+const CLOCK_SLACK_MS = 2 * 60_000;
+
+/**
+ * A reply at the end of a thread, under its first comment. Azure DevOps
+ * comments carry no properties, and a hidden mark in the words might show,
+ * so a reply carries no name: a retry reads the thread, and a comment of
+ * the user's from around the first try on may be the earlier try's, so the
+ * answer is uncertain and nothing is posted. Ajour then asks the user
+ * before posting again, as a new submission.
+ */
+export async function replyToPullRequestThread(
+  config: PullRequestConfig,
+  request: CodeHostReplyRequest,
+): Promise<CodeHostPostCommentResult> {
+  const client = clientOf(config);
+  const id = threadNumber(request.threadId);
+  const pullRequest = await findPullRequest(client, request);
+  const base = pullRequestPath(pullRequest);
+  const threads = (await client.get<{ value: AzureThread[] }>(`${base}/threads`, { "api-version": API_VERSION })).value;
+  const thread = threads.find((candidate) => candidate.id === id && !candidate.isDeleted);
+  const first = thread?.comments[0]?.id;
+  if (!thread || first === undefined) throw new Error("Azure DevOps could not find the review thread.");
+  if (request.submissionId && request.firstTriedAt !== undefined) {
+    const viewer = await fetchViewer(client);
+    const since = request.firstTriedAt - CLOCK_SLACK_MS;
+    const maybe = thread.comments.some(
+      (comment) =>
+        !comment.isDeleted &&
+        comment.author?.id?.toLowerCase() === viewer.id.toLowerCase() &&
+        !((time(comment.publishedDate) ?? Number.POSITIVE_INFINITY) < since),
+    );
+    if (maybe) return { uncertain: true };
+  }
+  const comment = await client.send<{ id: number }>(
+    "POST",
+    `${base}/threads/${id}/comments`,
+    { "api-version": API_VERSION },
+    { parentCommentId: first, content: request.body, commentType: TEXT_COMMENT },
+  );
+  return { commentId: `${id}-${comment.id}` };
+}
+
+/** Resolves a thread as fixed, or makes it active again, and answers the status Azure DevOps holds then. */
+export async function setPullRequestThreadResolved(
+  config: PullRequestConfig,
+  request: CodeHostResolveThreadRequest,
+): Promise<CodeHostResolveThreadResult> {
+  const client = clientOf(config);
+  const id = threadNumber(request.threadId);
+  const pullRequest = await findPullRequest(client, request);
+  const thread = await client.send<AzureThread>(
+    "PATCH",
+    `${pullRequestPath(pullRequest)}/threads/${id}`,
+    { "api-version": API_VERSION },
+    { status: request.resolved ? "fixed" : "active" },
+  );
+  return { resolved: RESOLVED.has(thread.status ?? "") };
 }

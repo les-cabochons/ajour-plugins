@@ -133,6 +133,21 @@ ADR 0002):
   Ajour asks you before posting again. Ajour runs the tries of one submission
   one at a time.
 
+The rest of a review round, from 0.9.0:
+
+- `replyToThread` replies at the end of a review thread, to its first
+  comment (`POST /repos/{owner}/{repo}/pulls/{number}/comments/{id}/replies`),
+  as GitHub's own Reply does. It carries the same mark, and a retry reads the
+  thread's comments newest first, page by page, for yours that carries it,
+  uncertain on the same terms as a comment.
+- `setThreadResolved` resolves or unresolves a thread, through GraphQL's
+  `resolveReviewThread` and `unresolveReviewThread`.
+- `setFileViewed` ticks or clears a file's **Viewed** box, through GraphQL's
+  `markFileAsViewed` and `unmarkFileAsViewed`. GitHub keeps the mark for the
+  pull request's head, so the plugin marks a file viewed only while the head
+  is the one you read in Deck, and refuses once new commits arrived.
+  Clearing it needs no check.
+
 ### Author actions, from Deck
 
 On a pull request you opened, Deck edits the title, converts it to a draft or
@@ -155,8 +170,7 @@ marks it ready, and merges it after a confirmation, each at once:
   are two calls: when the second fails, the title is already changed.
 
 These endpoints sit behind the connection's **Review pull requests** access
-choice, which also covers the replies, resolving and viewed files of later
-versions. It starts off, and an update that adds it asks for consent once.
+choice. It starts off, and an update that adds it asks for consent once.
 While it's off, Ajour refuses the operations before the plugin runs, and its
 broker refuses the endpoints. The draft state goes through GraphQL, which no
 access choice can hold back, so the plugin also refuses the author's actions

@@ -434,9 +434,8 @@ requests**:
   withheld for new commits, without failing: the threads are on the pull
   request, so Ajour takes them out of your draft, tells you your vote wasn't
   sent, and a later approval sends the vote alone, with no thread twice.
-  Azure DevOps has no vote bound to a head,
-  so a push in the moment between that read and the vote, one request long,
-  still gets the vote.
+  Azure DevOps has no vote bound to a head, so a push in the moment between
+  that read and the vote, one request long, still gets the vote.
 - Each thread of a submit carries Ajour's submission id in a thread property,
   `Ajour.ReviewSubmission`, which Azure DevOps doesn't show. Ajour keeps the
   id with the draft review until the submit succeeds, so a retry, after a

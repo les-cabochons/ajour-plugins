@@ -77,7 +77,7 @@ const failureOf = (pullRequest: AzurePullRequest) =>
   pullRequest.mergeStatus ? FAILED[pullRequest.mergeStatus] : undefined;
 
 /** A completion Azure DevOps took and is still merging. */
-const completing = (pullRequest: AzurePullRequest) =>
+const stillCompleting = (pullRequest: AzurePullRequest) =>
   pullRequest.status === "active" &&
   pullRequest.completionQueueTime !== undefined &&
   pullRequest.mergeStatus === "queued";
@@ -125,7 +125,7 @@ export async function mergeAzurePullRequest(
   const earlier = mergeableOrEarlier(pullRequest, request);
   if (earlier) return earlier;
   // Still completing an earlier try: no merge commit yet, and nothing to send again.
-  if (completing(pullRequest)) return {};
+  if (stillCompleting(pullRequest)) return {};
   const message = commitMessage(request);
   try {
     const completed = await client.send<AzurePullRequest>(
